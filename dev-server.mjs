@@ -11,6 +11,7 @@ globalThis.__redis = {
   async hset(k, obj) { const h = kv.get(k) ?? new Map(); for (const [f, v] of Object.entries(obj)) h.set(f, structuredClone(v)); kv.set(k, h); return 1; },
   async hdel(k, f) { return kv.get(k)?.delete(f) ? 1 : 0; },
   async hlen(k) { return kv.get(k)?.size ?? 0; },
+  async incr(k) { const n = (kv.get(k) ?? 0) + 1; kv.set(k, n); return n; },
 };
 const { default: handler } = await import('./api/data.js');
 

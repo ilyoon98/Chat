@@ -139,6 +139,8 @@ td.num, th.num { text-align: right; }
 .log .won { font-weight: 700; }
 .log .lost { color: var(--muted); }
 @media (max-width: 520px) { .log li { grid-template-columns: minmax(0, 1fr) auto; } .log time { grid-column: 1 / -1; } }
+.streak { font-size: 12px; font-weight: 700; margin-left: 6px; } .streak.w { color: var(--good); } .streak.l { color: var(--bad); }
+.editform { flex-wrap: wrap; margin-bottom: 12px; } .editform input { flex: 1 1 160px; }
 .toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(20px + env(safe-area-inset-bottom, 0px)); background: var(--ink); color: var(--bg); padding: 9px 16px; border-radius: 999px; font-size: 14px; font-weight: 500; max-width: calc(100% - 32px); text-align: center; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 </style>
@@ -170,6 +172,7 @@ td.num, th.num { text-align: right; }
     <div class="card">
       <h2>선수 명단 <span class="r" id="selCount"></span></h2>
       <div class="chips" id="roster"></div>
+      <div id="editBox"></div>
       <form class="add" id="addForm">
         <input id="addInput" type="text" placeholder="이름 추가 (쉼표로 여러 명: 철수, 영희)" autocomplete="off" maxlength="300">
         <button class="btn" type="submit">추가</button>
@@ -199,7 +202,7 @@ td.num, th.num { text-align: right; }
   <!-- 전적 -->
   <section id="p-stats" role="tabpanel" hidden>
     <div class="card">
-      <h2>선수별 전적 <span class="r" id="statsMeta"></span></h2>
+      <h2>선수별 전적 <span class="r"><span id="statsMeta"></span> · <label>기간 <select class="period"><option value="all">전체</option><option value="30">최근 30일</option><option value="7">최근 7일</option><option value="1">최근 24시간</option></select></label></span></h2>
       <div id="statsBox"></div>
       <p class="note">MMR은 1000점에서 시작해서, 강한 팀을 이기면 많이 오르고 약한 팀에 지면 많이 내려가요. 실력 밸런스 섞기에 이 점수를 써요.</p>
     </div>
@@ -208,7 +211,7 @@ td.num, th.num { text-align: right; }
   <!-- 분석 -->
   <section id="p-analysis" role="tabpanel" hidden>
     <div class="card">
-      <h2>한눈에 보기 <span class="r"><label>최소 판수 <select id="minG"><option>1</option><option>2</option><option selected>3</option><option>5</option></select></label></span></h2>
+      <h2>한눈에 보기 <span class="r"><label>기간 <select class="period"><option value="all">전체</option><option value="30">최근 30일</option><option value="7">최근 7일</option><option value="1">최근 24시간</option></select></label> <label>최소 판수 <select id="minG"><option>1</option><option>2</option><option selected>3</option><option>5</option></select></label></span></h2>
       <div id="hlBox"></div>
     </div>
     <div class="card">
@@ -226,7 +229,7 @@ td.num, th.num { text-align: right; }
   <!-- 기록 -->
   <section id="p-log" role="tabpanel" hidden>
     <div class="card">
-      <h2>경기 기록 <span class="r" id="logMeta"></span></h2>
+      <h2>경기 기록 <span class="r"><span id="logMeta"></span> <button class="btn ghost small" id="backup">백업 받기</button></span></h2>
       <ul class="log" id="logBox"></ul>
     </div>
   </section>
@@ -241,9 +244,13 @@ function rnd(n) { const a = new Uint32Array(1), lim = Math.floor(0x100000000 / n
 function shuffle(arr, r) { const a = [...arr]; for (let i = a.length - 1; i > 0; i--) { const j = r ? Math.floor(r() * (i + 1)) : rnd(i + 1); [a[i], a[j]] = [a[j], a[i]]; } return a; }
 function toast(msg) { const t = $('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => t.hidden = true, 2200); }
 const pct = (w, g) => g ? Math.round(w / g * 100) : 0;
+async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); toast('복사했어요. 단톡방에 붙여넣으세요.'); }
+  catch { toast('복사가 막혀 있어요. 화면에서 직접 선택해서 복사해 주세요.'); }
+}
 
 // ---------- 상태 ----------
-const S = { players: [], matches: [], current: null, selected: new Set(), mode: 'random', example: false, editing: false, recorded: null };
+const S = { players: [], matches: [], current: null, selected: new Set(), mode: 'random', example: false, editing: false, editTarget: null, period: 'all', recorded: null };
 let EX = null;
 const D = () => S.example ? EX : S;
 const LS = 'lol-naejeon-v1';
@@ -268,16 +275,22 @@ function validMatch(m) {
 }
 
 // ---------- 서버 저장 (/api/data) ----------
-let online = false, pin = '';
+let status = 'connecting', pin = '', ver = null;
 try { pin = localStorage.getItem(LS + ':pin') || ''; } catch {}
-function setBadge() {
+function setBadge(s) {
+  if (s) status = s;
   const b = $('#syncBadge');
-  b.className = 'badge ' + (online ? 'shared' : 'readonly');
-  b.querySelector('span').textContent = online ? '모두와 공유 중' : '서버 연결 안 됨';
+  b.className = 'badge ' + (status === 'online' ? 'shared' : 'readonly');
+  b.querySelector('span').textContent = { connecting: '연결 중…', online: '모두와 공유 중', offline: '서버 연결 안 됨', nodb: 'DB 연결 필요 (README 3단계)' }[status];
 }
 async function api(action, body, quiet) {
   for (let attempt = 0; attempt < 3; attempt++) {
-    const res = await fetch('/api/data', { method: 'POST', headers: { 'content-type': 'application/json', 'x-pin': pin }, body: JSON.stringify({ action, ...body }) });
+    let res;
+    try {
+      res = await fetch('/api/data', { method: 'POST', headers: { 'content-type': 'application/json', 'x-pin': encodeURIComponent(pin) }, body: JSON.stringify({ action, ...body }) });
+    } catch {
+      setBadge('offline'); if (!quiet) toast('서버에 연결할 수 없어요. 인터넷 연결을 확인해 주세요.'); throw new Error('offline');
+    }
     if (res.status === 401) {
       if (quiet) throw new Error('pin');
       const p = prompt(attempt ? '비밀번호가 틀렸어요. 다시 입력해 주세요.' : '기록 비밀번호를 입력해 주세요.');
@@ -285,6 +298,8 @@ async function api(action, body, quiet) {
       pin = p.trim(); try { localStorage.setItem(LS + ':pin', pin); } catch {}
       continue;
     }
+    if (res.status === 503) { setBadge('nodb'); if (!quiet) toast('아직 DB가 연결되지 않았어요. README의 3단계를 해 주세요.'); throw new Error('nodb'); }
+    if (res.status === 422) { toast("두 사람이 같은 판에서 뛴 기록이 있어서 합칠 수 없어요. 다른 이름을 써 주세요."); throw new Error("conflict"); }
     if (res.status === 409) { toast('기록이 너무 많아요. 오래된 기록을 지워 주세요.'); throw new Error('full'); }
     if (!res.ok) { if (!quiet) toast('저장에 실패했어요. 잠시 후 다시 눌러 주세요.'); throw new Error(String(res.status)); }
     const d = await res.json(); applyServer(d); saveLocal(); return d;
@@ -292,33 +307,35 @@ async function api(action, body, quiet) {
   toast('비밀번호가 맞지 않아요.'); throw new Error('pin');
 }
 function applyServer(d) {
-  online = true; setBadge();
+  setBadge('online');
+  if (d.ver != null) ver = d.ver;
   if (Array.isArray(d.players)) S.players = d.players.filter(p => typeof p === 'string');
   if (Array.isArray(d.matches)) S.matches = d.matches.filter(validMatch);
   if (d.current && Array.isArray(d.current.blue) && Array.isArray(d.current.red) && (!S.current || (d.current.t || 0) > (S.current.t || 0))) { S.current = d.current; S.recorded = null; }
 }
-let lastSig = '';
 async function pull() {
   try {
-    const res = await fetch('/api/data', { cache: 'no-store' });
+    const res = await fetch('/api/data' + (ver != null ? '?v=' + encodeURIComponent(ver) : ''), { cache: 'no-store' });
+    if (res.status === 503) return setBadge('nodb');
     if (!res.ok) throw new Error(String(res.status));
-    const text = await res.text();
-    online = true; setBadge();
-    if (text === lastSig) return;
-    lastSig = text; applyServer(JSON.parse(text)); saveLocal(); renderAll();
-  } catch { online = false; setBadge(); }
+    const d = await res.json();
+    if (d.same) return setBadge('online');
+    applyServer(d); saveLocal(); renderAll();
+  } catch { setBadge('offline'); }
 }
 const guardWrite = () => true;
-async function savePlayers() {
-  saveLocal();
-  try { await api('players', { players: S.players }); } catch { await pull(); }
+// 명단은 바로 화면에 반영하고, 서버가 거절하면 서버 상태로 되돌려요.
+async function rosterAction(action, body) {
+  let ok = true;
+  try { await api(action, body); } catch { ok = false; ver = null; await pull(); }
   renderAll();
+  return ok;
 }
 async function saveCurrent() {
   saveLocal();
   if (S.current) api('current', { current: S.current }, true).catch(() => {});
 }
-async function addMatch(m) { return (await api('addMatch', { match: m })).id; }
+async function addMatch(m) { const d = await api('addMatch', { match: m }); return { id: d.id, dup: d.dup }; }
 async function deleteMatch(id) { await api('deleteMatch', { id }); }
 function startSync() {
   pull();
@@ -376,24 +393,43 @@ function renderRoster() {
   const box = $('#roster'), sel = S.selected;
   const players = D().players;
   box.innerHTML = players.length ? players.map((p, i) =>
-    `<button class="chip${sel.has(p) && !S.editing ? ' on' : ''}" data-i="${i}" ${S.editing ? `aria-label="${esc(p)} 명단에서 빼기"` : `aria-pressed="${sel.has(p)}"`}>${esc(p)}${S.editing ? '<span class="x">×</span>' : ''}</button>`).join('')
+    `<button class="chip${(S.editing ? S.editTarget === p : sel.has(p)) ? ' on' : ''}" data-i="${i}" ${S.editing ? `aria-label="${esc(p)} 편집"` : `aria-pressed="${sel.has(p)}"`}>${esc(p)}${S.editing ? '<span class="x">✎</span>' : ''}</button>`).join('')
     : '<span class="empty">아직 명단이 없어요. 아래에 친구들 이름을 한 번에 넣어 주세요.</span> <button class="btn ghost small" data-ex="1">예시 데이터로 미리보기</button>';
   const n = players.filter(p => sel.has(p)).length;
   $('#selCount').textContent = `선택 ${n}명` + (n >= 2 ? ` · ${Math.ceil(n / 2)} 대 ${Math.floor(n / 2)}` : '');
   $('#shuffle').disabled = n < 2;
   $('#editToggle').setAttribute('aria-pressed', S.editing); $('#editToggle').textContent = S.editing ? '편집 끝' : '명단 편집';
-  $('#rosterNote').textContent = S.editing ? '× 를 누르면 명단에서 빠져요. 지난 전적은 그대로 남아요.' : '오늘 할 사람 이름을 눌러 골라요. 명단은 저장돼서 다음에도 그대로 있어요.';
+  $('#rosterNote').textContent = S.editing ? '이름을 누르면 이름을 바꾸거나 명단에서 뺄 수 있어요. 이미 있는 이름으로 바꾸면 두 사람 전적이 합쳐져요.' : '오늘 할 사람 이름을 눌러 골라요. 명단은 저장돼서 다음에도 그대로 있어요.';
+  $('#editBox').innerHTML = S.editing && S.editTarget && !S.example
+    ? `<form class="add editform" id="renameForm"><input id="renameInput" type="text" maxlength="16" value="${esc(S.editTarget)}" aria-label="새 이름"><button class="btn" type="submit">이름 바꾸기</button><button class="btn ghost" type="button" id="removeBtn">명단에서 빼기</button></form>` : '';
 }
 $('#roster').addEventListener('click', async e => {
   const b = e.target.closest('button[data-i]'); if (!b) return;
   const name = D().players[+b.dataset.i];
   if (S.editing) {
     if (S.example) return toast('예시 데이터에선 명단을 바꿀 수 없어요.');
-    if (!guardWrite()) return;
-    S.players = S.players.filter(p => p !== name); S.selected.delete(name); renderAll(); savePlayers();
+    S.editTarget = S.editTarget === name ? null : name; renderRoster();
+    if (S.editTarget) $('#renameInput')?.focus();
   } else {
     S.selected.has(name) ? S.selected.delete(name) : S.selected.add(name); saveLocal(); renderRoster();
   }
+});
+$('#editBox').addEventListener('submit', async e => {
+  e.preventDefault();
+  const from = S.editTarget, to = $('#renameInput').value.trim().slice(0, 16);
+  if (!from || !to || to === from) return;
+  const merge = S.players.includes(to);
+  S.players = merge ? S.players.filter(p => p !== from) : S.players.map(p => p === from ? to : p);
+  if (S.selected.delete(from)) S.selected.add(to);
+  if (S.current) for (const side of ['blue', 'red']) S.current[side] = [...new Set(S.current[side].map(p => p === from ? to : p))];
+  S.editTarget = null; renderAll();
+  if (await rosterAction('renamePlayer', { from, to })) toast(merge ? `${from}의 전적을 ${to}에 합쳤어요.` : `${from} → ${to}로 바꿨어요. 지난 전적도 같이 바뀌어요.`);
+});
+$('#editBox').addEventListener('click', e => {
+  if (e.target.id !== 'removeBtn' || !S.editTarget) return;
+  const name = S.editTarget;
+  S.players = S.players.filter(p => p !== name); S.selected.delete(name); S.editTarget = null; renderAll();
+  rosterAction('removePlayer', { name });
 });
 $('#addForm').addEventListener('submit', e => {
   e.preventDefault();
@@ -401,11 +437,11 @@ $('#addForm').addEventListener('submit', e => {
   const names = $('#addInput').value.split(/[,，\n]/).map(s => s.trim().slice(0, 16)).filter(Boolean);
   if (!names.length || !guardWrite()) return;
   for (const n of names) if (!S.players.includes(n) && S.players.length < 60) { S.players.push(n); S.selected.add(n); }
-  $('#addInput').value = ''; renderAll(); savePlayers();
+  $('#addInput').value = ''; renderAll(); rosterAction('addPlayers', { names });
 });
 $('#selAll').onclick = () => { D().players.forEach(p => S.selected.add(p)); saveLocal(); renderRoster(); };
 $('#selNone').onclick = () => { S.selected.clear(); saveLocal(); renderRoster(); };
-$('#editToggle').onclick = () => { S.editing = !S.editing; renderRoster(); };
+$('#editToggle').onclick = () => { S.editing = !S.editing; S.editTarget = null; renderRoster(); };
 
 // ---------- 팀 섞기 ----------
 function setMode(m) {
@@ -444,6 +480,7 @@ function renderTeams(shuffling) {
     </div>
     <div class="odds"><div class="bar"><i class="b" style="width:${bp}%"></i><i class="r" style="width:${100 - bp}%"></i></div>
       <div class="lbl"><span>블루 예상 승률 ${bp}%</span><span>레드 ${100 - bp}%</span></div></div>
+    ${shuffling ? '' : '<div class="row" style="margin-top:10px"><button class="btn ghost small" id="copyTeams">카톡용 복사</button></div>'}
     ${shuffling ? '' : S.recorded ? `
       <div class="recorded"><span>기록됨: <b style="color:var(--${S.recorded.win})">${S.recorded.win === 'blue' ? '블루' : '레드'}팀 승리</b></span>
         <span class="row"><button class="btn ghost small" id="undo">되돌리기</button><button class="btn small" id="again">같은 팀으로 한 판 더</button></span></div>` : `
@@ -462,6 +499,7 @@ $('#shuffle').onclick = () => {
   tick();
 };
 $('#teamsBox').addEventListener('click', async e => {
+  if (e.target.id === 'copyTeams' && S.current) return copyText(`[블루팀] ${S.current.blue.join(', ')}\n[레드팀] ${S.current.red.join(', ')}`);
   const mv = e.target.closest('button[data-p]');
   if (mv && !S.recorded) {
     const p = mv.dataset.p, from = mv.dataset.side, to = from === 'blue' ? 'red' : 'blue';
@@ -473,7 +511,7 @@ $('#teamsBox').addEventListener('click', async e => {
     if (!guardWrite()) return;
     const m = { t: Date.now(), blue: [...S.current.blue], red: [...S.current.red], win: w.dataset.win };
     w.disabled = true;
-    try { const id = await addMatch(m); S.recorded = { id, win: m.win }; toast(`${m.win === 'blue' ? '블루' : '레드'}팀 승리로 기록했어요.`); }
+    try { const { id, dup } = await addMatch(m); S.recorded = { id, win: m.win }; toast(dup ? '방금 같은 결과가 이미 기록돼 있어서 한 번만 남겼어요.' : `${m.win === 'blue' ? '블루' : '레드'}팀 승리로 기록했어요.`); }
     catch { w.disabled = false; return; }
     renderAll(); return;
   }
@@ -484,19 +522,27 @@ $('#teamsBox').addEventListener('click', async e => {
 });
 
 // ---------- 전적 탭 ----------
+const inPeriod = m => S.period === 'all' || m.t >= Date.now() - Number(S.period) * 864e5;
+const NO_PERIOD = '<p class="empty">이 기간에는 기록된 경기가 없어요. 기간을 넓혀 보세요.</p>';
+function streak(form) {
+  if (!form.length) return '';
+  const last = form.at(-1); let n = 0;
+  for (let i = form.length - 1; i >= 0 && form[i] === last; i--) n++;
+  return n >= 2 ? `<span class="streak ${last ? 'w' : 'l'}">${n}연${last ? '승' : '패'}</span>` : '';
+}
 let sortKey = 'rate';
 function renderStats() {
-  const { players, matches } = D(), st = computeStats(players, matches);
+  const { players } = D(), matches = D().matches.filter(inPeriod), st = computeStats(players, matches);
   $('#statsMeta').textContent = `총 ${matches.length}판`;
   const rows = Object.values(st.P).filter(p => p.g || players.includes(p.name));
-  if (!matches.length) { $('#statsBox').innerHTML = emptyStats(); return; }
+  if (!matches.length) { $('#statsBox').innerHTML = D().matches.length ? NO_PERIOD : emptyStats(); return; }
   const key = { rate: p => p.g ? p.w / p.g + p.g * 1e-4 : -1, g: p => p.g, mmr: p => p.mmr, name: p => 0 }[sortKey];
   rows.sort((a, b) => sortKey === 'name' ? a.name.localeCompare(b.name, 'ko') : key(b) - key(a));
   const th = (k, label, cls = '') => `<th class="${cls}"><button data-sort="${k}" aria-pressed="${sortKey === k}">${label}</button></th>`;
   $('#statsBox').innerHTML = `<div class="tbl-wrap"><table><thead><tr><th></th>${th('name', '선수')}${th('g', '판', 'num')}<th class="num">승-패</th>${th('rate', '승률')}${th('mmr', 'MMR', 'num')}<th>최근 5판</th></tr></thead><tbody>${
     rows.map((p, i) => `<tr><td class="rank">${p.g ? i + 1 : ''}</td><td><b>${esc(p.name)}</b></td><td class="num">${p.g}</td><td class="num">${p.w}-${p.g - p.w}</td>
       <td><div class="rate"><span style="width:38px;text-align:right">${p.g ? pct(p.w, p.g) + '%' : '—'}</span><span class="track"><i style="width:${pct(p.w, p.g)}%;background:${p.w / p.g >= .5 ? 'var(--good)' : 'var(--bad)'}"></i></span></div></td>
-      <td class="num">${p.g ? Math.round(p.mmr) : '—'}</td><td><span class="form">${p.form.slice(-5).map(f => `<i class="${f ? 'w' : 'l'}">${f ? '승' : '패'}</i>`).join('')}</span></td></tr>`).join('')
+      <td class="num">${p.g ? Math.round(p.mmr) : '—'}</td><td><span class="form">${p.form.slice(-5).map(f => `<i class="${f ? 'w' : 'l'}">${f ? '승' : '패'}</i>`).join('')}</span>${streak(p.form)}</td></tr>`).join('')
   }</tbody></table></div>`;
 }
 $('#statsBox').addEventListener('click', e => { const b = e.target.closest('button[data-sort]'); if (b) { sortKey = b.dataset.sort; renderStats(); } });
@@ -507,8 +553,8 @@ document.addEventListener('click', e => { if (e.target.closest('[data-ex]')) set
 let focus = null;
 const bar = r => `<span class="track"><i style="width:${Math.round(r * 100)}%;background:${r >= .5 ? 'var(--good)' : 'var(--bad)'}"></i></span>`;
 function renderAnalysis() {
-  const { players, matches } = D(), st = computeStats(players, matches), minG = +$('#minG').value;
-  if (!matches.length) { $('#hlBox').innerHTML = emptyStats(); $('#pickPlayer').innerHTML = ''; $('#playerBox').innerHTML = ''; $('#matrixBox').innerHTML = ''; return; }
+  const { players } = D(), matches = D().matches.filter(inPeriod), st = computeStats(players, matches), minG = +$('#minG').value;
+  if (!matches.length) { $('#hlBox').innerHTML = D().matches.length ? NO_PERIOD : emptyStats(); $('#pickPlayer').innerHTML = ''; $('#playerBox').innerHTML = ''; $('#matrixBox').innerHTML = ''; return; }
   const active = Object.values(st.P).filter(p => p.g).sort((a, b) => b.g - a.g);
   const allPairs = (o, filt) => Object.entries(o).map(([k, v]) => { const [a, b] = k.split('\u0001'); return { a, b, ...v, r: v.w / v.g }; }).filter(x => x.g >= minG && filt(x));
   const duos = allPairs(st.duo, x => x.a < x.b).sort((x, y) => y.r - x.r || y.g - x.g);
@@ -573,6 +619,20 @@ $('#logBox').addEventListener('click', async e => {
   confirmId = null; try { await deleteMatch(id); if (S.recorded?.id === id) S.recorded = null; toast('경기 기록을 지웠어요.'); } catch {}
   renderAll();
 });
+
+// ---------- 기간 필터 · 백업 ----------
+document.addEventListener('change', e => {
+  if (!e.target.matches('select.period')) return;
+  S.period = e.target.value;
+  document.querySelectorAll('select.period').forEach(s => s.value = S.period);
+  renderStats(); renderAnalysis();
+});
+$('#backup').onclick = () => {
+  const blob = new Blob([JSON.stringify({ exportedAt: new Date().toISOString(), players: S.players, matches: S.matches }, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = `lol-naejeon-backup-${new Date().toISOString().slice(0, 10)}.json`; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+};
 
 // ---------- 탭 ----------
 const TABS = ['play', 'stats', 'analysis', 'log'];
