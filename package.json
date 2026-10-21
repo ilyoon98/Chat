@@ -1,0 +1,11 @@
+{
+  "name": "lol-naejeon",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node dev-server.mjs"
+  },
+  "dependencies": {
+    "@upstash/redis": "^1.34.0"
+  }
+}
