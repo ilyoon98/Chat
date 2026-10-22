@@ -8,13 +8,10 @@ const redis = globalThis.__redis ?? (url && token ? new Redis({ url, token }) : 
 const K = { players: 'lol:players', matches: 'lol:matches', current: 'lol:current', ver: 'lol:ver' };
 const MAX_MATCHES = 5000;
 const MAX_PLAYERS = 60;
-const DUP_WINDOW_MS = 2 * 60 * 1000; // 같은 팀·같은 결과가 2분 안에 또 오면 중복으로 봐요
 
 const cleanName = v => (typeof v === 'string' && v.trim() ? v.trim().slice(0, 16) : null);
 const cleanNames = (a, max) => (Array.isArray(a) ? [...new Set(a.map(cleanName).filter(Boolean))].slice(0, max) : null);
-const sameSet = (a, b) => a.length === b.length && [...a].sort().join('\u0001') === [...b].sort().join('\u0001');
 const bad = res => res.status(400).json({ error: 'bad_request' });
-
 const readPlayers = async () => (await redis.get(K.players)) || [];
 async function readMatches() {
   const hash = await redis.hgetall(K.matches);
@@ -74,20 +71,21 @@ export default async function handler(req, res) {
         const from = cleanName(b.from), to = cleanName(b.to);
         if (!from || !to || from === to) return bad(res);
         const swap = arr => [...new Set(arr.map(p => (p === from ? to : p)))];
-        const matches = await readMatches();
-        // 같은 판에 둘 다 뛴 적이 있으면 서로 다른 사람이라 합칠 수 없어요.
-        if (matches.some(m => [...m.blue, ...m.red].includes(from) && [...m.blue, ...m.red].includes(to))) {
+        const swapGame = g => ({ ...g, blue: swap(g.blue), red: swap(g.red) });
+        const both = g => [...g.blue, ...g.red].includes(from) && [...g.blue, ...g.red].includes(to);
+        const [matches, cur] = await Promise.all([readMatches(), redis.get(K.current)]);
+        // 같은 판에 둘 다 뛴 적이 있거나 지금 팀에 둘 다 있으면 서로 다른 사람이라 합칠 수 없어요.
+        if (matches.some(both) || (cur?.blue && cur?.red && both(cur))) {
           return res.status(422).json({ error: 'played_together' });
         }
         const players = await readPlayers();
         await redis.set(K.players, players.includes(to) ? players.filter(p => p !== from) : players.map(p => (p === from ? to : p)));
         const changed = {};
         for (const { id: mid, ...m } of matches) {
-          if (m.blue.includes(from) || m.red.includes(from)) changed[mid] = { ...m, blue: swap(m.blue), red: swap(m.red) };
+          if (m.blue.includes(from) || m.red.includes(from)) changed[mid] = swapGame(m);
         }
         if (Object.keys(changed).length) await redis.hset(K.matches, changed);
-        const cur = await redis.get(K.current);
-        if (cur?.blue && cur?.red) await redis.set(K.current, { ...cur, blue: swap(cur.blue), red: swap(cur.red) });
+        if (cur?.blue && cur?.red) await redis.set(K.current, swapGame(cur));
         break;
       }
       case 'addMatch': {
@@ -95,11 +93,13 @@ export default async function handler(req, res) {
         if (!blue?.length || !red?.length || !['blue', 'red'].includes(m.win)) return bad(res);
         const matches = await readMatches();
         if (matches.length >= MAX_MATCHES) return res.status(409).json({ error: 'full' });
-        const now = Date.now();
-        const prev = matches.find(x => now - x.t < DUP_WINDOW_MS && x.win === m.win && sameSet(x.blue, blue) && sameSet(x.red, red));
+        // round는 그 판을 가리키는 번호(팀을 짠 시각)예요. 같은 판은 두 사람이 동시에 눌러도 먼저 온 기록 하나만 남겨요.
+        // "같은 팀으로 한 판 더"는 새 round라서 같은 팀·같은 결과여도 따로 기록돼요.
+        const now = Date.now(), round = Number(m.round) || 0;
+        const prev = round && matches.find(x => x.round === round);
         if (prev) { id = prev.id; dup = true; break; }
         id = now.toString(36) + Math.random().toString(36).slice(2, 7);
-        await redis.hset(K.matches, { [id]: { t: now, blue, red, win: m.win } });
+        await redis.hset(K.matches, { [id]: { t: now, blue, red, win: m.win, ...(round && { round }) } });
         break;
       }
       case 'deleteMatch': {
@@ -110,7 +110,8 @@ export default async function handler(req, res) {
       case 'current': {
         const c = b.current || {}, blue = cleanNames(c.blue, 10), red = cleanNames(c.red, 10);
         if (!blue || !red) return bad(res);
-        await redis.set(K.current, { blue, red, t: Number(c.t) || Date.now() });
+        const t = Number(c.t) || Date.now();
+        await redis.set(K.current, { blue, red, t, round: Number(c.round) || t });
         break;
       }
       default:

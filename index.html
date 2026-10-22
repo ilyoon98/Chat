@@ -54,6 +54,48 @@ h2 .r { letter-spacing: 0; text-transform: none; font-weight: 500; font-variant-
 .chip { font: inherit; font-weight: 500; border: 1.5px solid var(--line); background: var(--sunk); color: var(--ink); padding: 6px 13px; border-radius: 999px; cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
 .chip.on { border-color: var(--gold); background: color-mix(in srgb, var(--gold) 18%, var(--surface)); }
 .chip .x { color: var(--bad); font-weight: 700; }
+.chip .in { color: var(--gold); font-weight: 700; }
+.tier { width: 22px; height: 22px; flex: none; vertical-align: -5px; }
+.who { display: flex; align-items: center; gap: 6px; min-width: 0; }
+td .tier { margin-right: 6px; }
+.tiername { color: var(--muted); font-size: 13px; }
+.team li .st { text-align: right; line-height: 1.35; margin-left: auto; }
+.team li .who { flex: 1 1 64px; }
+.team h3 { flex-wrap: wrap; white-space: nowrap; }
+.team li .sess { color: var(--ink); font-weight: 500; }
+.team li.dragging .pl { opacity: .35; }
+.team li.drop .pl, .team.drop ul { outline: 2px dashed var(--gold); outline-offset: -2px; border-radius: 8px; }
+/* 팀장 뽑기 */
+.draft { display: grid; gap: 14px; margin-top: 16px; }
+.draft-bar { justify-content: flex-end; } .draft-title { margin-right: auto; font-family: var(--display); font-weight: 400; font-size: 20px; }
+.draft-caps { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.cap { display: grid; gap: 6px; padding: 10px 12px; border-radius: 12px; color: #fff; min-width: 0; }
+.cap.blue { background: var(--blue); } .cap.red { background: var(--red); }
+.cap span { font-family: var(--display); font-size: 17px; } .cap select { width: 100%; min-width: 0; font-weight: 700; }
+.draft-order { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; padding: 14px; border-radius: 12px; background: var(--sunk); border: 1px solid var(--line); }
+.draft-order-r { display: grid; gap: 8px; flex: 1 1 220px; }
+.coin-res { margin: 0; font-family: var(--display); font-size: 20px; }
+.coin, .coin-q { width: 76px; height: 76px; flex: none; }
+.coin-q { border-radius: 50%; background: var(--gold); color: var(--on-gold); display: grid; place-items: center; font-family: var(--display); font-size: 30px; }
+.coin { position: relative; transform-style: preserve-3d; }
+.coin .face { position: absolute; inset: 0; border-radius: 50%; display: grid; place-items: center; font-style: normal; font-family: var(--display); font-size: 20px; color: #fff; backface-visibility: hidden; border: 4px solid rgba(255,255,255,.35); }
+.coin .face.b { background: var(--blue); } .coin .face.r { background: var(--red); transform: rotateY(180deg); }
+.coin.red { transform: rotateY(180deg); }
+.coin.flip-blue { animation: coinB 1.2s cubic-bezier(.15,.6,.3,1) both; } .coin.flip-red { animation: coinR 1.2s cubic-bezier(.15,.6,.3,1) both; }
+@keyframes coinB { from { transform: rotateY(0); } to { transform: rotateY(1800deg); } }
+@keyframes coinR { from { transform: rotateY(0); } to { transform: rotateY(1980deg); } }
+.draft-turn { margin: 0; font-family: var(--display); font-size: 22px; } .draft-turn small { font-family: var(--body); font-size: 13px; color: var(--muted); }
+.draft .teams { margin-top: 0; }
+.draft-team.turn { outline: 3px solid var(--gold); outline-offset: 2px; }
+.draft-team .pl { cursor: default; }
+.capb { font-size: 11px; font-weight: 700; color: var(--on-gold); background: var(--gold); border-radius: 4px; padding: 0 5px; }
+.pick-h { margin: 0 0 8px; font-size: 13px; font-weight: 700; color: var(--muted); }
+.pool .chip small { color: var(--muted); font-size: 12px; }
+[data-pick] { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; touch-action: manipulation; }
+.chip.dragging { opacity: .35; }
+.drag-ghost { position: fixed; left: 0; top: 0; z-index: 50; pointer-events: none; margin: 0; padding: 7px 10px; border-radius: 8px; background: var(--surface); border: 1px solid var(--gold); box-shadow: 0 8px 24px rgba(0,0,0,.35); font-weight: 700; display: flex; gap: 6px; align-items: center; }
+.chips.today { min-height: 50px; padding: 8px; align-content: flex-start; border: 1.5px dashed color-mix(in srgb, var(--gold) 55%, var(--line)); border-radius: 12px; }
+.chips.today .empty { padding: 6px 4px; font-size: 13.5px; }
 form.add { display: flex; gap: 6px; }
 input[type=text] { flex: 1; min-width: 0; font: inherit; color: var(--ink); background: var(--sunk); border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; }
 select { font: inherit; color: var(--ink); background: var(--sunk); border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px; }
@@ -67,15 +109,20 @@ select { font: inherit; color: var(--ink); background: var(--sunk); border: 1px 
 .seg button { font: inherit; font-size: 14px; border: 0; background: none; color: var(--muted); padding: 8px 14px; cursor: pointer; }
 .seg button[aria-pressed=true] { background: var(--sunk); color: var(--ink); font-weight: 700; }
 
-.teams { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; margin-top: 16px; }
+.teams { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; margin-top: 12px; }
 @media (max-width: 520px) { .teams { gap: 8px; } }
 .team { border-radius: 12px; border: 1px solid var(--line); background: var(--sunk); overflow: hidden; min-width: 0; }
 .team h3 { margin: 0; padding: 8px 12px; font-family: var(--display); font-weight: 400; font-size: 19px; color: #fff; display: flex; justify-content: space-between; align-items: baseline; gap: 6px; }
 .team.blue h3 { background: var(--blue); } .team.red h3 { background: var(--red); }
 .team h3 small { font-family: var(--body); font-size: 12px; font-weight: 500; opacity: .9; }
 .team ul { list-style: none; margin: 0; padding: 6px; display: flex; flex-direction: column; gap: 2px; }
-.team li button { width: 100%; text-align: left; font: inherit; background: none; border: 0; color: var(--ink); padding: 7px 8px; border-radius: 8px; cursor: pointer; display: flex; justify-content: space-between; gap: 8px; }
-.team li button:hover { background: var(--surface); }
+.team li { display: flex; align-items: center; gap: 2px; }
+/* 이름 칸: 끌어서 옮기는 손잡이. 좁은 폰에선 기록 글자가 이름 아래로 내려가요 */
+.team li .pl { flex: 1; min-width: 0; color: var(--ink); padding: 7px 8px; border-radius: 8px; cursor: grab; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 8px; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.team li .pl:hover { background: var(--surface); }
+.team li .swap { flex: none; width: 30px; height: 30px; font: inherit; font-weight: 700; color: var(--muted); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
+.team li .swap:hover { color: var(--ink); border-color: var(--gold); }
+.team li.empty-team { display: block; padding: 18px 8px; color: var(--muted); font-size: 13px; text-align: center; }
 .team li .nm { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .team li .st { color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .shuffling .team ul { opacity: .45; }
@@ -87,7 +134,15 @@ select { font: inherit; color: var(--ink); background: var(--sunk); border: 1px 
 .win { font-family: var(--display); font-weight: 400; font-size: 19px; border: 0; border-radius: 12px; padding: 14px 8px; color: #fff; cursor: pointer; }
 .win.blue { background: var(--blue); } .win.red { background: var(--red); }
 .win:disabled { opacity: .35; cursor: not-allowed; }
-.recorded { margin-top: 12px; padding: 10px 12px; border-radius: 10px; background: var(--sunk); border: 1px dashed var(--line); display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; }
+/* 기록된 뒤: 이긴 팀 색으로 결과를 크게 보여 주고, 다음 판 버튼 두 개를 승리 버튼만큼 크게 */
+.recorded { --side: var(--blue); margin-top: 16px; padding: 14px; border-radius: 14px; display: grid; gap: 12px; background: color-mix(in srgb, var(--side) 14%, var(--surface)); border: 1.5px solid color-mix(in srgb, var(--side) 55%, var(--line)); }
+.recorded.red { --side: var(--red); }
+.rec-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.rec-head .k { font-size: 13px; font-weight: 700; color: var(--muted); }
+.rec-head b { flex: 1; font-family: var(--display); font-weight: 400; font-size: clamp(22px, 6vw, 28px); line-height: 1.2; color: var(--side); }
+.rec-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.big { font-family: var(--display); font-weight: 400; font-size: clamp(16px, 4.4vw, 19px); border-radius: 12px; padding: 14px 8px; cursor: pointer; color: var(--ink); background: var(--surface); border: 1px solid var(--line); }
+.big.primary { background: var(--gold); color: var(--on-gold); border-color: transparent; }
 .empty { color: var(--muted); padding: 14px 0; }
 .banner { display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between; align-items: center; background: color-mix(in srgb, var(--gold) 16%, var(--surface)); border: 1px solid color-mix(in srgb, var(--gold) 50%, var(--line)); border-radius: 12px; padding: 10px 14px; font-size: 14px; }
 
@@ -146,6 +201,15 @@ td.num, th.num { text-align: right; }
 </style>
 </head>
 <body>
+<!-- 티어 엠블럼: 날개(--w)와 가운데 보석(--g) 색만 티어마다 바꿔 써요 -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="emblem" viewBox="0 0 24 24">
+    <path id="wing" fill="var(--w)" d="M10.6 19C6.4 18.4 3 15.4 2 8.4l2.9 2.2-.5-5.8 3.2 4 .8-5.4 2 5.4c.5 2.6.8 6 .2 10.2z"/>
+    <use href="#wing" transform="matrix(-1 0 0 1 24 0)"/>
+    <circle cx="12" cy="13.6" r="4.3" fill="var(--g)" stroke="rgba(0,0,0,.28)" stroke-width=".8"/>
+    <circle cx="10.6" cy="12.2" r="1.2" fill="#fff" opacity=".45"/>
+  </symbol>
+</svg>
 <div class="wrap">
   <header>
     <div>
@@ -170,8 +234,8 @@ td.num, th.num { text-align: right; }
   <!-- 내전 -->
   <section id="p-play" role="tabpanel">
     <div class="card">
-      <h2>선수 명단 <span class="r" id="selCount"></span></h2>
-      <div class="chips" id="roster"></div>
+      <h2>선수 명단 <span class="r" id="rosterCount"></span></h2>
+      <div id="roster"></div>
       <div id="editBox"></div>
       <form class="add" id="addForm">
         <input id="addInput" type="text" placeholder="이름 추가 (쉼표로 여러 명: 철수, 영희)" autocomplete="off" maxlength="300">
@@ -182,36 +246,44 @@ td.num, th.num { text-align: right; }
         <button class="btn ghost small" id="selNone">선택 해제</button>
         <button class="btn ghost small" id="editToggle" aria-pressed="false">명단 편집</button>
       </div>
-      <p class="note" id="rosterNote">오늘 할 사람 이름을 눌러 골라요. 명단은 저장돼서 다음에도 그대로 있어요.</p>
+      <p class="note" id="rosterNote"></p>
     </div>
 
     <div class="card">
-      <h2>팀 배치 <span class="r" id="teamHint"></span></h2>
+      <h2>오늘 할 사람 <span class="r" id="selCount"></span></h2>
+      <div class="chips today" id="today"></div>
       <div class="row">
         <div class="seg" role="group" aria-label="섞는 방식">
           <button id="mRandom" aria-pressed="true">완전 랜덤</button>
           <button id="mBalance" aria-pressed="false">실력 밸런스</button>
+          <button id="mDraft" aria-pressed="false">팀장 뽑기</button>
         </div>
         <button class="btn gold" id="shuffle">팀 섞기</button>
       </div>
       <p class="note" id="modeNote">완전 랜덤: 실력 상관없이 무작위로 나눠요.</p>
       <div id="teamsBox"></div>
     </div>
+
+    <div class="card" id="sessionCard" hidden>
+      <h2>이번 세션 <span class="r" id="sessionMeta"></span></h2>
+      <div id="sessionBox"></div>
+      <p class="note">경기 사이가 4시간 넘게 비면 새 세션으로 쳐요. 전체 승률은 전적 탭에서 봐요.</p>
+    </div>
   </section>
 
   <!-- 전적 -->
   <section id="p-stats" role="tabpanel" hidden>
     <div class="card">
-      <h2>선수별 전적 <span class="r"><span id="statsMeta"></span> · <label>기간 <select class="period"><option value="all">전체</option><option value="30">최근 30일</option><option value="7">최근 7일</option><option value="1">최근 24시간</option></select></label></span></h2>
+      <h2>선수별 전적 <span class="r"><span id="statsMeta"></span> · <label>기간 <select class="period"><option value="all">전체</option><option value="session">이번 세션</option><option value="30">최근 30일</option><option value="7">최근 7일</option><option value="1">최근 24시간</option></select></label></span></h2>
       <div id="statsBox"></div>
-      <p class="note">MMR은 1000점에서 시작해서, 강한 팀을 이기면 많이 오르고 약한 팀에 지면 많이 내려가요. 실력 밸런스 섞기에 이 점수를 써요.</p>
+      <p class="note">MMR은 1000점에서 시작해서, 강한 팀을 이기면 많이 오르고 약한 팀에 지면 많이 내려가요. 실력 밸런스 섞기에 이 점수를 써요.<br>티어는 전체 기간 MMR 순위가 우리 중 상위 몇 %인지를 실제 롤 티어 분포에 맞춘 거예요. 1판 이상 한 사람만 붙어요.</p>
     </div>
   </section>
 
   <!-- 분석 -->
   <section id="p-analysis" role="tabpanel" hidden>
     <div class="card">
-      <h2>한눈에 보기 <span class="r"><label>기간 <select class="period"><option value="all">전체</option><option value="30">최근 30일</option><option value="7">최근 7일</option><option value="1">최근 24시간</option></select></label> <label>최소 판수 <select id="minG"><option>1</option><option>2</option><option selected>3</option><option>5</option></select></label></span></h2>
+      <h2>한눈에 보기 <span class="r"><label>기간 <select class="period"><option value="all">전체</option><option value="session">이번 세션</option><option value="30">최근 30일</option><option value="7">최근 7일</option><option value="1">최근 24시간</option></select></label> <label>최소 판수 <select id="minG"><option>1</option><option>2</option><option selected>3</option><option>5</option></select></label></span></h2>
       <div id="hlBox"></div>
     </div>
     <div class="card">
@@ -250,7 +322,7 @@ async function copyText(text) {
 }
 
 // ---------- 상태 ----------
-const S = { players: [], matches: [], current: null, selected: new Set(), mode: 'random', example: false, editing: false, editTarget: null, period: 'all', recorded: null };
+const S = { players: [], matches: [], current: null, selected: new Set(), mode: 'random', example: false, editing: false, editTarget: null, period: 'all' };
 let EX = null;
 const D = () => S.example ? EX : S;
 const LS = 'lol-naejeon-v1';
@@ -263,7 +335,7 @@ function loadLocal() {
     if (Array.isArray(s.matches)) S.matches = s.matches.filter(validMatch);
     if (s.current && Array.isArray(s.current.blue)) S.current = s.current;
     if (Array.isArray(s.selected)) S.selected = new Set(s.selected);
-    if (s.mode === 'balance') S.mode = 'balance';
+    if (['balance', 'draft'].includes(s.mode)) S.mode = s.mode;
   } catch {}
 }
 function saveLocal() {
@@ -275,7 +347,7 @@ function validMatch(m) {
 }
 
 // ---------- 서버 저장 (/api/data) ----------
-let status = 'connecting', pin = '', ver = null;
+let status = 'connecting', pin = '', ver = null, writes = 0;
 try { pin = localStorage.getItem(LS + ':pin') || ''; } catch {}
 function setBadge(s) {
   if (s) status = s;
@@ -284,6 +356,7 @@ function setBadge(s) {
   b.querySelector('span').textContent = { connecting: '연결 중…', online: '모두와 공유 중', offline: '서버 연결 안 됨', nodb: 'DB 연결 필요 (README 3단계)' }[status];
 }
 async function api(action, body, quiet) {
+  writes++;
   for (let attempt = 0; attempt < 3; attempt++) {
     let res;
     try {
@@ -299,10 +372,11 @@ async function api(action, body, quiet) {
       continue;
     }
     if (res.status === 503) { setBadge('nodb'); if (!quiet) toast('아직 DB가 연결되지 않았어요. README의 3단계를 해 주세요.'); throw new Error('nodb'); }
-    if (res.status === 422) { toast("두 사람이 같은 판에서 뛴 기록이 있어서 합칠 수 없어요. 다른 이름을 써 주세요."); throw new Error("conflict"); }
+    if (res.status === 422) { toast('두 사람이 같은 판에서 뛰었거나 지금 팀에 같이 있어서 합칠 수 없어요. 다른 이름을 써 주세요.'); throw new Error('conflict'); }
     if (res.status === 409) { toast('기록이 너무 많아요. 오래된 기록을 지워 주세요.'); throw new Error('full'); }
     if (!res.ok) { if (!quiet) toast('저장에 실패했어요. 잠시 후 다시 눌러 주세요.'); throw new Error(String(res.status)); }
-    const d = await res.json(); applyServer(d); saveLocal(); return d;
+    // 저장 응답이 순서가 뒤바뀌어 오면 버전이 낮은 쪽은 버려요. 다음 새로고침이 맞춰 줘요.
+    const d = await res.json(); if (ver == null || !(d.ver < ver)) { applyServer(d); saveLocal(); } return d;
   }
   toast('비밀번호가 맞지 않아요.'); throw new Error('pin');
 }
@@ -311,19 +385,20 @@ function applyServer(d) {
   if (d.ver != null) ver = d.ver;
   if (Array.isArray(d.players)) S.players = d.players.filter(p => typeof p === 'string');
   if (Array.isArray(d.matches)) S.matches = d.matches.filter(validMatch);
-  if (d.current && Array.isArray(d.current.blue) && Array.isArray(d.current.red) && (!S.current || (d.current.t || 0) > (S.current.t || 0))) { S.current = d.current; S.recorded = null; }
+  if (d.current && Array.isArray(d.current.blue) && Array.isArray(d.current.red) && (!S.current || (d.current.t || 0) > (S.current.t || 0))) S.current = d.current;
 }
 async function pull() {
+  const w = writes;
   try {
     const res = await fetch('/api/data' + (ver != null ? '?v=' + encodeURIComponent(ver) : ''), { cache: 'no-store' });
     if (res.status === 503) return setBadge('nodb');
     if (!res.ok) throw new Error(String(res.status));
     const d = await res.json();
     if (d.same) return setBadge('online');
+    if (w !== writes) return; // 받는 사이에 저장한 게 있으면 이 응답은 낡았어요
     applyServer(d); saveLocal(); renderAll();
   } catch { setBadge('offline'); }
 }
-const guardWrite = () => true;
 // 명단은 바로 화면에 반영하고, 서버가 거절하면 서버 상태로 되돌려요.
 async function rosterAction(action, body) {
   let ok = true;
@@ -332,6 +407,7 @@ async function rosterAction(action, body) {
   return ok;
 }
 async function saveCurrent() {
+  if (S.example) return; // 예시 팀은 서버로 보내지 않아요
   saveLocal();
   if (S.current) api('current', { current: S.current }, true).catch(() => {});
 }
@@ -364,6 +440,39 @@ function computeStats(players, matches) {
 const pairs = (o, name) => Object.entries(o).filter(([k]) => k.split('\u0001')[0] === name).map(([k, v]) => ({ other: k.split('\u0001')[1], ...v }));
 const mmrOf = (st, n) => st.P[n]?.mmr ?? 1000;
 
+// ---------- 티어 ----------
+// 롤 솔로랭크 티어별 누적 인원. 우리끼리 MMR 순위가 상위 몇 %인지를 이 분포에 맞춰 티어를 붙여요.
+const TIERS = [
+  ['챌린저', 300], ['그랜드마스터', 1000], ['마스터', 31624],
+  ['다이아몬드 1', 57660], ['다이아몬드 2', 99173], ['다이아몬드 3', 118174], ['다이아몬드 4', 167488],
+  ['에메랄드 1', 272254], ['에메랄드 2', 338115], ['에메랄드 3', 428629], ['에메랄드 4', 603018],
+  ['플래티넘 1', 687643], ['플래티넘 2', 811239], ['플래티넘 3', 961756], ['플래티넘 4', 1208364],
+  ['골드 1', 1330349], ['골드 2', 1502608], ['골드 3', 1695863], ['골드 4', 1968116],
+  ['실버 1', 2107950], ['실버 2', 2278977], ['실버 3', 2449457], ['실버 4', 2644158],
+  ['브론즈 1', 2755224], ['브론즈 2', 2878506], ['브론즈 3', 2995050], ['브론즈 4', 3136383],
+  ['아이언 1', 3188646], ['아이언 2', 3218461], ['아이언 3', 3233380], ['아이언 4', 3247026],
+];
+const EMBLEM = { // [날개, 보석]
+  챌린저: ['#e9b44c', '#3bb8e6'], 그랜드마스터: ['#7c3a48', '#e3343f'], 마스터: ['#a85a42', '#9b4ddb'],
+  다이아몬드: ['#8b5cf6', '#a78bfa'], 에메랄드: ['#1fa64c', '#2cc760'], 플래티넘: ['#56b4e4', '#7cc6ee'],
+  골드: ['#d98a2b', '#e9a347'], 실버: ['#8c9ea8', '#a9b8c0'], 브론즈: ['#9a5a3c', '#b36a46'], 아이언: ['#5d5d66', '#73737d'],
+};
+// 1판 이상 한 사람만, 전체 기간 MMR로 순위를 매겨요. 같은 MMR은 같은 티어.
+function tierMap(st) {
+  const ranked = Object.values(st.P).filter(p => p.g), total = TIERS.at(-1)[1], out = {};
+  for (const p of ranked) {
+    const higher = ranked.filter(q => q.mmr > p.mmr).length, same = ranked.filter(q => q.mmr === p.mmr).length;
+    const top = (higher + same / 2) / ranked.length; // 상위 몇 % (0~1), 내 자리의 가운데 기준
+    out[p.name] = { name: TIERS.find(([, cum]) => top * total <= cum)[0], top: top * 100 };
+  }
+  return out;
+}
+function tierIcon(t) {
+  if (!t) return '';
+  const [w, g] = EMBLEM[t.name.split(' ')[0]], top = t.top < 1 ? t.top.toFixed(2) : Math.round(t.top);
+  return `<svg class="tier" style="--w:${w};--g:${g}" role="img"><title>${t.name} · 상위 ${top}%</title><use href="#emblem"/></svg>`;
+}
+
 // ---------- 예시 데이터 ----------
 function makeExample() {
   let seed = 20261022;
@@ -380,7 +489,7 @@ function makeExample() {
     if (side('태현') === side('하준')) diff -= 0.8 * side('태현');      // 태현+하준 상극
     matches.push({ id: 'ex' + i, t: t += (6 + r() * 30) * 36e5, blue, red, win: r() < 1 / (1 + Math.exp(-diff * 0.9)) ? 'blue' : 'red' });
   }
-  return { players: names, matches };
+  return { players: names, matches, current: null }; // 예시 모드의 팀 배치는 실제 팀(S.current)과 따로 둬요
 }
 function setExample(on) {
   S.example = on; if (on && !EX) EX = makeExample();
@@ -390,16 +499,24 @@ $('#exOff').onclick = () => setExample(false);
 
 // ---------- 명단 ----------
 function renderRoster() {
-  const box = $('#roster'), sel = S.selected;
-  const players = D().players;
-  box.innerHTML = players.length ? players.map((p, i) =>
-    `<button class="chip${(S.editing ? S.editTarget === p : sel.has(p)) ? ' on' : ''}" data-i="${i}" ${S.editing ? `aria-label="${esc(p)} 편집"` : `aria-pressed="${sel.has(p)}"`}>${esc(p)}${S.editing ? '<span class="x">✎</span>' : ''}</button>`).join('')
-    : '<span class="empty">아직 명단이 없어요. 아래에 친구들 이름을 한 번에 넣어 주세요.</span> <button class="btn ghost small" data-ex="1">예시 데이터로 미리보기</button>';
-  const n = players.filter(p => sel.has(p)).length;
-  $('#selCount').textContent = `선택 ${n}명` + (n >= 2 ? ` · ${Math.ceil(n / 2)} 대 ${Math.floor(n / 2)}` : '');
+  const sel = S.selected, players = D().players, T = tierMap(computeStats(players, D().matches));
+  // 이름 오른쪽 표시: 명단에선 ↓(아래로 넣기), 오늘 할 사람에선 ✕(빼기), 편집 중엔 ✎
+  const chip = (p, edit) => {
+    const [mark, cls, label] = edit ? ['✎', 'x', '편집'] : sel.has(p) ? ['✕', 'x', '빼기'] : ['↓', 'in', '오늘 할 사람에 넣기'];
+    return `<button class="chip${(edit ? S.editTarget === p : sel.has(p)) ? ' on' : ''}" data-i="${players.indexOf(p)}" aria-label="${esc(p)} ${label}">${tierIcon(T[p])}${esc(p)}<span class="${cls}" aria-hidden="true">${mark}</span></button>`;
+  };
+  // 위에서 아래로: 명단에서 누른 사람은 아래 '오늘 할 사람' 칸으로 내려가요(고른 순서대로). 편집할 땐 명단 전체를 보여요.
+  const today = [...sel].filter(p => players.includes(p)), rest = players.filter(p => !sel.has(p));
+  $('#roster').innerHTML = `<div class="chips">${!players.length
+    ? '<span class="empty">아직 명단이 없어요. 아래에 친구들 이름을 한 번에 넣어 주세요.</span> <button class="btn ghost small" data-ex="1">예시 데이터로 미리보기</button>'
+    : (S.editing ? players : rest).map(p => chip(p, S.editing)).join('') || '<span class="empty">모두 골랐어요. 아래에서 팀을 섞어 주세요.</span>'}</div>`;
+  $('#rosterCount').textContent = !players.length ? '' : S.editing ? `전체 ${players.length}명` : `남은 ${rest.length}명 / 전체 ${players.length}명`;
+  $('#today').innerHTML = today.map(p => chip(p, false)).join('') || '<span class="empty">위 명단에서 이름을 누르면 여기로 내려와요.</span>';
+  const n = today.length;
+  $('#selCount').textContent = `${n}명` + (n >= 2 ? ` · ${Math.ceil(n / 2)} 대 ${Math.floor(n / 2)}` : '');
   $('#shuffle').disabled = n < 2;
   $('#editToggle').setAttribute('aria-pressed', S.editing); $('#editToggle').textContent = S.editing ? '편집 끝' : '명단 편집';
-  $('#rosterNote').textContent = S.editing ? '이름을 누르면 이름을 바꾸거나 명단에서 뺄 수 있어요. 이미 있는 이름으로 바꾸면 두 사람 전적이 합쳐져요.' : '오늘 할 사람 이름을 눌러 골라요. 명단은 저장돼서 다음에도 그대로 있어요.';
+  $('#rosterNote').textContent = S.editing ? '이름을 누르면 이름을 바꾸거나 명단에서 뺄 수 있어요. 이미 있는 이름으로 바꾸면 두 사람 전적이 합쳐져요.' : '이름을 누르면 아래 \'오늘 할 사람\' 칸으로 내려가요. 거기서 다시 누르면 명단으로 돌아와요. 명단은 저장돼서 다음에도 그대로 있어요.';
   $('#editBox').innerHTML = S.editing && S.editTarget && !S.example
     ? `<form class="add editform" id="renameForm"><input id="renameInput" type="text" maxlength="16" value="${esc(S.editTarget)}" aria-label="새 이름"><button class="btn" type="submit">이름 바꾸기</button><button class="btn ghost" type="button" id="removeBtn">명단에서 빼기</button></form>` : '';
 }
@@ -414,16 +531,25 @@ $('#roster').addEventListener('click', async e => {
     S.selected.has(name) ? S.selected.delete(name) : S.selected.add(name); saveLocal(); renderRoster();
   }
 });
+$('#today').addEventListener('click', e => {
+  const b = e.target.closest('button[data-i]'); if (!b) return;
+  S.selected.delete(D().players[+b.dataset.i]); saveLocal(); renderRoster();
+});
 $('#editBox').addEventListener('submit', async e => {
   e.preventDefault();
   const from = S.editTarget, to = $('#renameInput').value.trim().slice(0, 16);
   if (!from || !to || to === from) return;
-  const merge = S.players.includes(to);
+  const cur = S.current, inCur = n => !!cur && (cur.blue.includes(n) || cur.red.includes(n));
+  if (inCur(from) && inCur(to)) return toast('두 사람이 지금 팀에 같이 있어서 합칠 수 없어요. 다른 이름을 써 주세요.');
+  const merge = S.players.includes(to), before = cur && structuredClone(cur), selected = new Set(S.selected);
   S.players = merge ? S.players.filter(p => p !== from) : S.players.map(p => p === from ? to : p);
   if (S.selected.delete(from)) S.selected.add(to);
-  if (S.current) for (const side of ['blue', 'red']) S.current[side] = [...new Set(S.current[side].map(p => p === from ? to : p))];
+  if (cur) for (const side of ['blue', 'red']) cur[side] = cur[side].map(p => p === from ? to : p);
   S.editTarget = null; renderAll();
-  if (await rosterAction('renamePlayer', { from, to })) toast(merge ? `${from}의 전적을 ${to}에 합쳤어요.` : `${from} → ${to}로 바꿨어요. 지난 전적도 같이 바뀌어요.`);
+  if (await rosterAction('renamePlayer', { from, to })) return toast(merge ? `${from}의 전적을 ${to}에 합쳤어요.` : `${from} → ${to}로 바꿨어요. 지난 전적도 같이 바뀌어요.`);
+  // 서버가 거절했으면 화면에서 바꿔 둔 팀과 선택도 되돌려요 (그 사이 다른 사람이 팀을 새로 짰으면 그대로 둬요)
+  if (S.current === cur) S.current = before;
+  S.selected = selected; saveLocal(); renderAll();
 });
 $('#editBox').addEventListener('click', e => {
   if (e.target.id !== 'removeBtn' || !S.editTarget) return;
@@ -435,7 +561,7 @@ $('#addForm').addEventListener('submit', e => {
   e.preventDefault();
   if (S.example) return toast('예시를 끄고 추가해 주세요.');
   const names = $('#addInput').value.split(/[,，\n]/).map(s => s.trim().slice(0, 16)).filter(Boolean);
-  if (!names.length || !guardWrite()) return;
+  if (!names.length) return;
   for (const n of names) if (!S.players.includes(n) && S.players.length < 60) { S.players.push(n); S.selected.add(n); }
   $('#addInput').value = ''; renderAll(); rosterAction('addPlayers', { names });
 });
@@ -446,11 +572,17 @@ $('#editToggle').onclick = () => { S.editing = !S.editing; S.editTarget = null; 
 // ---------- 팀 섞기 ----------
 function setMode(m) {
   S.mode = m; saveLocal();
-  $('#mRandom').setAttribute('aria-pressed', m === 'random'); $('#mBalance').setAttribute('aria-pressed', m === 'balance');
-  $('#modeNote').textContent = m === 'random' ? '완전 랜덤: 실력 상관없이 무작위로 나눠요.' : '실력 밸런스: MMR 평균이 가장 비슷한 조합 몇 개 중에서 무작위로 골라요. 판수가 쌓일수록 정확해져요.';
+  for (const [id, v] of [['mRandom', 'random'], ['mBalance', 'balance'], ['mDraft', 'draft']]) $('#' + id).setAttribute('aria-pressed', m === v);
+  $('#modeNote').textContent = {
+    random: '완전 랜덤: 실력 상관없이 무작위로 나눠요.',
+    balance: '실력 밸런스: MMR 평균이 가장 비슷한 조합 몇 개 중에서 무작위로 골라요. 판수가 쌓일수록 정확해져요.',
+    draft: '팀장 뽑기: MMR 1·2위가 팀장이 되고(바꿀 수 있어요), 동전 던지기로 순서를 정한 뒤 번갈아 한 명씩 끌어 와요.',
+  }[m];
+  $('#shuffle').textContent = m === 'draft' ? '팀장 뽑기 시작' : '팀 섞기';
 }
 $('#mRandom').onclick = () => setMode('random');
 $('#mBalance').onclick = () => setMode('balance');
+$('#mDraft').onclick = () => setMode('draft');
 
 function combos(n, k) { const out = [], cur = []; (function go(s) { if (cur.length === k) { out.push([...cur]); return; } for (let i = s; i < n; i++) { cur.push(i); go(i + 1); cur.pop(); } })(0); return out; }
 function makeTeams(names, mode, st) {
@@ -467,62 +599,245 @@ function makeTeams(names, mode, st) {
   return rnd(2) ? { blue: A, red: B } : { blue: B, red: A };
 }
 function renderTeams(shuffling) {
-  const box = $('#teamsBox'), c = S.current, st = computeStats(D().players, D().matches);
-  if (!c || !c.blue.length) { box.innerHTML = '<p class="empty">선수를 고르고 팀 섞기를 누르면 블루팀과 레드팀이 여기에 나와요.</p>'; $('#teamHint').textContent = ''; return; }
-  const li = (p, side) => { const s = st.P[p]; return `<li><button data-p="${esc(p)}" data-side="${side}" title="눌러서 상대 팀으로 옮기기"><span class="nm">${esc(p)}</span><span class="st">${s?.g ? `${pct(s.w, s.g)}% · ${s.g}판` : '첫 판'}</span></button></li>`; };
+  if (drag?.on || coinBusy) return; // 끌거나 동전이 도는 동안엔 다시 그리지 않아요. 끝나면 새로 그려요.
+  if (S.draft) return renderDraft();
+  const box = $('#teamsBox'), c = D().current, st = computeStats(D().players, D().matches);
+  if (!c || !c.blue.length && !c.red.length) { box.innerHTML = '<p class="empty">사람을 고르고 팀 섞기를 누르면 1팀(블루)과 2팀(레드)이 여기에 나와요.</p>'; return; }
+  const rec = recordedMatch();
+  const T = tierMap(st), ss = computeStats([], sessionMatches());
+  // 이름 칸은 끌어서 옮기는 손잡이, 옆 화살표 버튼은 눌러서 상대 팀으로 보내기예요.
+  const swapBtn = (p, side) => rec || shuffling ? ''
+    : `<button class="swap" data-swap="${esc(p)}" data-side="${side}" title="상대 팀으로" aria-label="${esc(p)} ${side === 'blue' ? '2팀' : '1팀'}으로 보내기">${side === 'blue' ? '→' : '←'}</button>`;
+  const li = (p, side) => { const s = st.P[p], x = ss.P[p]; return `<li><div class="pl" data-p="${esc(p)}" data-side="${side}"><span class="who">${tierIcon(T[p])}<span class="nm">${esc(p)}</span></span><span class="st">${s?.g ? `${pct(s.w, s.g)}% · ${s.g}판` : '첫 판'}${x?.g ? `<br><span class="sess">이번 ${x.w}승 ${x.g - x.w}패</span>` : ''}</span></div>${swapBtn(p, side)}</li>`; };
   const avg = t => t.reduce((s, p) => s + mmrOf(st, p), 0) / (t.length || 1);
-  const eb = c.red.length ? 1 / (1 + Math.pow(10, (avg(c.red) - avg(c.blue)) / 400)) : 1;
+  const eb = 1 / (1 + Math.pow(10, (avg(c.red) - avg(c.blue)) / 400)), both = c.blue.length && c.red.length;
+  // 한쪽 팀을 다 비워도 빈 팀 칸은 남겨서 다시 옮겨 올 수 있게 해요.
+  const ul = side => `<ul>${c[side].map(p => li(p, side)).join('') || `<li class="empty-team">비었어요. ${side === 'blue' ? '←' : '→'} 버튼이나 끌어서 옮겨 오세요.</li>`}</ul>`;
+  const mmr = side => c[side].length ? `MMR ${Math.round(avg(c[side]))}` : '';
   const bp = Math.round(eb * 100), canRec = !S.example && c.blue.length && c.red.length;
+  // 카톡용 복사는 팀 바로 위에 둬요. 섞는 동안에도 자리를 지켜서 화면이 들썩이지 않게 해요.
   box.innerHTML = `
+    <div class="row" style="margin-top:16px"><button class="btn ghost small" id="copyTeams"${shuffling ? ' disabled' : ''}>카톡용 복사</button>${rec ? '' : '<span class="note" style="margin:0">화살표를 누르면 상대 팀으로 가요. 이름을 끌어서 다른 사람 위에 놓으면 둘이 자리를 바꿔요(폰은 꾹 눌렀다 끌기).</span>'}</div>
     <div class="teams${shuffling ? ' shuffling' : ''}">
-      <div class="team blue"><h3>블루팀 <small>MMR ${Math.round(avg(c.blue))}</small></h3><ul>${c.blue.map(p => li(p, 'blue')).join('')}</ul></div>
-      <div class="team red"><h3>레드팀 <small>MMR ${Math.round(avg(c.red))}</small></h3><ul>${c.red.map(p => li(p, 'red')).join('')}</ul></div>
+      <div class="team blue"><h3>${TEAM.blue} <small>${mmr('blue')}</small></h3>${ul('blue')}</div>
+      <div class="team red"><h3>${TEAM.red} <small>${mmr('red')}</small></h3>${ul('red')}</div>
     </div>
-    <div class="odds"><div class="bar"><i class="b" style="width:${bp}%"></i><i class="r" style="width:${100 - bp}%"></i></div>
-      <div class="lbl"><span>블루 예상 승률 ${bp}%</span><span>레드 ${100 - bp}%</span></div></div>
-    ${shuffling ? '' : '<div class="row" style="margin-top:10px"><button class="btn ghost small" id="copyTeams">카톡용 복사</button></div>'}
-    ${shuffling ? '' : S.recorded ? `
-      <div class="recorded"><span>기록됨: <b style="color:var(--${S.recorded.win})">${S.recorded.win === 'blue' ? '블루' : '레드'}팀 승리</b></span>
-        <span class="row"><button class="btn ghost small" id="undo">되돌리기</button><button class="btn small" id="again">같은 팀으로 한 판 더</button></span></div>` : `
-      <div class="result"><button class="win blue" data-win="blue" ${canRec ? '' : 'disabled'}>블루팀 승리</button><button class="win red" data-win="red" ${canRec ? '' : 'disabled'}>레드팀 승리</button></div>`}`;
-  $('#teamHint').textContent = shuffling ? '섞는 중…' : '이름을 누르면 상대 팀으로 옮겨져요';
+    ${both ? `<div class="odds"><div class="bar"><i class="b" style="width:${bp}%"></i><i class="r" style="width:${100 - bp}%"></i></div>
+      <div class="lbl"><span>1팀 예상 승률 ${bp}%</span><span>2팀 ${100 - bp}%</span></div></div>` : ''}    ${shuffling ? '' : rec ? `
+      <div class="recorded ${rec.win}">
+        <div class="rec-head"><span class="k">기록됨</span><b>${TEAM[rec.win]} 승리</b><button class="btn ghost small" id="undo">↶ 되돌리기</button></div>
+        <div class="rec-actions"><button class="big primary" id="reshuffle">새로 섞기</button><button class="big" id="again">같은 팀으로 한 판 더</button></div></div>` : `
+      <div class="result"><button class="win blue" data-win="blue" ${canRec ? '' : 'disabled'}>${TEAM.blue} 승리</button><button class="win red" data-win="red" ${canRec ? '' : 'disabled'}>${TEAM.red} 승리</button></div>`}`;
 }
+const TEAM = { blue: '1팀 블루', red: '2팀 레드' };
+// 판(round): 팀을 섞거나 옮기거나 '한 판 더'를 누를 때마다 새로 생겨요. 예전 팀 배치에는 round가 없어서 t를 대신 써요.
+const roundOf = c => c.round ?? c.t;
+const newRound = c => { c.t = c.round = Date.now(); };
+// 지금 판이 이미 기록됐는지는 서버 기록에서 찾아요. 그래서 다른 사람이 기록해도 내 화면이 같이 '기록됨'으로 바뀌어요.
+const recordedMatch = () => { const c = S.current, r = c && roundOf(c); return !S.example && r ? S.matches.find(m => m.round === r) : null; };
 $('#shuffle').onclick = () => {
   const names = D().players.filter(p => S.selected.has(p)); if (names.length < 2) return;
+  if (S.mode === 'draft') return startDraft(names);
+  S.draft = null;
   const st = computeStats(D().players, D().matches), btn = $('#shuffle'); btn.disabled = true;
-  let k = 0; const frames = reduceMotion ? 0 : 7;
+  let k = 0; const frames = reduceMotion ? 0 : 7, d = D();
   const tick = () => {
-    S.current = makeTeams(names, k < frames ? 'random' : S.mode, st); S.recorded = null;
+    d.current = makeTeams(names, k < frames ? 'random' : S.mode, st);
     if (k++ < frames) { renderTeams(true); setTimeout(tick, 75); return; }
-    S.current.t = Date.now(); renderTeams(); btn.disabled = false; saveCurrent();
+    newRound(d.current); renderTeams(); btn.disabled = false; saveCurrent();
   };
   tick();
 };
 $('#teamsBox').addEventListener('click', async e => {
-  if (e.target.id === 'copyTeams' && S.current) return copyText(`[블루팀] ${S.current.blue.join(', ')}\n[레드팀] ${S.current.red.join(', ')}`);
-  const mv = e.target.closest('button[data-p]');
-  if (mv && !S.recorded) {
-    const p = mv.dataset.p, from = mv.dataset.side, to = from === 'blue' ? 'red' : 'blue';
-    S.current[from] = S.current[from].filter(x => x !== p); S.current[to].push(p); S.current.t = Date.now();
+  if (Date.now() < dropClickUntil) return; // 끌어서 놓은 직후 따라오는 클릭은 무시해요
+  if (S.draft) return draftClick(e);
+  const c = D().current, rec = recordedMatch();
+  if (e.target.id === 'copyTeams' && c) return copyText(`[${TEAM.blue}] ${c.blue.join(', ')}\n[${TEAM.red}] ${c.red.join(', ')}`);
+  const mv = e.target.closest('button[data-swap]');
+  if (mv && !rec) {
+    const p = mv.dataset.swap, from = mv.dataset.side, to = from === 'blue' ? 'red' : 'blue';
+    c[from] = c[from].filter(x => x !== p); c[to].push(p); newRound(c);
     renderTeams(); saveCurrent(); return;
   }
   const w = e.target.closest('button[data-win]');
-  if (w) {
-    if (!guardWrite()) return;
-    const m = { t: Date.now(), blue: [...S.current.blue], red: [...S.current.red], win: w.dataset.win };
+  if (w && !S.example) {
+    if (!roundOf(c)) { newRound(c); saveCurrent(); }
+    const m = { t: Date.now(), blue: [...c.blue], red: [...c.red], win: w.dataset.win, round: roundOf(c) };
     w.disabled = true;
-    try { const { id, dup } = await addMatch(m); S.recorded = { id, win: m.win }; toast(dup ? '방금 같은 결과가 이미 기록돼 있어서 한 번만 남겼어요.' : `${m.win === 'blue' ? '블루' : '레드'}팀 승리로 기록했어요.`); }
-    catch { w.disabled = false; return; }
+    try {
+      const { dup } = await addMatch(m), saved = recordedMatch();
+      toast(!dup ? `${TEAM[m.win]} 승리로 기록했어요.` : saved ? `이 판은 이미 ${TEAM[saved.win]} 승리로 기록돼 있어요.` : '이 판은 이미 기록돼 있어요.');
+    } catch { w.disabled = false; return; }
     renderAll(); return;
   }
-  if (e.target.id === 'undo' && S.recorded) {
-    try { await deleteMatch(S.recorded.id); S.recorded = null; toast('방금 기록을 지웠어요.'); renderAll(); } catch {}
+  if (e.target.id === 'undo' && rec) {
+    try { await deleteMatch(rec.id); toast('방금 기록을 지웠어요.'); renderAll(); } catch {}
   }
-  if (e.target.id === 'again') { S.recorded = null; renderTeams(); }
+  if (e.target.id === 'again') { newRound(c); renderTeams(); saveCurrent(); } // 새 판이라 같은 결과도 따로 기록돼요
+  if (e.target.id === 'reshuffle') $('#shuffle').click();
 });
+// ---------- 팀 끌어서 옮기기 ----------
+// 다른 사람 위에 놓으면 둘이 자리를 바꾸고(상대 팀이면 팀이 바뀌어요), 상대 팀 빈 곳에 놓으면 그 팀으로 옮겨요.
+// 마우스는 바로 끌면 되고, 폰은 0.25초 꾹 누른 다음 끌어요. 그냥 쓸어 넘기면 화면이 스크롤돼요.
+let drag = null, dropClickUntil = 0;
+function dropTarget(x, y) {
+  const el = document.elementFromPoint(x, y);
+  if (drag.pick) return el?.closest('#teamsBox [data-team]') || null; // 팀장 뽑기: 남은 사람을 팀 칸에 놓기
+  return el?.closest('#teamsBox [data-p]') || el?.closest('#teamsBox .team') || null;
+}
+function markDrop(t) {
+  document.querySelectorAll('#teamsBox .drop').forEach(x => x.classList.remove('drop'));
+  if (!t || t === drag.b) return;
+  if (t.matches('[data-p]')) t.closest('li').classList.add('drop');
+  else if (!t.classList.contains(drag.side)) t.classList.add('drop');
+}
+function startDrag() {
+  drag.on = true; (drag.b.closest('li') || drag.b).classList.add('dragging');
+  drag.ghost = Object.assign(document.createElement('div'), { className: 'drag-ghost', innerHTML: (drag.b.querySelector('.who') || drag.b).innerHTML });
+  document.body.append(drag.ghost); moveGhost(drag.x, drag.y);
+  navigator.vibrate?.(15);
+}
+function moveGhost(x, y) { drag.ghost.style.transform = `translate(${x + 12}px, ${y - 18}px)`; markDrop(dropTarget(x, y)); }
+function endDrag(e) {
+  const d = drag; drag = null; clearTimeout(d.timer);
+  if (!d.on) return;
+  d.ghost.remove(); dropClickUntil = Date.now() + 400;
+  drag = d; const t = e && dropTarget(e.clientX, e.clientY), c = D().current; drag = null;
+  if (d.pick) return t ? draftPick(d.p, t.dataset.team) : renderTeams();
+  if (t && c && t !== d.b && [...c.blue, ...c.red].includes(d.p)) {
+    const from = c.blue.includes(d.p) ? 'blue' : 'red';
+    if (t.matches('[data-p]') && [...c.blue, ...c.red].includes(t.dataset.p)) {
+      const q = t.dataset.p, to = c.blue.includes(q) ? 'blue' : 'red', i = c[from].indexOf(d.p), j = c[to].indexOf(q);
+      c[from][i] = q; c[to][j] = d.p; // 같은 팀이면 순서만, 다른 팀이면 팀이 바뀌어요
+    } else if (t.matches('.team') && !t.classList.contains(from)) {
+      const to = from === 'blue' ? 'red' : 'blue';
+      c[from] = c[from].filter(x => x !== d.p); c[to].push(d.p);
+    }
+    newRound(c); saveCurrent();
+  }
+  renderTeams();
+}
+$('#teamsBox').addEventListener('pointerdown', e => {
+  const b = e.target.closest('[data-p], [data-pick]'), pick = !!b?.dataset.pick;
+  if (!b || drag || (!pick && recordedMatch()) || (e.pointerType === 'mouse' && e.button !== 0)) return;
+  drag = { b, pick, p: pick ? b.dataset.pick : b.dataset.p, side: b.dataset.side, x: e.clientX, y: e.clientY, id: e.pointerId, on: false, touch: e.pointerType !== 'mouse' };
+  if (drag.touch) drag.timer = setTimeout(() => drag && !drag.on && startDrag(), 250);
+});
+document.addEventListener('pointermove', e => {
+  if (!drag || e.pointerId !== drag.id) return;
+  if (!drag.on) {
+    if (Math.hypot(e.clientX - drag.x, e.clientY - drag.y) < 6) return;
+    if (drag.touch) return endDrag(); // 꾹 누르기 전에 움직였으면 스크롤이에요
+    startDrag();
+  }
+  moveGhost(e.clientX, e.clientY);
+});
+document.addEventListener('pointerup', e => { if (drag && e.pointerId === drag.id) endDrag(e); });
+document.addEventListener('pointercancel', e => { if (drag && e.pointerId === drag.id) endDrag(); });
+document.addEventListener('touchmove', e => { if (drag?.on) e.preventDefault(); }, { passive: false }); // 끄는 동안 화면이 스크롤되지 않게
+$('#teamsBox').addEventListener('contextmenu', e => { if (e.target.closest('[data-p], [data-pick]')) e.preventDefault(); });
+
+// ---------- 팀장 뽑기 ----------
+// 1) 시작하면 오늘 할 사람 중 MMR 1·2위가 팀장(바꿀 수 있어요) 2) 동전 던지기나 직접 골라서 먼저 뽑을 팀 정하기
+// 3) 번갈아 한 명씩: 남은 사람을 끌어서 팀 칸에 놓거나 눌러서 지금 차례 팀에 넣어요. 다 뽑으면 그대로 팀 배치가 돼요.
+// 뽑는 과정은 이 기기에서만 진행돼요. 끝나면 팀 배치가 저장돼서 다른 사람 화면에도 나와요.
+let coinBusy = false;
+const other = side => side === 'blue' ? 'red' : 'blue';
+const draftPool = d => d.names.filter(p => p !== d.cap.blue && p !== d.cap.red && !d.picks.blue.includes(p) && !d.picks.red.includes(p));
+const draftTurn = d => !d.first ? null : d.history.length % 2 ? other(d.first) : d.first; // 먼저 뽑는 팀부터 번갈아
+function startDraft(names) {
+  const st = computeStats(D().players, D().matches), byMmr = [...names].sort((a, b) => mmrOf(st, b) - mmrOf(st, a));
+  const [a, b] = rnd(2) ? [byMmr[0], byMmr[1]] : [byMmr[1], byMmr[0]]; // 1·2위 중 누가 1팀일지는 무작위
+  S.draft = { names, cap: { blue: a, red: b }, picks: { blue: [], red: [] }, history: [], first: null, coin: null };
+  renderTeams();
+  $('#teamsBox').scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' });
+}
+function draftPick(p, side) {
+  const d = S.draft, turn = d && draftTurn(d);
+  if (!turn || !draftPool(d).includes(p)) return renderTeams();
+  if (side && side !== turn) { toast(`지금은 ${TEAM[turn]} 차례예요.`); return renderTeams(); }
+  d.picks[turn].push(p); d.history.push(turn);
+  const pool = draftPool(d);
+  if (pool.length === 1) { const t = draftTurn(d); d.picks[t].push(pool[0]); d.history.push(t); } // 마지막 한 명은 자동으로
+  if (!draftPool(d).length) return finishDraft();
+  renderTeams();
+}
+function finishDraft() {
+  const d = S.draft, cur = { blue: [d.cap.blue, ...d.picks.blue], red: [d.cap.red, ...d.picks.red] };
+  S.draft = null; D().current = cur; newRound(cur);
+  renderTeams(); saveCurrent(); toast('팀이 다 짜였어요. 끝나면 이긴 팀을 눌러 주세요.');
+}
+function coinFlip() {
+  const d = S.draft; if (!d || coinBusy) return;
+  d.coin = rnd(2) ? 'blue' : 'red';
+  if (reduceMotion) { d.first = d.coin; return renderTeams(); }
+  d.flipping = true; renderTeams(); coinBusy = true; // 동전이 1.2초 돌다가 결과 면에서 멈춰요
+  setTimeout(() => {
+    coinBusy = false; d.flipping = false; renderTeams();
+    setTimeout(() => { if (S.draft === d && !d.first) { d.first = d.coin; renderTeams(); } }, 800);
+  }, 1200);
+}
+function draftClick(e) {
+  const d = S.draft, t = e.target;
+  if (t.id === 'flip') return coinFlip();
+  if (t.closest('[data-first]')) { d.first = t.closest('[data-first]').dataset.first; d.coin = null; return renderTeams(); }
+  const chip = t.closest('[data-pick]'); if (chip) return draftPick(chip.dataset.pick);
+  if (t.id === 'draftUndo') { // 한 명씩 되돌리고, 다 되돌리면 순서 정하기로
+    if (d.history.length) d.picks[d.history.pop()].pop(); else { d.first = null; d.coin = null; }
+    return renderTeams();
+  }
+  if (t.id === 'draftCancel') { S.draft = null; renderTeams(); }
+}
+$('#teamsBox').addEventListener('change', e => {
+  const s = e.target.closest('select[data-cap]'), d = S.draft; if (!s || !d) return;
+  const side = s.dataset.cap;
+  if (d.cap[other(side)] === s.value) d.cap[other(side)] = d.cap[side]; // 상대 팀장을 고르면 둘이 바꿔요
+  d.cap[side] = s.value; renderTeams();
+});
+function renderDraft() {
+  const d = S.draft, box = $('#teamsBox'), st = computeStats(D().players, D().matches), T = tierMap(st);
+  const byMmr = [...d.names].sort((a, b) => mmrOf(st, b) - mmrOf(st, a));
+  const info = p => { const s = st.P[p]; return s?.g ? `${pct(s.w, s.g)}% · MMR ${Math.round(s.mmr)}` : '첫 판'; };
+  const coin = d.coin ? `<div class="coin ${d.flipping ? 'flip-' + d.coin : d.coin}"><i class="face b">1팀</i><i class="face r">2팀</i></div>` : '<div class="coin-q">?</div>';
+  const head = `<div class="row draft-bar"><b class="draft-title">팀장 뽑기</b><button class="btn ghost small" id="draftUndo"${d.first ? '' : ' hidden'}>↶ 되돌리기</button><button class="btn ghost small" id="draftCancel">그만하기</button></div>`;
+  if (!d.first) {
+    const sel = side => `<select data-cap="${side}" aria-label="${TEAM[side]} 팀장">${byMmr.map(p => `<option value="${esc(p)}"${p === d.cap[side] ? ' selected' : ''}>${esc(p)} (${info(p)})</option>`).join('')}</select>`;
+    box.innerHTML = `<div class="draft">${head}
+      <div class="draft-caps"><label class="cap blue"><span>1팀 팀장</span>${sel('blue')}</label><label class="cap red"><span>2팀 팀장</span>${sel('red')}</label></div>
+      <p class="note" style="margin:0">MMR이 가장 높은 두 명을 팀장으로 골라 뒀어요. 다른 사람이 하고 싶으면 눌러서 바꾸세요.</p>
+      <div class="draft-order">${coin}
+        <div class="draft-order-r"><b>누가 먼저 뽑을까요?</b>
+          <div class="row"><button class="btn gold" id="flip"${d.flipping ? ' disabled' : ''}>동전 던지기</button><button class="btn ghost small" data-first="blue">1팀 먼저</button><button class="btn ghost small" data-first="red">2팀 먼저</button></div>
+          ${d.coin && !d.flipping ? `<p class="coin-res" style="color:var(--${d.coin})">${TEAM[d.coin]} 먼저 뽑아요!</p>` : ''}</div></div></div>`;
+    return;
+  }
+  const turn = draftTurn(d), pool = draftPool(d).sort((a, b) => mmrOf(st, b) - mmrOf(st, a));
+  const row = (p, cap) => `<li><div class="pl"><span class="who">${tierIcon(T[p])}<span class="nm">${esc(p)}</span>${cap ? '<span class="capb">팀장</span>' : ''}</span><span class="st">${info(p)}</span></div></li>`;
+  const team = side => `<div class="team ${side} draft-team${turn === side ? ' turn' : ''}" data-team="${side}"><h3>${TEAM[side]} <small>${turn === side ? '뽑을 차례' : ''}</small></h3>
+    <ul>${row(d.cap[side], true)}${d.picks[side].map(p => row(p)).join('')}</ul></div>`;
+  box.innerHTML = `<div class="draft">${head}
+    <p class="draft-turn" style="color:var(--${turn})">${TEAM[turn]} 팀장 ${esc(d.cap[turn])} 차례 <small>${d.history.length + 1}번째 · 남은 ${pool.length}명</small></p>
+    <div class="teams">${team('blue')}${team('red')}</div>
+    <div class="pool"><p class="pick-h">남은 사람 · 끌어서 팀 칸에 놓거나, 누르면 ${TEAM[turn]}로 가요</p>
+      <div class="chips">${pool.map(p => `<button class="chip" data-pick="${esc(p)}" aria-label="${esc(p)} ${TEAM[turn]}로 뽑기">${tierIcon(T[p])}${esc(p)}<small>${info(p)}</small></button>`).join('')}</div></div></div>`;
+}
 
 // ---------- 전적 탭 ----------
-const inPeriod = m => S.period === 'all' || m.t >= Date.now() - Number(S.period) * 864e5;
+// 경기 사이가 4시간 넘게 비면 새 세션이에요. 마지막 경기 뒤로 4시간이 지나면 이번 세션은 끝난 걸로 봐요.
+const SESSION_GAP = 4 * 36e5;
+function sessionFrom(matches) {
+  const ts = matches.map(m => m.t).sort((a, b) => b - a);
+  if (!ts.length || Date.now() - ts[0] > SESSION_GAP) return Infinity;
+  let i = 0; while (i + 1 < ts.length && ts[i] - ts[i + 1] <= SESSION_GAP) i++;
+  return ts[i];
+}
+const sessionMatches = () => { const ms = D().matches, from = sessionFrom(ms); return ms.filter(m => m.t >= from); };
+function periodMatches() {
+  const ms = D().matches;
+  if (S.period === 'session') return sessionMatches();
+  const from = S.period === 'all' ? 0 : Date.now() - Number(S.period) * 864e5;
+  return ms.filter(m => m.t >= from);
+}
 const NO_PERIOD = '<p class="empty">이 기간에는 기록된 경기가 없어요. 기간을 넓혀 보세요.</p>';
 function streak(form) {
   if (!form.length) return '';
@@ -532,20 +847,35 @@ function streak(form) {
 }
 let sortKey = 'rate';
 function renderStats() {
-  const { players } = D(), matches = D().matches.filter(inPeriod), st = computeStats(players, matches);
+  const { players } = D(), matches = periodMatches(), st = computeStats(players, matches), T =tierMap(computeStats(players, D().matches));
   $('#statsMeta').textContent = `총 ${matches.length}판`;
   const rows = Object.values(st.P).filter(p => p.g || players.includes(p.name));
   if (!matches.length) { $('#statsBox').innerHTML = D().matches.length ? NO_PERIOD : emptyStats(); return; }
   const key = { rate: p => p.g ? p.w / p.g + p.g * 1e-4 : -1, g: p => p.g, mmr: p => p.mmr, name: p => 0 }[sortKey];
   rows.sort((a, b) => sortKey === 'name' ? a.name.localeCompare(b.name, 'ko') : key(b) - key(a));
   const th = (k, label, cls = '') => `<th class="${cls}"><button data-sort="${k}" aria-pressed="${sortKey === k}">${label}</button></th>`;
-  $('#statsBox').innerHTML = `<div class="tbl-wrap"><table><thead><tr><th></th>${th('name', '선수')}${th('g', '판', 'num')}<th class="num">승-패</th>${th('rate', '승률')}${th('mmr', 'MMR', 'num')}<th>최근 5판</th></tr></thead><tbody>${
-    rows.map((p, i) => `<tr><td class="rank">${p.g ? i + 1 : ''}</td><td><b>${esc(p.name)}</b></td><td class="num">${p.g}</td><td class="num">${p.w}-${p.g - p.w}</td>
+  $('#statsBox').innerHTML = `<div class="tbl-wrap"><table><thead><tr><th></th>${th('name', '선수')}<th>티어</th>${th('g', '판', 'num')}<th class="num">승-패</th>${th('rate', '승률')}${th('mmr', 'MMR', 'num')}<th>최근 5판</th></tr></thead><tbody>${
+    rows.map((p, i) => `<tr><td class="rank">${p.g ? i + 1 : ''}</td><td>${tierIcon(T[p.name])}<b>${esc(p.name)}</b></td><td class="tiername">${T[p.name]?.name ?? '—'}</td><td class="num">${p.g}</td><td class="num">${p.w}-${p.g - p.w}</td>
       <td><div class="rate"><span style="width:38px;text-align:right">${p.g ? pct(p.w, p.g) + '%' : '—'}</span><span class="track"><i style="width:${pct(p.w, p.g)}%;background:${p.w / p.g >= .5 ? 'var(--good)' : 'var(--bad)'}"></i></span></div></td>
       <td class="num">${p.g ? Math.round(p.mmr) : '—'}</td><td><span class="form">${p.form.slice(-5).map(f => `<i class="${f ? 'w' : 'l'}">${f ? '승' : '패'}</i>`).join('')}</span>${streak(p.form)}</td></tr>`).join('')
   }</tbody></table></div>`;
 }
 $('#statsBox').addEventListener('click', e => { const b = e.target.closest('button[data-sort]'); if (b) { sortKey = b.dataset.sort; renderStats(); } });
+
+// 내전 탭 맨 아래 '이번 세션' 표: 오늘 모여서 한 판들만 따로 세요. 많이 이긴 순.
+function renderSession() {
+  const ms = sessionMatches(), card = $('#sessionCard');
+  card.hidden = !ms.length; if (!ms.length) return;
+  const st = computeStats([], ms), T = tierMap(computeStats(D().players, D().matches));
+  const rows = Object.values(st.P).sort((a, b) => b.w - a.w || (a.g - a.w) - (b.g - b.w) || a.name.localeCompare(b.name, 'ko'));
+  const d = new Date(Math.min(...ms.map(m => m.t))), p2 = n => String(n).padStart(2, '0');
+  $('#sessionMeta').textContent = `${ms.length}판 · ${d.getMonth() + 1}/${d.getDate()} ${p2(d.getHours())}:${p2(d.getMinutes())}부터`;
+  $('#sessionBox').innerHTML = `<div class="tbl-wrap"><table><thead><tr><th></th><th>선수</th><th class="num">승-패</th><th>승률</th><th>흐름</th></tr></thead><tbody>${
+    rows.map((p, i) => `<tr><td class="rank">${i + 1}</td><td>${tierIcon(T[p.name])}<b>${esc(p.name)}</b></td><td class="num">${p.w}-${p.g - p.w}</td>
+      <td><div class="rate"><span style="width:38px;text-align:right">${pct(p.w, p.g)}%</span>${bar(p.w / p.g)}</div></td>
+      <td><span class="form">${p.form.slice(-8).map(f => `<i class="${f ? 'w' : 'l'}">${f ? '승' : '패'}</i>`).join('')}</span>${streak(p.form)}</td></tr>`).join('')
+  }</tbody></table></div>`;
+}
 const emptyStats = () => `<p class="empty">아직 기록된 경기가 없어요. 내전 탭에서 팀을 섞고 이긴 팀을 누르면 여기에 쌓여요.</p><button class="btn ghost small" data-ex="1">예시 데이터로 미리보기</button>`;
 document.addEventListener('click', e => { if (e.target.closest('[data-ex]')) setExample(true); });
 
@@ -553,7 +883,7 @@ document.addEventListener('click', e => { if (e.target.closest('[data-ex]')) set
 let focus = null;
 const bar = r => `<span class="track"><i style="width:${Math.round(r * 100)}%;background:${r >= .5 ? 'var(--good)' : 'var(--bad)'}"></i></span>`;
 function renderAnalysis() {
-  const { players } = D(), matches = D().matches.filter(inPeriod), st = computeStats(players, matches), minG = +$('#minG').value;
+  const { players } = D(), matches = periodMatches(), st = computeStats(players, matches), minG = +$('#minG').value;
   if (!matches.length) { $('#hlBox').innerHTML = D().matches.length ? NO_PERIOD : emptyStats(); $('#pickPlayer').innerHTML = ''; $('#playerBox').innerHTML = ''; $('#matrixBox').innerHTML = ''; return; }
   const active = Object.values(st.P).filter(p => p.g).sort((a, b) => b.g - a.g);
   const allPairs = (o, filt) => Object.entries(o).map(([k, v]) => { const [a, b] = k.split('\u0001'); return { a, b, ...v, r: v.w / v.g }; }).filter(x => x.g >= minG && filt(x));
@@ -573,7 +903,7 @@ function renderAnalysis() {
   const me = st.P[focus];
   const opp = pairs(st.vs, focus).filter(x => x.g >= minG).map(x => ({ ...x, r: x.w / x.g }));
   const mates = pairs(st.duo, focus).filter(x => x.g >= minG).map(x => ({ ...x, r: x.w / x.g }));
-  const list = (title, desc, arr, recLabel) => `<div class="plist"><h4>${title}</h4><p>${desc}</p>${arr.length ? `<ol>${arr.map(x =>
+  const list = (title, desc, arr, recLabel) =>`<div class="plist"><h4>${title}</h4><p>${desc}</p>${arr.length ? `<ol>${arr.map(x =>
     `<li><span class="nm">${esc(x.other)}</span><span class="rec">${recLabel} ${x.g}판 ${x.w}승 ${x.g - x.w}패 · ${pct(x.w, x.g)}%</span>${bar(x.r)}</li>`).join('')}</ol>` : `<p>최소 ${minG}판을 채운 상대가 없어요.</p>`}</div>`;
   const byLow = [...opp].sort((a, b) => a.r - b.r || b.g - a.g), byHigh = [...opp].sort((a, b) => b.r - a.r || b.g - a.g);
   const mHigh = [...mates].sort((a, b) => b.r - a.r || b.g - a.g), mLow = [...mates].sort((a, b) => a.r - b.r || b.g - a.g);
@@ -583,8 +913,7 @@ function renderAnalysis() {
       ${list('천적', '상대 팀일 때 내가 잘 지는 사람', byLow.filter(x => x.r < .5).slice(0, 3), '맞대결')}
       ${list('먹잇감', '상대 팀일 때 내가 잘 이기는 사람', byHigh.filter(x => x.r > .5).slice(0, 3), '맞대결')}
       ${list('찰떡 듀오', '같은 팀일 때 승률이 높은 사람', mHigh.filter(x => x.r > .5).slice(0, 3), '같은 팀')}
-      ${list('안 맞는 듀오', '같은 팀일 때 승률이 낮은 사람', mLow.filter(x => x.r < .5).slice(0, 3), '같은 팀')}
-    </div>` : '';
+      ${list('안 맞는 듀오', '같은 팀일 때 승률이 낮은 사람', mLow.filter(x => x.r < .5).slice(0, 3), '같은 팀')}    </div>` : '';
 
   const names = active.map(p => p.name);
   const cell = (a, b) => {
@@ -606,8 +935,8 @@ function renderLog() {
   $('#logMeta').textContent = `총 ${ms.length}판`;
   const fmt = t => { const d = new Date(t), p = n => String(n).padStart(2, '0'); return `${d.getMonth() + 1}/${d.getDate()} ${p(d.getHours())}:${p(d.getMinutes())}`; };
   $('#logBox').innerHTML = ms.length ? ms.map(m => `<li><time>${fmt(m.t)}</time><div class="sides">
-      <span class="${m.win === 'blue' ? 'won' : 'lost'}"><span class="tag blue">블루${m.win === 'blue' ? ' 승' : ''}</span>${m.blue.map(esc).join(', ')}</span>
-      <span class="${m.win === 'red' ? 'won' : 'lost'}"><span class="tag red">레드${m.win === 'red' ? ' 승' : ''}</span>${m.red.map(esc).join(', ')}</span></div>
+      <span class="${m.win === 'blue' ? 'won' : 'lost'}"><span class="tag blue">1팀${m.win === 'blue' ? ' 승' : ''}</span>${m.blue.map(esc).join(', ')}</span>
+      <span class="${m.win === 'red' ? 'won' : 'lost'}"><span class="tag red">2팀${m.win === 'red' ? ' 승' : ''}</span>${m.red.map(esc).join(', ')}</span></div>
       ${S.example ? '<span></span>' : `<button class="btn ghost small" data-del="${esc(m.id)}" style="${confirmId === m.id ? 'color:var(--bad);border-color:var(--bad)' : ''}">${confirmId === m.id ? '정말 삭제' : '삭제'}</button>`}</li>`).join('')
     : '<li style="display:block"><p class="empty">아직 기록이 없어요.</p></li>';
 }
@@ -615,8 +944,7 @@ $('#logBox').addEventListener('click', async e => {
   const b = e.target.closest('[data-del]'); if (!b) return;
   const id = b.dataset.del;
   if (confirmId !== id) { confirmId = id; renderLog(); clearTimeout(renderLog.t); renderLog.t = setTimeout(() => { confirmId = null; renderLog(); }, 3000); return; }
-  if (!guardWrite()) return;
-  confirmId = null; try { await deleteMatch(id); if (S.recorded?.id === id) S.recorded = null; toast('경기 기록을 지웠어요.'); } catch {}
+  confirmId = null; try { await deleteMatch(id); toast('경기 기록을 지웠어요.'); } catch {}
   renderAll();
 });
 
@@ -640,7 +968,7 @@ function showTab(t) { for (const x of TABS) { $('#tab-' + x).setAttribute('aria-
 TABS.forEach(t => $('#tab-' + t).addEventListener('click', () => showTab(t)));
 if (TABS.includes(location.hash.slice(1))) showTab(location.hash.slice(1));
 
-function renderAll() { renderRoster(); renderTeams(); renderStats(); renderAnalysis(); renderLog(); }
+function renderAll() { renderRoster(); renderTeams(); renderSession(); renderStats(); renderAnalysis(); renderLog(); }
 
 loadLocal();
 setMode(S.mode);
