@@ -433,6 +433,7 @@ body.gated { overflow: hidden; }
   <!-- 게임 탭: 지금은 롤 내전 하나. 다른 게임이 생기면 버튼과 section.game을 하나씩 더 붙이면 돼요. -->
   <nav class="games" role="tablist" aria-label="게임">
     <button role="tab" id="game-lol" aria-selected="true" aria-controls="g-lol">롤 내전</button>
+    <button role="tab" id="game-duel" aria-selected="false" aria-controls="g-duel">롤 1:1</button>
     <button role="tab" id="game-five" aria-selected="false" aria-controls="g-five">롤 5인 큐</button>
     <button role="tab" id="game-roster" aria-selected="false" aria-controls="g-roster">선수 명단</button>
   </nav>
@@ -441,7 +442,6 @@ body.gated { overflow: hidden; }
 
   <nav class="tabs" role="tablist">
     <button role="tab" id="tab-play" aria-selected="true">내전</button>
-    <button role="tab" id="tab-duel" aria-selected="false">1:1</button>
     <button role="tab" id="tab-stats" aria-selected="false">전적</button>
     <button role="tab" id="tab-analysis" aria-selected="false">분석</button>
     <button role="tab" id="tab-log" aria-selected="false">기록</button>
@@ -485,27 +485,6 @@ body.gated { overflow: hidden; }
   </section>
 
   <!-- 전적 -->
-  <!-- 1:1: 두 사람이 붙어서 이긴 사람만 눌러요. 1:1 MMR·순위는 내전과 따로예요. -->
-  <section id="p-duel" role="tabpanel" hidden>
-    <div class="card">
-      <h2>1:1 붙기 <span class="r" id="duelMeta"></span></h2>
-      <div class="duel-vs" id="duelVs"></div>
-      <div class="row" style="margin-top:12px"><div class="seg" id="duelRule" role="group" aria-label="1:1 규칙"></div></div>
-      <div id="duelWin"></div>
-      <p class="pick-h" style="margin-top:14px">이름을 눌러 두 명을 골라요 (다시 누르면 빠져요)</p>
-      <div class="chips" id="duelPick"></div>
-    </div>
-    <div class="card">
-      <h2>1:1 순위 <span class="r" id="duelRankMeta"></span></h2>
-      <div id="duelRank"></div>
-      <p class="note">1:1 MMR은 내전 MMR과 따로예요. 1000점에서 시작해서, 높은 사람을 이기면 많이 오르고 낮은 사람에게 지면 많이 내려가요.</p>
-    </div>
-    <div class="card">
-      <h2>최근 1:1 <span class="r" id="duelLogMeta"></span></h2>
-      <ul class="log" id="duelLog"></ul>
-    </div>
-  </section>
-
   <section id="p-stats" role="tabpanel" hidden>
     <div class="card">
       <h2>선수별 전적 <span class="r"><span id="statsMeta"></span> · <label>기간 <select class="period"><option value="all">전체</option><option value="30">최근 30일</option><option value="7">최근 7일</option><option value="1">최근 24시간</option></select></label></span></h2>
@@ -542,6 +521,27 @@ body.gated { overflow: hidden; }
   </section>
 
   <!-- 롤 5인 큐: 친구 다섯이 같이 랭크·일반을 돌릴 때 라인을 추천해요. 내전 기록과는 따로예요. -->
+  <!-- 롤 1:1: 두 사람이 붙어서 이긴 사람만 눌러요. 1:1 MMR·순위는 내전과 따로예요. 명단은 선수 명단 탭과 같이 써요. -->
+  <section class="game" id="g-duel" role="tabpanel" aria-labelledby="game-duel" hidden>
+    <div class="card">
+      <h2>1:1 붙기 <span class="r" id="duelMeta"></span></h2>
+      <div class="duel-vs" id="duelVs"></div>
+      <div class="row" style="margin-top:12px"><div class="seg" id="duelRule" role="group" aria-label="1:1 규칙"></div></div>
+      <div id="duelWin"></div>
+      <p class="pick-h" style="margin-top:14px">이름을 눌러 두 명을 골라요 (다시 누르면 빠져요)</p>
+      <div class="chips" id="duelPick"></div>
+    </div>
+    <div class="card">
+      <h2>1:1 순위 <span class="r" id="duelRankMeta"></span></h2>
+      <div id="duelRank"></div>
+      <p class="note">1:1 MMR은 내전 MMR과 따로예요. 1000점에서 시작해서, 높은 사람을 이기면 많이 오르고 낮은 사람에게 지면 많이 내려가요.</p>
+    </div>
+    <div class="card">
+      <h2>최근 1:1 <span class="r" id="duelLogMeta"></span></h2>
+      <ul class="log" id="duelLog"></ul>
+    </div>
+  </section>
+
   <!-- 선수 명단: 롤 내전·1:1·롤 5인 큐가 같이 쓰는 명단을 여기서 관리해요(추가·이름 바꾸기·빼기·Riot ID). -->
   <section class="game" id="g-roster" role="tabpanel" aria-labelledby="game-roster" hidden>
     <div class="card">
@@ -1677,7 +1677,7 @@ $('#backup').onclick = () => {
 };
 
 // ---------- 탭 ----------
-const TABS = ['play', 'duel', 'stats', 'analysis', 'log'];
+const TABS = ['play', 'stats', 'analysis', 'log'];
 function showTab(t) { for (const x of TABS) { $('#tab-' + x).setAttribute('aria-selected', x === t); $('#p-' + x).hidden = x !== t; } }
 TABS.forEach(t => $('#tab-' + t).addEventListener('click', () => showTab(t)));
 if (TABS.includes(location.hash.slice(1))) showTab(location.hash.slice(1));
@@ -1822,7 +1822,7 @@ $('#fivePick').addEventListener('click', e => {
 $('#fiveClear').onclick = () => { FIVE = []; saveFive(); renderFive(); };
 $('#fiveRefresh').onclick = e => refreshRiotNow(e.currentTarget);
 // 게임 탭(롤 내전 / 롤 5인 큐). 마지막에 본 탭을 기억해요.
-const GAMES = ['lol', 'five', 'roster'];
+const GAMES = ['lol', 'duel', 'five', 'roster'];
 function showGame(g) {
   for (const x of GAMES) { $('#game-' + x).setAttribute('aria-selected', x === g); $('#g-' + x).hidden = x !== g; }
   try { localStorage.setItem(LS + ':game', g); } catch {}
@@ -1885,7 +1885,7 @@ $('#duelPick').addEventListener('click', e => {
   saveDuel(); renderDuel();
 });
 $('#duelRule').addEventListener('click', e => { const r = e.target.closest('[data-rule]')?.dataset.rule; if (r) { DUEL.rule = r; saveDuel(); renderDuel(); } });
-$('#p-duel').addEventListener('click', async e => {
+$('#g-duel').addEventListener('click', async e => {
   const w = e.target.closest('[data-duelwin]'), del = e.target.closest('[data-duel-del]');
   if (w) {
     if (!needRoster()) return;
@@ -1917,6 +1917,9 @@ $('#gateForm').addEventListener('submit', async e => {
 // ---------- 버전 · 패치노트 ----------
 // 커밋해서 올릴 때마다 맨 위에 새 항목을 더해요(규칙은 CLAUDE.md). 오른쪽 위 버전은 맨 위 항목이에요.
 const NOTES = [
+  { v: '1.7.1', d: '2026-10-22', items: [
+    '1:1을 롤 내전 탭 안에서 꺼내 바깥 게임 탭 "롤 1:1"로 옮겼어요. 이제 위쪽에 롤 내전 · 롤 1:1 · 롤 5인 큐 · 선수 명단이 나란히 있어요.',
+  ] },
   { v: '1.7.0', d: '2026-10-22', items: [
     '"선수 명단" 탭이 따로 생겼어요. 롤 내전·1:1·롤 5인 큐가 같이 쓰는 명단을 여기서 관리해요. 이름 추가, 이름 바꾸기, Riot ID 연결, 명단에서 빼기, 롤 정보 새로고침을 할 수 있어요.',
     '롤 내전 탭의 명단은 오늘 할 사람을 고르는 데만 써요. 제목 옆 "명단 관리" 버튼을 누르면 선수 명단 탭으로 가요.',
