@@ -39,6 +39,13 @@ h1 em { font-style: normal; color: var(--gold); }
 .badge i { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
 .badge.shared i { background: var(--good); } .badge.readonly i { background: var(--bad); }
 
+.rooms { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.room { font: inherit; font-weight: 700; display: grid; text-align: left; padding: 8px 14px; border-radius: 12px; border: 1.5px solid var(--line); background: var(--sunk); color: var(--ink); cursor: pointer; }
+.room small { font-weight: 500; font-size: 12px; color: var(--muted); }
+.room.on { border-color: var(--gold); background: color-mix(in srgb, var(--gold) 18%, var(--surface)); }
+.room.new { color: var(--gold); border-style: dashed; align-content: center; }
+.room-info p { margin: 0 0 6px; } .room-info .row { margin-top: 4px; }
+.linkbtn { font: inherit; font-size: 12.5px; background: none; border: 0; padding: 0; color: var(--gold); cursor: pointer; text-decoration: underline; }
 .games { display: flex; flex-wrap: wrap; gap: 8px; }
 .games button { font-family: var(--display); font-weight: 400; font-size: 18px; padding: 9px 18px; border-radius: 12px; border: 1.5px solid var(--line); background: var(--surface); color: var(--muted); cursor: pointer; }
 .games button[aria-selected=true] { background: var(--gold); color: var(--on-gold); border-color: transparent; }
@@ -247,6 +254,12 @@ td.num, th.num { text-align: right; }
 
   <!-- 내전 -->
   <section id="p-play" role="tabpanel">
+    <!-- 방: 방마다 오늘 할 사람·팀 배치가 따로예요. 방장만 바꿀 수 있고 나머지는 구경해요. -->
+    <div class="card" id="roomCard">
+      <h2>방 <span class="r" id="meBox"></span></h2>
+      <div id="roomBar"></div>
+    </div>
+
     <div class="card">
       <h2>선수 명단 <span class="r" id="rosterCount"></span></h2>
       <div id="roster"></div>
@@ -264,10 +277,10 @@ td.num, th.num { text-align: right; }
       <p class="note" id="rosterNote"></p>
     </div>
 
-    <div class="card">
+    <div class="card" id="playCard">
       <h2>오늘 할 사람 <span class="r" id="selCount"></span></h2>
       <div class="chips today" id="today"></div>
-      <div class="row">
+      <div class="row" id="shuffleRow">
         <div class="seg" role="group" aria-label="섞는 방식">
           <button id="mRandom" aria-pressed="true">완전 랜덤</button>
           <button id="mBalance" aria-pressed="false">실력 밸런스</button>
@@ -338,24 +351,49 @@ async function copyText(text) {
 }
 
 // ---------- 상태 ----------
-const S = { players: [], matches: [], current: null, selected: new Set(), riot: {}, mode: 'random', editing: false, editTarget: null, period: 'all', draftOrder: 'alt', draft: null };
+// current·selected는 지금 들어가 있는 방(room)의 팀 배치·오늘 할 사람이에요. presence = 이 방을 보고 있는 사람들.
+const S = { players: [], matches: [], current: null, selected: new Set(), riot: {}, rooms: [], room: null, presence: [], mode: 'random', editing: false, editTarget: null, period: 'all', draftOrder: 'alt', draft: null };
 const LS = 'lol-naejeon-v1';
+// 이 기기를 구분하는 id와 닉네임. 로그인 없이 방장을 가려요.
+const ME = (() => {
+  let m = null; try { m = JSON.parse(localStorage.getItem(LS + ':me') || 'null'); } catch {}
+  if (!m || !/^[a-z0-9]{6,32}$/.test(m.id)) m = { id: [...crypto.getRandomValues(new Uint8Array(10))].map(b => (b % 36).toString(36)).join('') + Date.now().toString(36), nick: '' };
+  return m;
+})();
+const saveMe = () => { try { localStorage.setItem(LS + ':me', JSON.stringify(ME)); } catch {} };
+saveMe();
 
-// 서버 데이터는 마지막으로 받은 걸 캐시해 두고, 첫 화면을 바로 그려요.
+// 서버 데이터는 마지막으로 받은 걸 캐시해 두고, 첫 화면을 바로 그려요. (방마다 다른 팀·오늘 할 사람은 서버에서 바로 받아요)
 function loadLocal() {
   try {
     const s = JSON.parse(localStorage.getItem(LS) || 'null') || {};
     if (Array.isArray(s.players)) S.players = s.players.filter(p => typeof p === 'string');
     if (Array.isArray(s.matches)) S.matches = s.matches.filter(validMatch);
-    if (s.current && Array.isArray(s.current.blue)) S.current = s.current;
-    if (Array.isArray(s.selected)) S.selected = new Set(s.selected);
     if (s.riot && typeof s.riot === 'object') S.riot = s.riot;
+    if (typeof s.room === 'string') S.room = s.room;
     if (['balance', 'draft'].includes(s.mode)) S.mode = s.mode;
     if (['alt', 'snake', 'free'].includes(s.draftOrder)) S.draftOrder = s.draftOrder;
   } catch {}
+  const q = new URLSearchParams(location.search).get('room'); // 카톡으로 받은 방 링크가 먼저
+  if (q) S.room = q;
 }
 function saveLocal() {
-  try { localStorage.setItem(LS, JSON.stringify({ selected: [...S.selected], mode: S.mode, draftOrder: S.draftOrder, current: S.current, players: S.players, matches: S.matches, riot: S.riot })); } catch {}
+  try { localStorage.setItem(LS, JSON.stringify({ room: S.room, mode: S.mode, draftOrder: S.draftOrder, players: S.players, matches: S.matches, riot: S.riot })); } catch {}
+}
+// ---------- 방장 ----------
+const curRoom = () => S.rooms.find(r => r.id === S.room) || null;
+const isHost = () => curRoom()?.hostId === ME.id;               // 이 방의 오늘 할 사람·팀·승패
+const canRoster = () => S.rooms.some(r => r.hostId === ME.id);  // 명단·기록 삭제는 어느 방이든 방장이면
+function needHost() {
+  if (isHost()) return true;
+  const r = curRoom();
+  toast(!r ? '먼저 위에서 방을 만들거나 들어가 주세요.' : r.hostAlive ? `방장(${r.hostNick})만 바꿀 수 있어요.` : '방장 자리가 비었어요. 위에서 "방장 하기"를 눌러 주세요.');
+  return false;
+}
+function needRoster() {
+  if (canRoster()) return true;
+  toast('명단은 방장만 바꿀 수 있어요. 새 방을 만들면 방장이 돼요.');
+  return false;
 }
 function validMatch(m) {
   return m && typeof m.t === 'number' && Array.isArray(m.blue) && Array.isArray(m.red) && (m.win === 'blue' || m.win === 'red')
@@ -376,7 +414,7 @@ async function api(action, body, quiet) {
   for (let attempt = 0; attempt < 3; attempt++) {
     let res;
     try {
-      res = await fetch('/api/data', { method: 'POST', headers: { 'content-type': 'application/json', 'x-pin': encodeURIComponent(pin) }, body: JSON.stringify({ action, ...body }) });
+      res = await fetch('/api/data', { method: 'POST', headers: { 'content-type': 'application/json', 'x-pin': encodeURIComponent(pin), 'x-device': ME.id }, body: JSON.stringify({ action, room: S.room, ...body }) });
     } catch {
       setBadge('offline'); if (!quiet) toast('서버에 연결할 수 없어요. 인터넷 연결을 확인해 주세요.'); throw new Error('offline');
     }
@@ -389,7 +427,12 @@ async function api(action, body, quiet) {
     }
     if (res.status === 503) { setBadge('nodb'); if (!quiet) toast('아직 DB가 연결되지 않았어요. README의 3단계를 해 주세요.'); throw new Error('nodb'); }
     if (res.status === 422) { toast('두 사람이 같은 판에서 뛰었거나 지금 팀에 같이 있어서 합칠 수 없어요. 다른 이름을 써 주세요.'); throw new Error('conflict'); }
-    if (res.status === 409) { toast('기록이 너무 많아요. 오래된 기록을 지워 주세요.'); throw new Error('full'); }
+    if ([404, 409, 423].includes(res.status)) {
+      const e = (await res.json().catch(() => ({}))).error;
+      if (!quiet) toast({ full: '기록이 너무 많아요. 오래된 기록을 지워 주세요.', rooms_full: '방은 10개까지 만들 수 있어요. 안 쓰는 방을 닫아 주세요.',
+        host_busy: '지금 방장이 있어요. 방장이 넘겨줘야 해요.', not_host: '방장만 바꿀 수 있어요.', no_room: '그 방이 없어요. 닫혔을 수 있어요.' }[e] || '저장에 실패했어요.');
+      throw new Error(e || String(res.status));
+    }
     if (res.status === 424) { const e = (await res.json().catch(() => ({}))).error; if (!quiet) toast(RIOT_ERR[e] || RIOT_ERR.riot_down); throw new Error(e); }
     if (!res.ok) { if (!quiet) toast('저장에 실패했어요. 잠시 후 다시 눌러 주세요.'); throw new Error(String(res.status)); }
     // 저장 응답이 순서가 뒤바뀌어 오면 버전이 낮은 쪽은 버려요. 다음 새로고침이 맞춰 줘요.
@@ -403,21 +446,45 @@ function applyServer(d) {
   if (Array.isArray(d.players)) S.players = d.players.filter(p => typeof p === 'string');
   if (Array.isArray(d.matches)) S.matches = d.matches.filter(validMatch);
   if (d.riot && typeof d.riot === 'object') S.riot = d.riot;
-  if (d.current && Array.isArray(d.current.blue) && Array.isArray(d.current.red) && (!S.current || (d.current.t || 0) > (S.current.t || 0))) S.current = d.current;
+  if (Array.isArray(d.rooms)) {
+    S.rooms = d.rooms;
+    if (S.room && !d.rooms.some(r => r.id === S.room)) { leaveRoom(); return; } // 들어가 있던 방이 닫혔어요
+  }
+  const rs = d.room?.id === S.room ? d.room : null; // 지금 방의 팀 배치·오늘 할 사람만 받아요
+  if (!rs) return;
+  const c = rs.current;
+  if (c && Array.isArray(c.blue) && Array.isArray(c.red) && (!S.current || (c.t || 0) > (S.current.t || 0))) S.current = c;
   // 오늘 할 사람: 내가 누른 게 아직 저장 중이면 화면에 보이는 내 선택을 그대로 둬요 (끝나면 syncSelect가 맞춰요)
-  if (Array.isArray(d.selected) && !selPending) S.selected = new Set(d.selected.filter(p => typeof p === 'string'));
+  if (Array.isArray(rs.selected) && !selPending) S.selected = new Set(rs.selected.filter(p => typeof p === 'string'));
 }
-async function pull() {
-  const w = writes;
+// 5초마다 새 기록을 확인하고, 세 번에 한 번(15초)은 "이 방을 보고 있어요" 신호도 같이 보내요.
+let pulls = 0;
+async function pull(beat) {
+  const w = writes, q = new URLSearchParams();
+  if (ver != null) q.set('v', ver);
+  if (S.room) q.set('room', S.room);
+  if (S.room && ME.nick && (beat || pulls++ % 3 === 0)) { q.set('hb', 1); q.set('me', ME.id); q.set('nick', ME.nick); if (isHost()) q.set('host', 1); }
   try {
-    const res = await fetch('/api/data' + (ver != null ? '?v=' + encodeURIComponent(ver) : ''), { cache: 'no-store' });
+    const res = await fetch('/api/data?' + q, { cache: 'no-store' });
     if (res.status === 503) return setBadge('nodb');
     if (!res.ok) throw new Error(String(res.status));
     const d = await res.json();
+    if (d.presence) { S.presence = d.presence; renderRoomBar(); }
     if (d.same) return setBadge('online');
     if (w !== writes) return; // 받는 사이에 저장한 게 있으면 이 응답은 낡았어요
     applyServer(d); saveLocal(); renderAll();
+    if (!S.room && S.rooms.length === 1) enterRoom(S.rooms[0].id); // 방이 하나뿐이면 바로 들어가요
   } catch { setBadge('offline'); } finally { autoRefreshRiot(); }
+}
+function enterRoom(id) {
+  if (S.room === id) return;
+  S.room = id; S.current = null; S.selected = new Set(); S.draft = null; S.presence = []; ver = null;
+  history.replaceState(null, '', id ? `?room=${id}${location.hash}` : location.pathname + location.hash);
+  saveLocal(); renderAll(); pull(true);
+}
+function leaveRoom() {
+  S.room = null; S.current = null; S.selected = new Set(); S.draft = null; S.presence = [];
+  history.replaceState(null, '', location.pathname + location.hash); saveLocal();
 }
 // 명단은 바로 화면에 반영하고, 서버가 거절하면 서버 상태로 되돌려요.
 async function rosterAction(action, body) {
@@ -427,8 +494,7 @@ async function rosterAction(action, body) {
   return ok;
 }
 async function saveCurrent() {
-  saveLocal();
-  if (S.current) api('current', { current: S.current }, true).catch(() => {});
+  if (S.current && isHost()) api('current', { current: S.current }, true).catch(() => {});
 }
 async function addMatch(m) { const d = await api('addMatch', { match: m }); return { id: d.id, dup: d.dup }; }
 async function deleteMatch(id) { await api('deleteMatch', { id }); }
@@ -534,12 +600,18 @@ async function linkRiot(name, riotId) {
 
 // ---------- 명단 ----------
 function renderRoster() {
-  const sel = S.selected, players = S.players, T = tierMap(computeStats(players, S.matches));
-  // 이름 오른쪽 표시: 명단에선 ↓(아래로 넣기), 오늘 할 사람에선 ✕(빼기), 편집 중엔 ✎
+  const sel = S.selected, players = S.players, T = tierMap(computeStats(players, S.matches)), host = isHost(), roster = canRoster();
+  // 이름 오른쪽 표시: 명단에선 ↓(아래로 넣기), 오늘 할 사람에선 ✕(빼기), 편집 중엔 ✎. 바꿀 수 없는 사람(구경)에겐 표시 없이 보여만 줘요.
   const chip = (p, edit) => {
     const [mark, cls, label] = edit ? ['✎', 'x', '편집'] : sel.has(p) ? ['✕', 'x', '빼기'] : ['↓', 'in', '오늘 할 사람에 넣기'];
-    return `<button class="chip${(edit ? S.editTarget === p : sel.has(p)) ? ' on' : ''}" data-i="${players.indexOf(p)}" aria-label="${esc(p)} ${label}">${tierIcon(T[p])}${esc(p)}<span class="${cls}" aria-hidden="true">${mark}</span></button>`;
+    const can = edit ? roster : host;
+    return `<button class="chip${(edit ? S.editTarget === p : sel.has(p)) ? ' on' : ''}" data-i="${players.indexOf(p)}"${can ? ` aria-label="${esc(p)} ${label}"` : ' tabindex="-1" style="cursor:default"'}>${tierIcon(T[p])}${esc(p)}${can ? `<span class="${cls}" aria-hidden="true">${mark}</span>` : ''}</button>`;
   };
+  if (!roster) S.editing = false;
+  $('#addForm').hidden = !roster; $('#editToggle').hidden = !roster;
+  $('#selAll').hidden = $('#selNone').hidden = !host;
+  $('#shuffleRow').hidden = $('#modeNote').hidden = !host;
+  $('#playCard').hidden = !S.room;
   // 위에서 아래로: 명단에서 누른 사람은 아래 '오늘 할 사람' 칸으로 내려가요(고른 순서대로). 편집할 땐 명단 전체를 보여요.
   const today = [...sel].filter(p => players.includes(p)), rest = players.filter(p => !sel.has(p));
   $('#roster').innerHTML = `<div class="chips">${!players.length
@@ -552,7 +624,9 @@ function renderRoster() {
   $('#shuffle').disabled = n < 2;
   $('#editToggle').setAttribute('aria-pressed', S.editing); $('#editToggle').textContent = S.editing ? '편집 끝' : '명단 편집';
   $('#riotRefresh').hidden = !S.editing || !Object.keys(S.riot).length;
-  $('#rosterNote').textContent = S.editing ? '이름을 누르면 이름을 바꾸거나 명단에서 빼거나, Riot ID를 연결해서 솔랭 티어를 불러올 수 있어요. 이미 있는 이름으로 바꾸면 두 사람 전적이 합쳐져요.' : '이름을 누르면 아래 \'오늘 할 사람\' 칸으로 내려가요. 거기서 다시 누르면 명단으로 돌아와요. 명단은 저장돼서 다음에도 그대로 있어요.';
+  $('#rosterNote').textContent = S.editing ? '이름을 누르면 이름을 바꾸거나 명단에서 빼거나, Riot ID를 연결해서 솔랭 티어를 불러올 수 있어요. 이미 있는 이름으로 바꾸면 두 사람 전적이 합쳐져요.'
+    : host ? '이름을 누르면 아래 \'오늘 할 사람\' 칸으로 내려가요. 거기서 다시 누르면 명단으로 돌아와요. 명단은 저장돼서 다음에도 그대로 있어요.'
+    : '구경 중이에요. 오늘 할 사람과 팀은 이 방 방장이 정해요.';
   const t = S.editTarget, r = t && S.riot[t];
   $('#editBox').innerHTML = S.editing && t
     ? `<form class="add editform" id="renameForm"><input id="renameInput" type="text" maxlength="16" value="${esc(t)}" aria-label="새 이름"><button class="btn" type="submit">이름 바꾸기</button><button class="btn ghost" type="button" id="removeBtn">명단에서 빼기</button></form>
@@ -566,12 +640,13 @@ $('#roster').addEventListener('click', async e => {
     S.editTarget = S.editTarget === name ? null : name; renderRoster();
     if (S.editTarget) $('#renameInput')?.focus();
   } else {
+    if (!needHost()) return;
     const on = !S.selected.has(name);
     on ? S.selected.add(name) : S.selected.delete(name); renderRoster(); syncSelect([name], on);
   }
 });
 $('#today').addEventListener('click', e => {
-  const b = e.target.closest('button[data-i]'); if (!b) return;
+  const b = e.target.closest('button[data-i]'); if (!b || !needHost()) return;
   const name = S.players[+b.dataset.i];
   S.selected.delete(name); renderRoster(); syncSelect([name], false);
 });
@@ -579,13 +654,13 @@ $('#today').addEventListener('click', e => {
 let selPending = 0;
 async function syncSelect(names, on) {
   if (!names.length) return;
-  saveLocal(); selPending++;
+  selPending++;
   let d = null;
   try { d = await api('select', { names, on }); } catch {}
   if (--selPending) return; // 연달아 누른 게 남아 있으면 마지막 답에서 맞춰요
   if (!d) { ver = null; await pull(); } // 저장 실패: 서버 상태로 되돌려요
-  else if (d.ver === ver && Array.isArray(d.selected)) S.selected = new Set(d.selected);
-  saveLocal(); renderRoster();
+  else if (d.ver === ver && d.room?.id === S.room && Array.isArray(d.room.selected)) S.selected = new Set(d.room.selected);
+  renderRoster();
 }
 $('#editBox').addEventListener('submit', async e => {
   e.preventDefault();
@@ -620,15 +695,16 @@ $('#riotRefresh').onclick = async () => {
 };
 $('#addForm').addEventListener('submit', e => {
   e.preventDefault();
+  if (!needRoster()) return;
   const names = $('#addInput').value.split(/[,，\n]/).map(s => s.trim().slice(0, 16)).filter(Boolean);
   if (!names.length) return;
   for (const n of names) if (!S.players.includes(n) && S.players.length < 60) S.players.push(n);
   $('#addInput').value = ''; renderAll(); toast(`${names.length}명을 명단에 넣었어요. ↓를 누르면 오늘 할 사람으로 내려가요.`);
   rosterAction('addPlayers', { names });
 });
-$('#selAll').onclick = () => { const add = S.players.filter(p => !S.selected.has(p)); add.forEach(p => S.selected.add(p)); renderRoster(); syncSelect(add, true); };
-$('#selNone').onclick = () => { const off = [...S.selected]; S.selected.clear(); renderRoster(); syncSelect(off, false); };
-$('#editToggle').onclick = () => { S.editing = !S.editing; S.editTarget = null; renderRoster(); };
+$('#selAll').onclick = () => { if (!needHost()) return; const add = S.players.filter(p => !S.selected.has(p)); add.forEach(p => S.selected.add(p)); renderRoster(); syncSelect(add, true); };
+$('#selNone').onclick = () => { if (!needHost()) return; const off = [...S.selected]; S.selected.clear(); renderRoster(); syncSelect(off, false); };
+$('#editToggle').onclick = () => { if (!S.editing && !needRoster()) return; S.editing = !S.editing; S.editTarget = null; renderRoster(); };
 
 // ---------- 팀 섞기 ----------
 function setMode(m) {
@@ -664,10 +740,10 @@ function renderTeams(shuffling) {
   if (S.draft) return renderDraft();
   const box = $('#teamsBox'), c = S.current, st = computeStats(S.players, S.matches);
   if (!c || !c.blue.length && !c.red.length) { box.innerHTML = '<p class="empty">사람을 고르고 팀 섞기를 누르면 1팀(블루)과 2팀(레드)이 여기에 나와요.</p>'; return; }
-  const rec = recordedMatch();
+  const rec = recordedMatch(), host = isHost(), hostNick = curRoom()?.hostNick || '방장';
   const T = tierMap(st), ss = computeStats([], sessionMatches());
-  // 이름 칸은 끌어서 옮기는 손잡이, 옆 화살표 버튼은 눌러서 상대 팀으로 보내기예요.
-  const swapBtn = (p, side) => rec || shuffling ? ''
+  // 이름 칸은 끌어서 옮기는 손잡이, 옆 화살표 버튼은 눌러서 상대 팀으로 보내기예요. 둘 다 방장만.
+  const swapBtn = (p, side) => rec || shuffling || !host ? ''
     : `<button class="swap" data-swap="${esc(p)}" data-side="${side}" title="상대 팀으로" aria-label="${esc(p)} ${side === 'blue' ? '2팀' : '1팀'}으로 보내기">${side === 'blue' ? '→' : '←'}</button>`;
   const li = (p, side) => { const s = st.P[p], x = ss.P[p]; return `<li><div class="pl" data-p="${esc(p)}" data-side="${side}"><span class="who">${tierIcon(T[p])}<span class="nm">${esc(p)}</span></span><span class="st">${s?.g ? `${pct(s.w, s.g)}% · ${s.g}판` : '첫 판'}${x?.g ? `<br><span class="sess">이번 ${x.w}승 ${x.g - x.w}패</span>` : ''}</span></div>${swapBtn(p, side)}</li>`; };
   const avg = t => t.reduce((s, p) => s + mmrOf(st, p), 0) / (t.length || 1);
@@ -678,7 +754,7 @@ function renderTeams(shuffling) {
   const bp = Math.round(eb * 100), canRec = c.blue.length && c.red.length;
   // 카톡용 복사는 팀 바로 위에 둬요. 섞는 동안에도 자리를 지켜서 화면이 들썩이지 않게 해요.
   box.innerHTML = `
-    <div class="row" style="margin-top:16px"><button class="btn ghost small" id="copyTeams"${shuffling ? ' disabled' : ''}>카톡용 복사</button>${rec ? '' : '<span class="note" style="margin:0">화살표를 누르면 상대 팀으로 가요. 이름을 끌어서 다른 사람 위에 놓으면 둘이 자리를 바꿔요(폰은 꾹 눌렀다 끌기).</span>'}</div>
+    <div class="row" style="margin-top:16px"><button class="btn ghost small" id="copyTeams"${shuffling ? ' disabled' : ''}>카톡용 복사</button>${!host ? `<span class="note" style="margin:0">구경 중 · ${esc(hostNick)}님이 팀과 결과를 정해요.</span>` : rec ? '' : '<span class="note" style="margin:0">화살표를 누르면 상대 팀으로 가요. 이름을 끌어서 다른 사람 위에 놓으면 둘이 자리를 바꿔요(폰은 꾹 눌렀다 끌기).</span>'}</div>
     <div class="teams${shuffling ? ' shuffling' : ''}">
       <div class="team blue"><h3>${TEAM.blue} <small>${mmr('blue')}</small></h3>${ul('blue')}</div>
       <div class="team red"><h3>${TEAM.red} <small>${mmr('red')}</small></h3>${ul('red')}</div>
@@ -686,8 +762,8 @@ function renderTeams(shuffling) {
     ${both ? `<div class="odds"><div class="bar"><i class="b" style="width:${bp}%"></i><i class="r" style="width:${100 - bp}%"></i></div>
       <div class="lbl"><span>1팀 예상 승률 ${bp}%</span><span>2팀 ${100 - bp}%</span></div></div>` : ''}    ${shuffling ? '' : rec ? `
       <div class="recorded ${rec.win}">
-        <div class="rec-head"><span class="k">기록됨</span><b>${TEAM[rec.win]} 승리</b><button class="btn ghost small" id="undo">↶ 되돌리기</button></div>
-        <div class="rec-actions"><button class="big primary" id="reshuffle">새로 섞기</button><button class="big" id="again">같은 팀으로 한 판 더</button></div></div>` : `
+        <div class="rec-head"><span class="k">기록됨</span><b>${TEAM[rec.win]} 승리</b>${host ? '<button class="btn ghost small" id="undo">↶ 되돌리기</button>' : ''}</div>
+        ${host ? '<div class="rec-actions"><button class="big primary" id="reshuffle">새로 섞기</button><button class="big" id="again">같은 팀으로 한 판 더</button></div>' : ''}</div>` : !host ? '' : `
       <div class="result"><button class="win blue" data-win="blue" ${canRec ? '' : 'disabled'}>${TEAM.blue} 승리</button><button class="win red" data-win="red" ${canRec ? '' : 'disabled'}>${TEAM.red} 승리</button></div>`}`;
 }
 const TEAM = { blue: '1팀 블루', red: '2팀 레드' };
@@ -697,6 +773,7 @@ const newRound = c => { c.t = c.round = Date.now(); };
 // 지금 판이 이미 기록됐는지는 서버 기록에서 찾아요. 그래서 다른 사람이 기록해도 내 화면이 같이 '기록됨'으로 바뀌어요.
 const recordedMatch = () => { const c = S.current, r = c && roundOf(c); return r ? S.matches.find(m => m.round === r) : null; };
 $('#shuffle').onclick = () => {
+  if (!needHost()) return;
   const names = S.players.filter(p => S.selected.has(p)); if (names.length < 2) return;
   if (S.mode === 'draft') return startDraft(names);
   S.draft = null;
@@ -711,9 +788,10 @@ $('#shuffle').onclick = () => {
 };
 $('#teamsBox').addEventListener('click', async e => {
   if (Date.now() < dropClickUntil) return; // 끌어서 놓은 직후 따라오는 클릭은 무시해요
-  if (S.draft) return draftClick(e);
   const c = S.current, rec = recordedMatch();
   if (e.target.id === 'copyTeams' && c) return copyText(`[${TEAM.blue}] ${c.blue.join(', ')}\n[${TEAM.red}] ${c.red.join(', ')}`);
+  if (!e.target.closest('button') || !needHost()) return; // 복사 말고는 방장만
+  if (S.draft) return draftClick(e);
   const mv = e.target.closest('button[data-swap]');
   if (mv && !rec) {
     const p = mv.dataset.swap, from = mv.dataset.side, to = from === 'blue' ? 'red' : 'blue';
@@ -780,7 +858,7 @@ function endDrag(e) {
 }
 $('#teamsBox').addEventListener('pointerdown', e => {
   const b = e.target.closest('[data-p], [data-pick]'), pick = !!b?.dataset.pick;
-  if (!b || drag || (!pick && recordedMatch()) || (e.pointerType === 'mouse' && e.button !== 0)) return;
+  if (!b || drag || !isHost() || (!pick && recordedMatch()) || (e.pointerType === 'mouse' && e.button !== 0)) return;
   drag = { b, pick, p: pick ? b.dataset.pick : b.dataset.p, side: b.dataset.side, x: e.clientX, y: e.clientY, id: e.pointerId, on: false, touch: e.pointerType !== 'mouse' };
   if (drag.touch) drag.timer = setTimeout(() => drag && !drag.on && startDrag(), 250);
 });
@@ -1039,11 +1117,11 @@ function renderLog() {
   $('#logBox').innerHTML = ms.length ? ms.map(m => `<li><time>${fmt(m.t)}</time><div class="sides">
       <span class="${m.win === 'blue' ? 'won' : 'lost'}"><span class="tag blue">1팀${m.win === 'blue' ? ' 승' : ''}</span>${m.blue.map(esc).join(', ')}</span>
       <span class="${m.win === 'red' ? 'won' : 'lost'}"><span class="tag red">2팀${m.win === 'red' ? ' 승' : ''}</span>${m.red.map(esc).join(', ')}</span></div>
-      ${`<button class="btn ghost small" data-del="${esc(m.id)}" style="${confirmId === m.id ? 'color:var(--bad);border-color:var(--bad)' : ''}">${confirmId === m.id ? '정말 삭제' : '삭제'}</button>`}</li>`).join('')
+      ${!canRoster() ? '<span></span>' : `<button class="btn ghost small" data-del="${esc(m.id)}" style="${confirmId === m.id ? 'color:var(--bad);border-color:var(--bad)' : ''}">${confirmId === m.id ? '정말 삭제' : '삭제'}</button>`}</li>`).join('')
     : '<li style="display:block"><p class="empty">아직 기록이 없어요.</p></li>';
 }
 $('#logBox').addEventListener('click', async e => {
-  const b = e.target.closest('[data-del]'); if (!b) return;
+  const b = e.target.closest('[data-del]'); if (!b || !needRoster()) return;
   const id = b.dataset.del;
   if (confirmId !== id) { confirmId = id; renderLog(); clearTimeout(renderLog.t); renderLog.t = setTimeout(() => { confirmId = null; renderLog(); }, 3000); return; }
   confirmId = null; try { await deleteMatch(id); toast('경기 기록을 지웠어요.'); } catch {}
@@ -1070,7 +1148,58 @@ function showTab(t) { for (const x of TABS) { $('#tab-' + x).setAttribute('aria-
 TABS.forEach(t => $('#tab-' + t).addEventListener('click', () => showTab(t)));
 if (TABS.includes(location.hash.slice(1))) showTab(location.hash.slice(1));
 
-function renderAll() { renderRoster(); renderTeams(); renderSession(); renderStats(); renderAnalysis(); renderLog(); }
+// ---------- 방 ----------
+// 방 탭 + 방장/구경 중인 사람 + 방장 버튼(넘기기·닫기·링크 복사). 닉네임이 없으면 먼저 닉네임부터 받아요.
+function renderRoomBar() {
+  const box = $('#roomBar'), r = curRoom(), host = isHost();
+  $('#meBox').innerHTML = ME.nick && !S.nickEditing ? `나: <b>${esc(ME.nick)}</b> <button class="linkbtn" id="nickEdit">바꾸기</button>` : '';
+  if (!ME.nick || S.nickEditing) {
+    box.innerHTML = `<form class="add" id="nickForm"><input id="nickInput" type="text" maxlength="16" placeholder="내 닉네임 (방장·구경할 때 보여요)" value="${esc(ME.nick)}" autocomplete="off" aria-label="내 닉네임"><button class="btn" type="submit">저장</button></form>
+      <p class="note">닉네임을 정하면 방을 만들거나(방장) 다른 방을 구경할 수 있어요.</p>`;
+    return;
+  }
+  const tabs = S.rooms.map(x => `<button class="room${x.id === S.room ? ' on' : ''}" data-room="${x.id}">${esc(x.name)}<small>${x.hostAlive ? `👑 ${esc(x.hostNick)}${x.hostId === ME.id ? '(나)' : ''}` : '방장 없음'}</small></button>`).join('');
+  let info;
+  if (!S.rooms.length) info = '<p class="note">아직 방이 없어요. 새 방을 만들면 내가 방장이 돼서 오늘 할 사람·팀·승패를 정할 수 있어요.</p>';
+  else if (!r) info = '<p class="note">들어갈 방을 골라 주세요. 방장이 아니면 구경만 할 수 있어요.</p>';
+  else {
+    const viewers = S.presence.filter(p => p.id !== r.hostId), others = viewers.filter(p => p.id !== ME.id);
+    info = `<div class="room-info">
+      <p><b>${host ? '내가 방장이에요' : r.hostAlive ? `방장: ${esc(r.hostNick)}` : '방장 자리가 비었어요'}</b>${!host && !r.hostAlive ? ' <button class="btn small" id="claimHost">방장 하기</button>' : ''}</p>
+      <p class="note" style="margin:0">구경 중 ${viewers.length}명${viewers.length ? ' · ' + viewers.map(v => esc(v.nick) + (v.id === ME.id ? '(나)' : '')).join(', ') : ''}</p>
+      <div class="row">${host && others.length ? `<select id="giveTo" aria-label="방장 넘겨줄 사람">${others.map(v => `<option value="${v.id}">${esc(v.nick)}</option>`).join('')}</select><button class="btn ghost small" id="giveHost">방장 넘기기</button>` : ''}
+        <button class="btn ghost small" id="copyRoom">방 링크 복사</button>${host ? '<button class="btn ghost small" id="closeRoom">방 닫기</button>' : ''}</div></div>`;
+  }
+  box.innerHTML = `<div class="rooms">${tabs}<button class="room new" id="newRoom">+ 새 방</button></div>${info}`;
+}
+$('#roomCard').addEventListener('submit', e => {
+  e.preventDefault();
+  const v = $('#nickInput').value.trim().slice(0, 16); if (!v) return;
+  ME.nick = v; saveMe(); S.nickEditing = false; renderAll(); pull(true);
+});
+$('#roomCard').addEventListener('click', async e => {
+  const t = e.target, r = curRoom();
+  if (t.id === 'nickEdit') { S.nickEditing = true; renderRoomBar(); $('#nickInput')?.focus(); return; }
+  const tab = t.closest('[data-room]'); if (tab) return enterRoom(tab.dataset.room);
+  try {
+    if (t.id === 'newRoom') {
+      const d = await api('createRoom', { nick: ME.nick });
+      enterRoom(d.id); toast('방을 만들었어요. 내가 방장이에요. 방 링크를 카톡에 보내면 친구들이 구경할 수 있어요.');
+    }
+    if (t.id === 'claimHost') { await api('claimHost', { nick: ME.nick }); toast('이제 내가 방장이에요.'); }
+    if (t.id === 'giveHost') {
+      const to = $('#giveTo').value, who = S.presence.find(p => p.id === to);
+      if (who && confirm(`${who.nick}님에게 방장을 넘길까요?`)) { await api('giveHost', { to, toNick: who.nick }); toast(`${who.nick}님이 이제 방장이에요.`); }
+    }
+    if (t.id === 'closeRoom' && r && confirm(`'${r.name}'을 닫을까요? 이 방의 오늘 할 사람과 팀 배치가 사라져요. (전적은 그대로 남아요)`)) {
+      await api('closeRoom', {}); leaveRoom(); toast('방을 닫았어요.');
+    }
+    if (t.id === 'copyRoom' && r) copyText(`${location.origin}${location.pathname}?room=${r.id}`);
+  } catch {}
+  renderAll();
+});
+
+function renderAll() { renderRoomBar(); renderRoster(); renderTeams(); renderSession(); renderStats(); renderAnalysis(); renderLog(); }
 
 loadLocal();
 setMode(S.mode);

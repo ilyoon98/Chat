@@ -18,6 +18,8 @@ const save = () => writeFileSync(file, JSON.stringify(Object.fromEntries([...kv]
 const redis = {
   async get(k) { return kv.get(k) ?? null; },
   async set(k, v) { kv.set(k, structuredClone(v)); save(); return 'OK'; },
+  async del(...ks) { let n = 0; for (const k of ks) if (kv.delete(k)) n++; save(); return n; },
+  async hget(k, f) { return kv.get(k)?.get(f) ?? null; },
   async hgetall(k) { const h = kv.get(k); return h ? Object.fromEntries(h) : null; },
   async hset(k, obj) { const h = kv.get(k) ?? new Map(); for (const [f, v] of Object.entries(obj)) h.set(f, structuredClone(v)); kv.set(k, h); save(); return 1; },
   async hdel(k, f) { const n = kv.get(k)?.delete(f) ? 1 : 0; save(); return n; },
@@ -30,7 +32,9 @@ const redis = {
     kv.set(k, z); save(); return n;
   },
   async zrem(k, ...members) { const z = kv.get(k); let n = 0; for (const m of members) if (z?.delete(m)) n++; save(); return n; },
-  async zrange(k) { const z = kv.get(k); return z ? [...z].sort((a, b) => a[1] - b[1]).map(([m]) => m) : []; },
+  // zrange(key, 0, -1, { withScores: true })면 [멤버, 점수, 멤버, 점수, …]
+  async zrange(k, _s, _e, opts = {}) { const z = kv.get(k); return z ? [...z].sort((a, b) => a[1] - b[1]).flatMap(([m, s]) => opts.withScores ? [m, s] : [m]) : []; },
+  async zremrangebyscore(k, min, max) { const z = kv.get(k); let n = 0; for (const [m, s] of z || []) if (s >= min && s <= max) { z.delete(m); n++; } save(); return n; },
   async zscore(k, m) { return kv.get(k)?.get(m) ?? null; },
 };
 const latency = Number(process.env.DEV_LATENCY) || 0;
