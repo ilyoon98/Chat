@@ -360,6 +360,19 @@ td.num, th.num { text-align: right; }
   background: color-mix(in srgb, var(--gold) 14%, var(--surface)); border: 1px solid color-mix(in srgb, var(--gold) 45%, var(--line)); }
 .editbar .msg { margin-right: auto; font-size: 14px; } .editbar .msg b { color: var(--gold); }
 .editbar .btn.gold { font-size: 17px; padding: 8px 20px; }
+/* 선수 명단 탭: 한 줄에 한 명씩 세로로. 누르면 그 줄 바로 아래에 고치는 칸이 열려요. */
+.prows { list-style: none; margin: 0 0 12px; padding: 0; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.prows > li + li { border-top: 1px solid var(--line); }
+.prows > li.on { background: var(--sunk); }
+.prow-btn { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 2px 12px; padding: 10px 14px; background: none; border: 0; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+.prow-btn:hover { background: var(--sunk); }
+.prow-name { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.prow-name b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.prow-sub { grid-column: 1; font-size: 12.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.prow-rec { grid-column: 2; grid-row: 1 / span 2; font-size: 13px; color: var(--muted); text-align: right; line-height: 1.35; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.prow-rec b { color: var(--ink); }
+.prow-edit { grid-column: 3; grid-row: 1 / span 2; color: var(--muted); }
+.prows > li .editpanel { margin: 0 10px 10px; }
 .editpanel { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px 10px; align-items: center; padding: 14px; margin-bottom: 12px; border: 1px solid var(--gold); border-radius: 12px; background: var(--sunk); }
 .editpanel .ep-head { grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: center; font-weight: 700; font-size: 16px; }
 .editpanel label { color: var(--muted); font-size: 13px; white-space: nowrap; }
@@ -1080,17 +1093,17 @@ async function linkRiot(name, riotId) {
 
 // ---------- 명단 ----------
 function renderRoster() {
-  const sel = S.selected, players = S.players, T = tierMap(computeStats(players, seasonMatches())), host = isHost(), roster = canRoster();
+  const sel = S.selected, players = S.players, st0 = computeStats(players, seasonMatches()), T = tierMap(st0), host = isHost();
   // 이름 오른쪽 표시: 명단에선 ↓(아래로 넣기), 오늘 할 사람에선 ✕(빼기), 편집 중엔 ✎. 바꿀 수 없는 사람(구경)에겐 표시 없이 보여만 줘요.
   // 명단 칩은 골라도 그 자리에 그대로 두고 흐리게 ✓만 바꿔요. 칩이 빠지면 줄이 바뀌면서 아래가 들썩였거든요.
   // where: 'edit'(선수 명단 탭에서 고치기) / 'roster'(내전 탭 명단) / 'today'(오늘 할 사람)
   const chip = (p, where) => {
     const edit = where === 'edit', picked = where === 'roster' && sel.has(p);
     const [mark, cls, label] = edit ? ['✎', 'x', '편집'] : where === 'today' ? ['✕', 'x', '빼기'] : picked ? ['✓', 'in', '오늘 할 사람에서 빼기'] : ['↓', 'in', '오늘 할 사람에 넣기'];
-    const can = edit ? roster : host;
+    const can = edit || host;
     return `<button class="chip${(edit ? S.editTarget === p : where === 'today') ? ' on' : picked ? ' picked' : ''}" data-i="${players.indexOf(p)}" data-card="${esc(p)}"${can ? ` aria-label="${esc(p)} ${label}"` : ' tabindex="-1" style="cursor:default"'}>${tierIcon(T[p])}${esc(p)}${can ? `<span class="${cls}" aria-hidden="true">${mark}</span>` : ''}</button>`;
   };
-  $('#addForm').hidden = !roster;
+  $('#addForm').hidden = false; // 선수 명단은 누구나 고쳐요
   $('#shuffleRow').hidden = $('#modeNote').hidden = !host;
   $('#playCard').hidden = !S.room;
   // 위에서 아래로: 명단에서 누른 사람은 아래 '오늘 할 사람' 칸으로 내려가요(고른 순서대로). 편집할 땐 명단 전체를 보여요.
@@ -1099,14 +1112,17 @@ function renderRoster() {
     ? '<span class="empty">아직 명단이 없어요. 위 "선수 명단" 탭에서 친구들 이름을 넣어 주세요.</span>'
     : players.map(p => chip(p, 'roster')).join('')}</div>`;
   $('#rosterCount').textContent = !players.length ? '' : `남은 ${rest.length}명 / 전체 ${players.length}명`;
-  // 선수 명단 탭: 누르면 그 사람을 고치는 칸이 열려요(방장만). 롤 정보가 있으면 이름 옆에 라인·솔랭 아이콘.
-  $('#rosterEdit').innerHTML = `<div class="chips">${!players.length ? '<span class="empty">아직 명단이 없어요. 위 칸에 친구들 이름을 쉼표로 한 번에 넣어 주세요.</span>'
-    : players.map(p => chip(p, 'edit').replace('</button>', `${quick(p)}</button>`)).join('')}</div>`;
+  // 선수 명단 탭: 한 줄에 한 명씩 세로로(티어·이름·라인·솔랭 아이콘 / Riot ID / 이번 시즌 승패·MMR). 누르면 그 줄 아래에 고치는 칸이 열려요(누구나).
+  // 고치는 칸(#editBox)은 열린 줄 안으로 옮겨 붙여요. 목록을 다시 그리기 전에 밖으로 빼 둬야 같이 지워지지 않아요.
+  $('#rosterEdit').after($('#editBox'));
+  $('#rosterEdit').innerHTML = !players.length ? '<p class="empty">아직 명단이 없어요. 위 칸에 친구들 이름을 쉼표로 한 번에 넣어 주세요.</p>'
+    : `<ol class="prows">${players.map((p, i) => { const s = st0.P[p], r = S.riot[p], on = S.editTarget === p;
+      return `<li${on ? ' class="on"' : ''}><button class="prow-btn" type="button" data-i="${i}" data-card="${esc(p)}" aria-expanded="${on}" aria-label="${esc(p)} 고치기">`
+        + `<span class="prow-name">${tierIcon(T[p])}<b>${esc(p)}</b>${quick(p)}</span><span class="prow-sub">${r ? esc(r.id) : 'Riot ID 없음'}</span>`
+        + `<span class="prow-rec">${s?.g ? `<b>${s.w}승 ${s.g - s.w}패</b><br>MMR ${Math.round(s.mmr)}` : '기록 없음'}</span><span class="prow-edit" aria-hidden="true">✎</span></button></li>`; }).join('')}</ol>`;
   $('#rosterEditCount').textContent = players.length ? `${players.length}명` : '';
   $('#riotRefresh').hidden = !Object.keys(S.riot).length;
-  $('#rosterEditNote').textContent = roster
-    ? '이름을 누르면 이름 바꾸기·Riot ID 연결·명단에서 빼기를 할 수 있어요. 이미 있는 이름으로 바꾸면 두 사람 전적이 하나로 합쳐져요. 이 명단을 롤 내전·1:1·롤 5인 큐가 같이 써요.'
-    : '명단은 방장만 바꿀 수 있어요. 롤 내전 탭에서 새 방을 만들면 방장이 돼요.';
+  $('#rosterEditNote').textContent = '누구나 고칠 수 있어요. 줄을 누르면 이름 바꾸기·Riot ID 연결·명단에서 빼기를 할 수 있어요. 이미 있는 이름으로 바꾸면 두 사람 전적이 하나로 합쳐져요. 이 명단을 롤 내전·1:1·롤 5인 큐가 같이 써요.';
   $('#today').innerHTML = today.map(p => chip(p, 'today')).join('') || '<span class="empty">위 명단에서 이름을 누르면 여기로 내려와요.</span>';
   const n = today.length;
   $('#selCount').innerHTML = `<span class="count"><b>${n}</b>명</span>` + (n >= 2 ? `<span class="vs">${Math.ceil(n / 2)} 대 ${Math.floor(n / 2)}</span>` : '');
@@ -1116,7 +1132,7 @@ function renderRoster() {
     : '구경 중이에요. 오늘 할 사람과 팀은 이 방 방장이 정해요.';
   // 고른 사람 한 명만 고치는 작은 칸: 이름 / Riot ID 두 줄, 지우는 건 아래 글자 버튼으로. 롤 정보 자세한 건 선수 카드에서 봐요.
   const t = S.editTarget, r = t && S.riot[t], lane = t && laneText(t, true);
-  $('#editBox').innerHTML = t && roster ? `<div class="editpanel">
+  $('#editBox').innerHTML = t ? `<div class="editpanel">
       <div class="ep-head"><span>${esc(t)}</span><button class="xbtn" type="button" id="epClose" aria-label="닫기">✕</button></div>
       <label for="renameInput">이름</label>
       <form id="renameForm"><input id="renameInput" type="text" maxlength="16" value="${esc(t)}"><button class="btn small" type="submit">바꾸기</button></form>
@@ -1125,6 +1141,7 @@ function renderRoster() {
       <div class="ep-sub">${r ? `솔랭 ${esc(soloText(t))}${lane ? ` · ${esc(lane)}` : ''} · ${ago(r.at)} 불러옴` : '넣으면 솔랭·주 라인·모스트·숙련도를 불러와요'}</div>
       <div class="ep-foot">${r ? '<button class="linkbtn" type="button" id="riotUnlink">Riot ID 연결 끊기</button>' : ''}<button class="linkbtn danger" type="button" id="removeBtn">명단에서 빼기</button></div>
     </div>` : '';
+  const open = $('#rosterEdit li.on'); if (open) open.append($('#editBox'));
 }
 $('#roster').addEventListener('click', async e => {
   const b = e.target.closest('button[data-i]'); if (!b) return;
@@ -1136,7 +1153,7 @@ $('#roster').addEventListener('click', async e => {
 });
 // 선수 명단 탭: 고칠 사람 고르기 (다시 누르면 닫혀요)
 $('#rosterEdit').addEventListener('click', e => {
-  const b = e.target.closest('button[data-i]'); if (!b || !needRoster()) return;
+  const b = e.target.closest('button[data-i]'); if (!b) return;
   const name = S.players[+b.dataset.i];
   S.editTarget = S.editTarget === name ? null : name; renderRoster();
   if (S.editTarget) $('#renameInput')?.focus();
@@ -1199,7 +1216,6 @@ async function refreshRiotNow(btn) {
 }
 $('#addForm').addEventListener('submit', e => {
   e.preventDefault();
-  if (!needRoster()) return;
   const names = $('#addInput').value.split(/[,，\n]/).map(s => s.trim().slice(0, 16)).filter(Boolean);
   if (!names.length) return;
   // 선수는 이름으로 전적을 이어서, 같은 이름은 같은 사람이에요. 번호를 붙이지 않고 이미 있으면 그대로 둬요.
@@ -2443,6 +2459,10 @@ document.addEventListener('click', e => {
 // ---------- 버전 · 패치노트 ----------
 // 커밋해서 올릴 때마다 맨 위에 새 항목을 더해요(규칙은 CLAUDE.md). 오른쪽 위 버전은 맨 위 항목이에요.
 const NOTES = [
+  { v: '1.16.0', d: '2026-10-22', items: [
+    '선수 명단은 이제 누구나 고칠 수 있어요: 이름 추가, 이름 바꾸기, 명단에서 빼기, Riot ID 연결. 기록 삭제·1:1 기록·백업 불러오기·새 시즌은 그대로 방장만 해요.',
+    '선수 명단 탭이 한 줄에 한 명씩 세로로 나와요. 줄마다 티어·이름·라인·솔랭, Riot ID, 이번 시즌 승패와 MMR이 보이고, 누르면 그 줄 바로 아래에 고치는 칸이 열려요.',
+  ] },
   { v: '1.15.0', d: '2026-10-22', items: [
     '명예의 전당: 분석 탭에 최장 연승, 최고 MMR, 하루 최다승, 최다 출전, 최다 출전 듀오, 벌칙왕, 최장 연패가 생겼어요. 위에서 고른 시즌·기간 판으로 세요.',
   ] },

@@ -376,8 +376,9 @@ export default async function handler(req, res) {
     const me = cleanId(req.headers['x-device']), rooms = await readRooms();
     const room = rooms.find(r => r.id === cleanId(b.room)), isHost = r => !!r && !!me && r.hostId === me;
     const notHost = () => res.status(423).json({ error: 'not_host' });
-    // 명단·Riot ID·기록 삭제는 모든 방이 같이 쓰는 거라 어느 방이든 방장인 사람만 바꿀 수 있어요.
-    const rosterAction = ['addPlayers', 'removePlayer', 'renamePlayer', 'setRiot', 'deleteMatch', 'addDuel', 'deleteDuel', 'importBackup', 'startSeason'].includes(b.action);
+    // 선수 명단(추가·이름 바꾸기·빼기·Riot ID)은 누구나 고쳐요. 기록 삭제·1:1 기록·백업 불러오기·새 시즌은
+    // 모든 방이 같이 쓰는 기록이라 어느 방이든 방장인 사람만 해요.
+    const rosterAction = ['deleteMatch', 'addDuel', 'deleteDuel', 'importBackup', 'startSeason'].includes(b.action);
     if (rosterAction && !rooms.some(isHost)) return notHost();
     // 그 방의 오늘 할 사람·팀 배치·승패는 그 방 방장만
     if (['select', 'current', 'addMatch', 'giveHost', 'closeRoom'].includes(b.action)) {
