@@ -78,7 +78,9 @@ h1 em { font-style: normal; color: var(--gold); }
 .games button { font-family: var(--display); font-weight: 800; font-size: 18px; padding: 9px 18px; border-radius: 12px; border: 1.5px solid var(--line); background: var(--surface); color: var(--muted); cursor: pointer; }
 .games button[aria-selected=true] { background: var(--gold); color: var(--on-gold); border-color: transparent; }
 .game { display: flex; flex-direction: column; gap: 18px; }
-.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); overflow-x: auto; }
+/* 폭이 좁으면 옆으로 밀어서 보되, 스크롤바는 안 보이게 (밑줄이 1px 겹쳐서 위아래 스크롤바가 생겼어요) */
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+.tabs::-webkit-scrollbar { display: none; }
 .tabs button { font: inherit; font-weight: 500; color: var(--muted); background: none; border: 0; padding: 10px 16px; cursor: pointer; border-bottom: 3px solid transparent; margin-bottom: -1px; white-space: nowrap; }
 .tabs button[aria-selected=true] { color: var(--ink); font-weight: 700; border-bottom-color: var(--gold); }
 
@@ -388,7 +390,7 @@ body.gated { overflow: hidden; }
 
   <!-- 게임 탭: 지금은 롤 내전 하나. 다른 게임이 생기면 버튼과 section.game을 하나씩 더 붙이면 돼요. -->
   <nav class="games" role="tablist" aria-label="게임">
-    <button role="tab" id="game-lol" aria-selected="true" aria-controls="g-lol">롤 내전 기록</button>
+    <button role="tab" id="game-lol" aria-selected="true" aria-controls="g-lol">롤 내전</button>
   </nav>
 
   <section class="game" id="g-lol" role="tabpanel" aria-labelledby="game-lol">
@@ -1623,6 +1625,10 @@ $('#gateForm').addEventListener('submit', async e => {
 // ---------- 버전 · 패치노트 ----------
 // 커밋해서 올릴 때마다 맨 위에 새 항목을 더해요(규칙은 CLAUDE.md). 오른쪽 위 버전은 맨 위 항목이에요.
 const NOTES = [
+  { v: '1.3.1', d: '2026-10-22', items: [
+    '게임 탭 이름을 "롤 내전 기록"에서 "롤 내전"으로 줄였어요.',
+    '내전·전적·분석·기록 탭 오른쪽에 생기던 스크롤바를 없앴어요.',
+  ] },
   { v: '1.3.0', d: '2026-10-22', items: [
     '사이트 아이콘: 브라우저 탭과 휴대폰 홈 화면에 게임패드 든 황금똥이 보여요.',
     '링크 미리보기: 단톡방이나 디스코드에 주소를 붙이면 사이트 이름과 황금똥 그림이 카드로 떠요.',
