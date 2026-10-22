@@ -215,6 +215,11 @@ td.num, th.num { text-align: right; }
 .streak { font-size: 12px; font-weight: 700; margin-left: 6px; } .streak.w { color: var(--good); } .streak.l { color: var(--bad); }
 .editform { flex-wrap: wrap; margin-bottom: 12px; } .editform input { flex: 1 1 160px; }
 .editform + .editform { margin-top: -4px; } .riotinfo { margin: -4px 0 12px; } .riotinfo b { color: var(--ink); }
+.gate { position: fixed; inset: 0; z-index: 60; background: var(--bg); display: grid; place-items: center; padding: 16px; overflow-y: auto; }
+.gate-card { width: min(100%, 400px); display: grid; gap: 12px; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 24px 20px; }
+.gate-card h1 { font-size: clamp(28px, 8vw, 36px); } .gate-card .sub { margin: 0; }
+.gate-card input { font-size: 17px; padding: 12px 14px; }
+body.gated { overflow: hidden; }
 .toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(20px + env(safe-area-inset-bottom, 0px)); background: var(--ink); color: var(--bg); padding: 9px 16px; border-radius: 999px; font-size: 14px; font-weight: 500; max-width: calc(100% - 32px); text-align: center; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 </style>
@@ -229,6 +234,16 @@ td.num, th.num { text-align: right; }
     <circle cx="10.6" cy="12.2" r="1.2" fill="#fff" opacity=".45"/>
   </symbol>
 </svg>
+<!-- 첫 입장: 닉네임을 정해야 들어가요. 방장·구경 중인 사람이 이 이름으로 보여요. -->
+<div class="gate" id="gate" hidden>
+  <form class="gate-card" id="gateForm">
+    <h1>똥겜사랑단 <em>놀이터</em></h1>
+    <p class="sub">처음 오셨네요! 친구들이 알아볼 수 있게 닉네임을 정해 주세요.</p>
+    <input id="gateInput" type="text" maxlength="16" placeholder="닉네임 (예: 일윤)" autocomplete="off" aria-label="닉네임">
+    <button class="btn gold" type="submit">입장하기</button>
+    <p class="note" style="margin:0">방장이 누군지, 누가 구경 중인지 이 이름으로 보여요. 들어가서 언제든 바꿀 수 있어요.</p>
+  </form>
+</div>
 <div class="wrap">
   <header>
     <div>
@@ -1205,9 +1220,23 @@ $('#roomCard').addEventListener('click', async e => {
 
 function renderAll() { renderRoomBar(); renderRoster(); renderTeams(); renderSession(); renderStats(); renderAnalysis(); renderLog(); }
 
+// 닉네임이 없으면 입장 화면부터. 정하면 바로 방 신호를 보내서 '구경 중'에 이름이 떠요.
+function showGate(on) {
+  $('#gate').hidden = !on; document.body.classList.toggle('gated', on);
+  if (on) setTimeout(() => $('#gateInput').focus(), 50);
+}
+$('#gateForm').addEventListener('submit', e => {
+  e.preventDefault();
+  const v = $('#gateInput').value.trim().slice(0, 16);
+  if (!v) { $('#gateInput').focus(); return toast('닉네임을 적어 주세요.'); }
+  ME.nick = v; saveMe(); showGate(false); renderAll(); pull(true);
+  toast(`${v}님, 반가워요!`);
+});
+
 loadLocal();
 setMode(S.mode);
 setBadge();
+showGate(!ME.nick);
 renderAll();
 startSync();
 </script>
