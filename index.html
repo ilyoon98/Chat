@@ -2177,8 +2177,10 @@ async function matchShot(m) {
   const day = new Date(m.t).toDateString(), nth = ord.slice(0, i + 1).filter(x => new Date(x.t).toDateString() === day).length;
   const sub = [shotWhen(m.t), S.rooms.find(r => r.id === m.room)?.name, `이날 ${nth}번째 판`].filter(Boolean).join(' · ');
   const n = Math.max(m.blue.length, m.red.length, 1), W = SHOT_W, P = SHOT_P, gap = 24, colW = (W - P * 2 - gap) / 2, HEAD = 108, ROW = 84;
-  const top = 408, panelH = HEAD + n * ROW + 16, H = top + panelH + 150;
-  const k = await shotStart(H, m.win, sub, '롤 내전 결과', `${TEAM[m.win]} 승리`, [...m.blue, ...m.red, TEAM.blue, TEAM.red, '승리 패배 평균 MMR 탑정글미드원딜서폿 번째 내전']), { g, T } = k;
+  // MVP(투표 1등)는 이름 앞에 ⭐, 벌칙 룰렛 결과가 있으면 팀 칸 아래에 한 줄 더 그려요.
+  const mvp = mvpTop(m.id), pen = m.penalty, penText = pen ? `🎡 벌칙 · ${pen.who} → ${pen.what}` : '';
+  const top = 408, panelH = HEAD + n * ROW + 16, H = top + panelH + 150 + (pen ? 70 : 0);
+  const k = await shotStart(H, m.win, sub, '롤 내전 결과', `${TEAM[m.win]} 승리`, [...m.blue, ...m.red, TEAM.blue, TEAM.red, '승리 패배 평균 MMR 탑정글미드원딜서폿 번째 내전', penText]), { g, T } = k;
   ['blue', 'red'].forEach((side, j) => {
     const x = P + j * (colW + gap), won = m.win === side, C = SHOT[side];
     shotRR(g, x, top, colW, panelH, 24); g.fillStyle = SHOT.surface; g.fill();
@@ -2196,12 +2198,13 @@ async function matchShot(m) {
         if (r.lane) { shotRR(g, nx, ry + 22, 74, 42, 10); g.fillStyle = SHOT.sunk; g.fill(); T(r.lane, nx + 37, ry + 51, { s: 22, w: 800, c: SHOT.gold, a: 'center' }); }
         nx += 90;
       }
-      T(r.p, nx, ry + 54, { s: 32, w: 700, max: x + colW - 150 - nx, min: 22 });
+      T((mvp.includes(r.p) ? '⭐ ' : '') + r.p, nx, ry + 54, { s: 32, w: 700, max: x + colW - 150 - nx, min: 22 });
       T(shotSign(r.d), x + colW - 28, ry + 44, { s: 32, w: 800, c: r.d >= 0 ? SHOT.good : SHOT.bad, a: 'right' });
       T(`MMR ${r.b}`, x + colW - 28, ry + 70, { s: 19, w: 600, c: SHOT.muted, a: 'right' });
     });
     g.globalAlpha = 1;
   });
+  if (pen) T(penText, W / 2, top + panelH + 64, { s: 30, w: 700, c: SHOT.bad, a: 'center', max: W - P * 2, min: 20 });
   shotFooter(k, H, `${i + 1}번째 내전`);
   return k.cv;
 }
@@ -2271,6 +2274,9 @@ document.addEventListener('click', e => {
 // ---------- 버전 · 패치노트 ----------
 // 커밋해서 올릴 때마다 맨 위에 새 항목을 더해요(규칙은 CLAUDE.md). 오른쪽 위 버전은 맨 위 항목이에요.
 const NOTES = [
+  { v: '1.11.0', d: '2026-10-22', items: [
+    '결과 이미지에 MVP와 벌칙도 나와요. 투표 1등은 이름 앞에 ⭐, 벌칙 룰렛을 돌렸으면 팀 칸 아래에 "🎡 벌칙 · 누구 → 무엇"이 들어가요. 투표가 끝난 뒤에 만들면 MVP까지 담겨요.',
+  ] },
   { v: '1.10.0', d: '2026-10-22', items: [
     '벌칙 장부: 벌칙 룰렛 결과가 그 판 기록에 남아요. 방장이 다음 판으로 넘어가도 기록 탭의 그 판 아래와 "이 방 기록" 아래에서 누가 무슨 벌칙인지 볼 수 있어요. 이 방 기록 "카톡용 복사"에도 같이 들어가요.',
     '결과 이미지: 폰에서 공유 창이 바로 안 뜨면 그림을 띄워 주고 "공유하기"를 한 번 더 누르면 돼요(아이폰). 그림을 꾹 눌러 저장해도 돼요.',
