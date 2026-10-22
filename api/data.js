@@ -378,7 +378,7 @@ export default async function handler(req, res) {
     const notHost = () => res.status(423).json({ error: 'not_host' });
     // 선수 명단(추가·이름 바꾸기·빼기·Riot ID)은 누구나 고쳐요. 기록 삭제·1:1 기록·백업 불러오기·새 시즌은
     // 모든 방이 같이 쓰는 기록이라 어느 방이든 방장인 사람만 해요.
-    const rosterAction = ['deleteMatch', 'addDuel', 'deleteDuel', 'importBackup', 'startSeason'].includes(b.action);
+    const rosterAction = ['deleteMatch', 'deleteMatches', 'resetRecords', 'addDuel', 'deleteDuel', 'importBackup', 'startSeason'].includes(b.action);
     if (rosterAction && !rooms.some(isHost)) return notHost();
     // 그 방의 오늘 할 사람·팀 배치·승패는 그 방 방장만
     if (['select', 'current', 'addMatch', 'giveHost', 'closeRoom'].includes(b.action)) {
@@ -450,6 +450,32 @@ export default async function handler(req, res) {
         await redis.set(K.players, (await readPlayers()).filter(p => p !== name));
         for (const r of rooms) await redis.zrem(RK.sel(r.id), name);
         await dropRiot(name);
+        break;
+      }
+      case 'removePlayers': {
+        // 여러 명을 한 번에 명단에서 빼요(선수 명단 '여러 명 고르기', 누구나). 지난 전적은 그대로 남아요.
+        const names = cleanNames(b.names, MAX_PLAYERS);
+        if (!names?.length) return bad(res);
+        await redis.set(K.players, (await readPlayers()).filter(p => !names.includes(p)));
+        for (const r of rooms) await redis.zrem(RK.sel(r.id), ...names);
+        for (const n of names) await dropRiot(n);
+        break;
+      }
+      case 'deleteMatches': {
+        // 여러 판을 한 번에 지워요(기록 탭 '여러 판 고르기', 방장). 그 판들의 MVP 표도 같이 지워요.
+        const ids = Array.isArray(b.ids) ? [...new Set(b.ids.filter(x => typeof x === 'string' && x))].slice(0, MAX_MATCHES) : [];
+        if (!ids.length) return bad(res);
+        await redis.hdel(K.matches, ...ids);
+        const gone = new Set(ids), votes = Object.keys((await redis.hgetall(K.mvp)) || {}).filter(k => gone.has(k.split('|')[0]));
+        if (votes.length) await redis.hdel(K.mvp, ...votes);
+        break;
+      }
+      case 'resetRecords': {
+        // 전체 기록 초기화(방장): 내전·1:1·MVP 표·시즌을 모두 지워요. 선수 명단·Riot ID·방·팀 배치는 그대로예요.
+        // 화면이 지우기 전에 백업 파일을 먼저 받아 두고, 실수로 불리지 않게 '초기화'라는 글자를 같이 보내야 해요.
+        if (b.confirm !== '초기화') return bad(res);
+        await redis.del(K.matches, K.duels, K.mvp, K.seasons);
+        for (const r of rooms) { const cur = await redis.get(RK.cur(r.id)); if (cur?.penalty) { const { penalty, ...rest } = cur; await redis.set(RK.cur(r.id), rest); } }
         break;
       }
       case 'select': {

@@ -441,6 +441,17 @@ body.gated { overflow: hidden; }
    기록 탭: '이미지' 버튼이 '삭제' 옆에 붙어요(오른쪽 끝은 삭제). 최근 1:1: 버튼 두 개를 한 줄로 */
 .rec-head b { flex: 1 0 auto; }
 .mhead [data-shot] + .btn { margin-left: 0; }
+/* 여러 판·여러 명 고르기, 전체 초기화 */
+.log-tools { margin: 0 0 12px; }
+li.match.picked { outline: 2px solid var(--bad); outline-offset: -2px; }
+.msel { display: inline-flex; align-items: center; gap: 4px; font-weight: 700; color: var(--bad); cursor: pointer; }
+.mday .linkbtn { margin-left: 8px; font-size: 13px; }
+.btn.warn:not(:disabled) { background: var(--bad); color: #fff; }
+.reset-panel { display: grid; gap: 8px; margin: 0 0 12px; padding: 14px; border: 1.5px solid var(--bad); border-radius: 12px; background: var(--sunk); }
+.reset-panel b { color: var(--bad); } .reset-panel p { margin: 0; font-size: 13.5px; color: var(--muted); }
+.reset-panel .row input { flex: 1 1 200px; min-width: 0; }
+.prows > li.picked { background: color-mix(in srgb, var(--bad) 12%, var(--surface)); }
+.prow-name input { margin: 0 4px 0 0; pointer-events: none; }
 .shot-btns { display: inline-flex; gap: 6px; }
 </style>
 </head>
@@ -577,6 +588,12 @@ body.gated { overflow: hidden; }
   <section id="p-log" role="tabpanel" hidden>
     <div class="card">
       <h2>경기 기록 <span class="r"><span id="logMeta"></span> <button class="btn ghost small" id="seasonStart" hidden title="내전·1:1 MMR을 모두 1000점에서 다시 시작해요. 지난 시즌 기록은 그대로 남아요."></button> <button class="btn ghost small" id="backup">백업 받기</button> <button class="btn ghost small" id="restore" hidden>백업 불러오기</button><input type="file" id="restoreFile" accept=".json,application/json" hidden></span></h2>
+      <div class="row log-tools" id="logTools"></div>
+      <div class="reset-panel" id="resetPanel" hidden>
+        <b>전체 기록 초기화</b>
+        <p>내전·1:1 기록, MVP 표, 시즌이 모두 지워지고 처음부터 다시 시작해요. 선수 명단·Riot ID·방은 그대로예요. 누르면 먼저 지금 기록을 백업 파일로 받아 둬요("백업 불러오기"로 되살릴 수 있어요).</p>
+        <div class="row"><input id="resetInput" type="text" placeholder='여기에 "초기화"라고 적어 주세요' autocomplete="off" aria-label="확인 글자"><button class="btn small warn" id="resetGo" disabled>백업 받고 초기화</button><button class="btn ghost small" id="resetCancel">취소</button></div>
+      </div>
       <ul class="log" id="logBox"></ul>
     </div>
   </section>
@@ -612,6 +629,7 @@ body.gated { overflow: hidden; }
         <input id="addInput" type="text" placeholder="이름 추가 (쉼표로 여러 명: 철수, 영희)" autocomplete="off" maxlength="300">
         <button class="btn" type="submit">추가</button>
       </form>
+      <div class="row" id="rosterTools" style="margin-top:12px"></div>
       <div id="rosterEdit" style="margin-top:12px"></div>
       <div id="editBox"></div>
       <p class="note" id="rosterEditNote"></p>
@@ -1114,11 +1132,17 @@ function renderRoster() {
   $('#rosterCount').textContent = !players.length ? '' : `남은 ${rest.length}명 / 전체 ${players.length}명`;
   // 선수 명단 탭: 한 줄에 한 명씩 세로로(티어·이름·라인·솔랭 아이콘 / Riot ID / 이번 시즌 승패·MMR). 누르면 그 줄 아래에 고치는 칸이 열려요(누구나).
   // 고치는 칸(#editBox)은 열린 줄 안으로 옮겨 붙여요. 목록을 다시 그리기 전에 밖으로 빼 둬야 같이 지워지지 않아요.
+  // '여러 명 고르기' 중이면 줄을 누를 때 고치는 칸 대신 체크가 바뀌고, 위 줄에서 고른 사람을 한 번에 빼요.
+  if (rosterSel) for (const n of [...rosterSel]) if (!players.includes(n)) rosterSel.delete(n);
+  const rn = rosterSel?.size || 0;
+  $('#rosterTools').innerHTML = !players.length ? '' : rosterSel
+    ? `<span class="note" style="margin:0"><b>${rn}명</b> 골랐어요</span><button class="btn ghost small" id="rsAll">전체 고르기</button><button class="btn small warn" id="rsDel"${rn ? '' : ' disabled'}>${rosterDelConfirm ? `정말 ${rn}명 빼기` : `고른 ${rn}명 빼기`}</button><button class="btn ghost small" id="rsOff">끝내기</button>`
+    : '<button class="btn ghost small" id="rsOn">☑ 여러 명 고르기</button>';
   $('#rosterEdit').after($('#editBox'));
   $('#rosterEdit').innerHTML = !players.length ? '<p class="empty">아직 명단이 없어요. 위 칸에 친구들 이름을 쉼표로 한 번에 넣어 주세요.</p>'
-    : `<ol class="prows">${players.map((p, i) => { const s = st0.P[p], r = S.riot[p], on = S.editTarget === p;
-      return `<li${on ? ' class="on"' : ''}><button class="prow-btn" type="button" data-i="${i}" data-card="${esc(p)}" aria-expanded="${on}" aria-label="${esc(p)} 고치기">`
-        + `<span class="prow-name">${tierIcon(T[p])}<b>${esc(p)}</b>${quick(p)}</span><span class="prow-sub">${r ? esc(r.id) : 'Riot ID 없음'}</span>`
+    : `<ol class="prows">${players.map((p, i) => { const s = st0.P[p], r = S.riot[p], on = S.editTarget === p, picked = !!rosterSel?.has(p);
+      return `<li${on ? ' class="on"' : picked ? ' class="picked"' : ''}><button class="prow-btn" type="button" data-i="${i}" data-card="${esc(p)}" aria-${rosterSel ? `pressed="${picked}"` : `expanded="${on}"`} aria-label="${esc(p)} ${rosterSel ? '고르기' : '고치기'}">`
+        + `<span class="prow-name">${rosterSel ? `<input type="checkbox" tabindex="-1" aria-hidden="true"${picked ? ' checked' : ''}>` : ''}${tierIcon(T[p])}<b>${esc(p)}</b>${quick(p)}</span><span class="prow-sub">${r ? esc(r.id) : 'Riot ID 없음'}</span>`
         + `<span class="prow-rec">${s?.g ? `<b>${s.w}승 ${s.g - s.w}패</b><br>MMR ${Math.round(s.mmr)}` : '기록 없음'}</span><span class="prow-edit" aria-hidden="true">✎</span></button></li>`; }).join('')}</ol>`;
   $('#rosterEditCount').textContent = players.length ? `${players.length}명` : '';
   $('#riotRefresh').hidden = !Object.keys(S.riot).length;
@@ -1155,8 +1179,29 @@ $('#roster').addEventListener('click', async e => {
 $('#rosterEdit').addEventListener('click', e => {
   const b = e.target.closest('button[data-i]'); if (!b) return;
   const name = S.players[+b.dataset.i];
+  if (rosterSel) { rosterSel.has(name) ? rosterSel.delete(name) : rosterSel.add(name); rosterDelConfirm = false; return renderRoster(); }
   S.editTarget = S.editTarget === name ? null : name; renderRoster();
   if (S.editTarget) $('#renameInput')?.focus();
+});
+// 여러 명 고르기 → 고른 사람 한 번에 빼기(누구나). '빼기'는 3초 안에 한 번 더 눌러야 돼요.
+let rosterSel = null, rosterDelConfirm = false;
+$('#rosterTools').addEventListener('click', async e => {
+  const id = e.target.id; if (!id) return;
+  if (id === 'rsOn') { rosterSel = new Set(); S.editTarget = null; }
+  if (id === 'rsOff') { rosterSel = null; rosterDelConfirm = false; }
+  if (id === 'rsAll') rosterSel = new Set(S.players);
+  if (id === 'rsDel' && rosterSel?.size) {
+    if (!rosterDelConfirm) {
+      rosterDelConfirm = true; clearTimeout(renderRoster.t); renderRoster.t = setTimeout(() => { rosterDelConfirm = false; renderRoster(); }, 3000);
+      toast('한 번 더 누르면 명단에서 빠져요. 지난 전적은 그대로 남아요.'); return renderRoster();
+    }
+    const names = [...rosterSel]; rosterSel = null; rosterDelConfirm = false; clearTimeout(renderRoster.t);
+    S.players = S.players.filter(p => !names.includes(p)); for (const n of names) { S.selected.delete(n); delete S.riot[n]; }
+    renderAll();
+    if (await rosterAction('removePlayers', { names })) toast(`${names.length}명을 명단에서 뺐어요. 지난 전적은 그대로 남아요.`);
+    return;
+  }
+  renderRoster();
 });
 $('#goRoster').onclick = () => { showGame('roster'); scrollTo({ top: 0, behavior: reduceMotion ? 'auto' : 'smooth' }); };
 $('#today').addEventListener('click', e => {
@@ -1924,6 +1969,7 @@ let confirmId = null, seasonConfirm = false;
 function renderLog() {
   const ms = [...S.matches].sort((a, b) => b.t - a.t), T = tierMap(computeStats(S.players, seasonMatches()));
   $('#logMeta').textContent = `총 ${ms.length}판${S.seasons.length ? ` · 지금 시즌 ${curSeason()}` : ''}`;
+  renderLogTools();
   $('#restore').hidden = !canRoster();
   // 새 시즌 시작(방장): 한 번 누르면 3초 동안 "정말 시작"으로 바뀌고, 그때 한 번 더 눌러야 시작해요.
   const sb = $('#seasonStart'); sb.hidden = !canRoster();
@@ -1941,11 +1987,11 @@ function renderLog() {
   const mark = ({ s, t }) => { const d = new Date(t); return `<li class="mseason">🏁 시즌 ${s} 시작 <small>${d.getMonth() + 1}/${d.getDate()} ${p2(d.getHours())}:${p2(d.getMinutes())}</small></li>`; };
   $('#logBox').innerHTML = ms.length ? rows.map(x => {
     if (!x.m) return mark(x);
-    const m = x.m, d = day(m.t), head = d !== last ? `<li class="mday">${d} · ${counts[d]}판</li>` : ''; last = d;
+    const m = x.m, d = day(m.t), head = d !== last ? `<li class="mday">${d} · ${counts[d]}판${logSel ? ` <button class="linkbtn" data-selday="${m.t}">이날 전체 고르기</button>` : ''}</li>` : ''; last = d;
     const t = new Date(m.t), room = S.rooms.find(r => r.id === m.room);
-    return `${head}<li class="match"><div class="mhead"><time>${p2(t.getHours())}:${p2(t.getMinutes())}</time>${room ? `<span>· ${esc(room.name)}</span>` : ''}
+    return `${head}<li class="match${logSel?.has(m.id) ? ' picked' : ''}"><div class="mhead"><time>${p2(t.getHours())}:${p2(t.getMinutes())}</time>${room ? `<span>· ${esc(room.name)}</span>` : ''}
       <button class="btn ghost small" data-shot="match" data-id="${esc(m.id)}">이미지</button>
-      ${!canRoster() ? '' : `<button class="btn ghost small" data-del="${esc(m.id)}" style="${confirmId === m.id ? 'color:var(--bad);border-color:var(--bad)' : ''}">${confirmId === m.id ? '정말 삭제' : '삭제'}</button>`}</div>
+      ${logSel ? `<label class="msel"><input type="checkbox" data-sel="${esc(m.id)}"${logSel.has(m.id) ? ' checked' : ''}> 고르기</label>` : !canRoster() ? '' : `<button class="btn ghost small" data-del="${esc(m.id)}" style="${confirmId === m.id ? 'color:var(--bad);border-color:var(--bad)' : ''}">${confirmId === m.id ? '정말 삭제' : '삭제'}</button>`}</div>
       <div class="mteams">${team(m, 'blue')}${team(m, 'red')}</div>${penLine(m)}${Date.now() - m.t < MVP_OPEN ? `<div class="log-mvp" data-mid="${esc(m.id)}">${mvpBox(m)}</div>` : ''}</li>`;
   }).join('') : '<li><p class="empty">아직 기록이 없어요.</p></li>';
 }
@@ -1953,12 +1999,61 @@ $('#logBox').addEventListener('click', async e => {
   // 지난 판 MVP 투표(기록하고 하루 안): 방장이 다음 판으로 넘어가도 여기서 할 수 있어요. 구경하는 사람도 돼요.
   const vote = e.target.closest('[data-mvp]');
   if (vote) { const mid = vote.closest('[data-mid]')?.dataset.mid; if (mid && !vote.disabled) voteMvp(mid, vote.dataset.mvp); return; }
+  // 여러 판 고르기: 판마다 체크, 날짜 줄의 '이날 전체 고르기'(다 골라져 있으면 그날 것을 풀어요)
+  const cb = e.target.closest('[data-sel]');
+  if (cb && logSel) { cb.checked ? logSel.add(cb.dataset.sel) : logSel.delete(cb.dataset.sel); logDelConfirm = false; cb.closest('li.match')?.classList.toggle('picked', cb.checked); return renderLogTools(); }
+  const sd = e.target.closest('[data-selday]');
+  if (sd && logSel) {
+    const key = new Date(+sd.dataset.selday).toDateString(), ids = S.matches.filter(m => new Date(m.t).toDateString() === key).map(m => m.id), all = ids.every(x => logSel.has(x));
+    for (const x of ids) all ? logSel.delete(x) : logSel.add(x);
+    logDelConfirm = false; return renderLog();
+  }
   const b = e.target.closest('[data-del]'); if (!b || !needRoster()) return;
   const id = b.dataset.del;
   if (confirmId !== id) { confirmId = id; renderLog(); clearTimeout(renderLog.t); renderLog.t = setTimeout(() => { confirmId = null; renderLog(); }, 3000); return; }
   confirmId = null; try { await deleteMatch(id); toast('경기 기록을 지웠어요.'); } catch {}
   renderAll();
 });
+// ---------- 여러 판 고르기 · 전체 초기화 (방장) ----------
+// logSel: 고른 판 id들(고르는 중이 아니면 null). '고른 n판 삭제'는 3초 안에 한 번 더 눌러야 지워져요.
+let logSel = null, logDelConfirm = false, resetOpen = false;
+function renderLogTools() {
+  const box = $('#logTools');
+  if (!canRoster() || (!S.matches.length && !S.duels.length)) { box.innerHTML = ''; logSel = null; resetOpen = false; $('#resetPanel').hidden = true; return; }
+  if (logSel) for (const id of [...logSel]) if (!S.matches.some(m => m.id === id)) logSel.delete(id); // 그새 지워진 판은 빼요
+  const n = logSel?.size || 0;
+  box.innerHTML = logSel
+    ? `<span class="note" style="margin:0"><b>${n}판</b> 골랐어요</span><button class="btn ghost small" id="logSelAll">전체 고르기</button><button class="btn ghost small" id="logSelNone"${n ? '' : ' disabled'}>고른 것 풀기</button><button class="btn small warn" id="logSelDel"${n ? '' : ' disabled'}>${logDelConfirm ? `정말 ${n}판 삭제` : `고른 ${n}판 삭제`}</button><button class="btn ghost small" id="logSelOff">끝내기</button>`
+    : `${S.matches.length ? '<button class="btn ghost small" id="logSelOn">☑ 여러 판 고르기</button>' : ''}<button class="btn ghost small" id="resetOpen">전체 기록 초기화</button>`;
+  $('#resetPanel').hidden = !resetOpen;
+}
+$('#logTools').addEventListener('click', async e => {
+  const id = e.target.id; if (!id || !needRoster()) return;
+  if (id === 'logSelOn') { logSel = new Set(); resetOpen = false; }
+  if (id === 'logSelOff') { logSel = null; logDelConfirm = false; }
+  if (id === 'logSelAll') logSel = new Set(S.matches.map(m => m.id));
+  if (id === 'logSelNone') logSel?.clear();
+  if (id === 'resetOpen') { resetOpen = true; logSel = null; renderLog(); return $('#resetInput').focus(); }
+  if (id === 'logSelDel' && logSel?.size) {
+    if (!logDelConfirm) {
+      logDelConfirm = true; clearTimeout(renderLogTools.t); renderLogTools.t = setTimeout(() => { logDelConfirm = false; renderLogTools(); }, 3000);
+      toast(`한 번 더 누르면 ${logSel.size}판이 지워져요. MMR·전적이 다시 계산돼요.`); return renderLogTools();
+    }
+    logDelConfirm = false; clearTimeout(renderLogTools.t); const ids = [...logSel];
+    try { await api('deleteMatches', { ids }); toast(`${ids.length}판을 지웠어요.`); logSel = null; } catch {}
+    return renderAll();
+  }
+  renderLog();
+});
+$('#resetInput').addEventListener('input', e => { $('#resetGo').disabled = e.target.value.trim() !== '초기화'; });
+const closeReset = () => { resetOpen = false; $('#resetInput').value = ''; $('#resetGo').disabled = true; renderLogTools(); };
+$('#resetCancel').onclick = closeReset;
+$('#resetGo').onclick = async () => {
+  if (!needRoster() || $('#resetInput').value.trim() !== '초기화') return;
+  $('#backup').click(); // 지우기 전에 지금 기록을 파일로 받아 둬요
+  try { await api('resetRecords', { confirm: '초기화' }); toast('전체 기록을 초기화했어요. 지우기 전 기록은 백업 파일로 받아 뒀어요.'); closeReset(); } catch {}
+  renderAll();
+};
 $('#seasonStart').onclick = async () => {
   if (!canRoster()) return toast('새 시즌은 방장만 시작할 수 있어요.');
   const n = curSeason() + 1;
@@ -2459,6 +2554,11 @@ document.addEventListener('click', e => {
 // ---------- 버전 · 패치노트 ----------
 // 커밋해서 올릴 때마다 맨 위에 새 항목을 더해요(규칙은 CLAUDE.md). 오른쪽 위 버전은 맨 위 항목이에요.
 const NOTES = [
+  { v: '1.17.0', d: '2026-10-22', items: [
+    '여러 판 한 번에 지우기(방장): 기록 탭 "☑ 여러 판 고르기"를 누르면 판마다 체크칸이 생겨요. 하나씩 고르거나, 날짜 줄의 "이날 전체 고르기", 위쪽 "전체 고르기"로 고른 다음 "고른 n판 삭제"를 두 번 누르면 지워져요. 한 판만 지우는 "삭제" 버튼도 그대로 있어요.',
+    '전체 기록 초기화(방장): 기록 탭 "전체 기록 초기화"에서 "초기화"라고 적고 누르면 내전·1:1·MVP·시즌이 모두 지워져요. 선수 명단·Riot ID는 그대로고, 지우기 전에 백업 파일을 먼저 받아 둬요.',
+    '여러 명 한 번에 빼기: 선수 명단 탭 "☑ 여러 명 고르기"로 고른 사람을 한 번에 명단에서 빼요(누구나). 지난 전적은 그대로 남아요.',
+  ] },
   { v: '1.16.0', d: '2026-10-22', items: [
     '선수 명단은 이제 누구나 고칠 수 있어요: 이름 추가, 이름 바꾸기, 명단에서 빼기, Riot ID 연결. 기록 삭제·1:1 기록·백업 불러오기·새 시즌은 그대로 방장만 해요.',
     '선수 명단 탭이 한 줄에 한 명씩 세로로 나와요. 줄마다 티어·이름·라인·솔랭, Riot ID, 이번 시즌 승패와 MMR이 보이고, 누르면 그 줄 바로 아래에 고치는 칸이 열려요.',
