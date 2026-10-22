@@ -521,7 +521,7 @@ body.gated { overflow: hidden; }
     </div>
 
     <div class="card" id="sessionCard" hidden>
-      <h2>이 방 기록 <span class="r"><span id="sessionMeta"></span> <button class="btn ghost small" id="copySession">카톡용 복사</button></span></h2>
+      <h2>이 방 기록 <span class="r"><span id="sessionMeta"></span> <button class="btn ghost small" id="copySession">카톡용 복사</button> <button class="btn ghost small" id="shotSession">결산 이미지</button></span></h2>
       <div id="sessionBox"></div>
       <p class="note">이 방에서 한 판들만 따로 세요. 모든 방을 합친 전체 전적은 전적 탭에서 봐요.</p>
     </div>
@@ -1756,11 +1756,13 @@ function renderStats() {
 $('#statsBox').addEventListener('click', e => { const b = e.target.closest('button[data-sort]'); if (b) { sortKey = b.dataset.sort; renderStats(); } });
 
 // 내전 탭 맨 아래 '이 방 기록' 표: 이 방에서 한 판들만 따로 세요. 많이 이긴 순.
+// 이 방 기록 순위: 많이 이긴 순, 같으면 덜 진 순, 같으면 이름 순. 표·카톡용 복사·결산 이미지가 같은 순서를 써요.
+const sessionRows = st => Object.values(st.P).sort((a, b) => b.w - a.w || (a.g - a.w) - (b.g - b.w) || a.name.localeCompare(b.name, 'ko'));
 function renderSession() {
   const ms = roomMatches(), card = $('#sessionCard');
   card.hidden = !ms.length; if (!ms.length) return;
   const st = computeStats([], ms), T = tierMap(computeStats(S.players, seasonMatches())), mv = mvpCounts(ms);
-  const rows = Object.values(st.P).sort((a, b) => b.w - a.w || (a.g - a.w) - (b.g - b.w) || a.name.localeCompare(b.name, 'ko'));
+  const rows = sessionRows(st);
   const d = new Date(Math.min(...ms.map(m => m.t))), p2 = n => String(n).padStart(2, '0');
   $('#sessionMeta').textContent = `${ms.length}판 · ${d.getMonth() + 1}/${d.getDate()} ${p2(d.getHours())}:${p2(d.getMinutes())}부터`;
   $('#sessionBox').innerHTML = `<div class="tbl-wrap"><table><thead><tr><th></th><th>선수</th><th class="num">승-패</th><th>승률</th><th>흐름</th></tr></thead><tbody>${
@@ -1779,10 +1781,16 @@ function sessionPens(ms) {
 $('#copySession').onclick = () => {
   const ms = roomMatches(); if (!ms.length) return;
   const st = computeStats([], ms), mv = mvpCounts(ms), medal = ['🥇', '🥈', '🥉'];
-  const rows = Object.values(st.P).sort((a, b) => b.w - a.w || (a.g - a.w) - (b.g - b.w) || a.name.localeCompare(b.name, 'ko'));
+  const rows = sessionRows(st);
   copyText([`[${curRoom()?.name || '내전'}] 내전 ${ms.length}판`,
     ...rows.map((p, i) => `${medal[i] || `${i + 1}.`} ${p.name} ${p.w}승 ${p.g - p.w}패 (${pct(p.w, p.g)}%)${mv[p.name] ? ` ⭐${mv[p.name]}` : ''}`),
     ...ms.filter(m => m.penalty).map(m => `🎡 벌칙: ${m.penalty.who} → ${m.penalty.what}`)].join('\n'));
+};
+// 결산 이미지: 이 방 기록(순위·승-패·승률·MVP·벌칙)을 그림 한 장으로. 단톡방에 오늘 결과를 한 번에 올려요.
+$('#shotSession').onclick = () => {
+  const ms = roomMatches(); if (!ms.length) return;
+  const d = new Date(), p2 = n => String(n).padStart(2, '0');
+  shareShot(sessionShot(ms), `내전-결산-${d.getFullYear()}${p2(d.getMonth() + 1)}${p2(d.getDate())}`);
 };
 const emptyStats = () => `<p class="empty">아직 기록된 경기가 없어요. 내전 탭에서 팀을 섞고 이긴 팀을 누르면 여기에 쌓여요.</p>`;
 
@@ -2183,8 +2191,8 @@ async function shotFonts(texts) {
   return F;
 }
 function shotRR(g, x, y, w, h, r) { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); }
-function shotCrown(g, x, y, s) { // (x, y) = 왼쪽 아래, s = 너비
-  const h = s * .7; g.fillStyle = SHOT.gold; g.beginPath();
+function shotCrown(g, x, y, s, color = SHOT.gold) { // (x, y) = 왼쪽 아래, s = 너비
+  const h = s * .7; g.fillStyle = color; g.beginPath();
   g.moveTo(x, y); g.lineTo(x - s * .04, y - h * .78); g.lineTo(x + s * .28, y - h * .42); g.lineTo(x + s * .5, y - h); g.lineTo(x + s * .72, y - h * .42); g.lineTo(x + s * 1.04, y - h * .78); g.lineTo(x + s, y); g.closePath(); g.fill();
   for (const [cx, cy] of [[x - s * .04, y - h * .78], [x + s * .5, y - h], [x + s * 1.04, y - h * .78]]) { g.beginPath(); g.arc(cx, cy, s * .07, 0, Math.PI * 2); g.fill(); }
 }
@@ -2211,7 +2219,7 @@ async function shotStart(H, side, sub, label, title, texts) {
   const shade = g.createLinearGradient(0, by, 0, by + bh); shade.addColorStop(0, 'rgba(255,255,255,.12)'); shade.addColorStop(1, 'rgba(0,0,0,.28)'); g.fillStyle = shade; g.fill();
   T(label, W / 2, by + 50, { s: 26, w: 700, c: 'rgba(255,255,255,.85)', a: 'center' });
   g.font = `800 84px ${F.body}`; const tw = Math.min(g.measureText(title).width, W - P * 2 - 160), cs = 70, x0 = W / 2 - (cs + 22 + tw) / 2;
-  shotCrown(g, x0, by + 132, cs);
+  shotCrown(g, x0, by + 132, cs, side === 'gold' ? '#fff' : SHOT.gold); // 금색 띠(결산) 위에선 흰 왕관
   T(title, x0 + cs + 22, by + 140, { s: 84, w: 800, c: '#fff', max: W - P * 2 - 160, min: 48 });
   return { cv, g, T };
 }
@@ -2295,6 +2303,48 @@ async function duelShot(d) {
   return k.cv;
 }
 
+// 이 방 결산 한 장: 순위(메달·이름·⭐MVP 횟수·승-패·승률 막대)와 벌칙 목록. 순서는 이 방 기록 표와 같아요.
+async function sessionShot(ms) {
+  const st = computeStats([], ms), rows = sessionRows(st), mv = mvpCounts(ms), pens = ms.filter(m => m.penalty), penShow = pens.slice(0, 6);
+  const t0 = Math.min(...ms.map(m => m.t)), t1 = Math.max(...ms.map(m => m.t)), p2 = n => String(n).padStart(2, '0');
+  const hm = t => { const d = new Date(t); return `${p2(d.getHours())}:${p2(d.getMinutes())}`; };
+  const sub = `${shotWhen(t0).replace(/ \d{2}:\d{2}$/, '')} ${hm(t0)}~${hm(t1)} · 시즌 ${curSeason()}`;
+  const W = SHOT_W, P = SHOT_P, top = 408, HEAD = 72, ROW = 72;
+  const panelH = HEAD + rows.length * ROW + 16, penH = pens.length ? 72 + penShow.length * 48 + (pens.length > penShow.length ? 40 : 0) : 0;
+  const H = top + panelH + (penH ? penH + 24 : 0) + 150;
+  const k = await shotStart(H, 'gold', sub, curRoom()?.name || '롤 내전', `내전 ${ms.length}판 결산`,
+    [...rows.map(r => r.name), ...pens.map(m => `${m.penalty.who} ${m.penalty.what}`), '순위 선수 승-패 승률 벌칙 외 개 시즌 ⭐']), { g, T } = k;
+  shotRR(g, P, top, W - P * 2, panelH, 24); g.fillStyle = SHOT.surface; g.fill(); g.lineWidth = 2; g.strokeStyle = SHOT.line; g.stroke();
+  const xRank = P + 48, xName = P + 100, xWL = P + 600, xBar = P + 640, barW = 190, xPct = W - P - 28, MEDAL = [SHOT.gold, '#c0c7d4', '#c98a5a'];
+  T('순위 · 선수', P + 28, top + 46, { s: 22, w: 700, c: SHOT.muted });
+  T('승-패', xWL, top + 46, { s: 22, w: 700, c: SHOT.muted, a: 'right' });
+  T('승률', xPct, top + 46, { s: 22, w: 700, c: SHOT.muted, a: 'right' });
+  rows.forEach((r, i) => {
+    const ry = top + HEAD + i * ROW, cy = ry + ROW / 2, rate = r.w / r.g, rc = rate >= .5 ? SHOT.good : SHOT.bad;
+    g.fillStyle = SHOT.line; g.fillRect(P + 20, ry, W - P * 2 - 40, 2);
+    if (i < 3) { g.beginPath(); g.arc(xRank, cy, 20, 0, Math.PI * 2); g.fillStyle = MEDAL[i]; g.fill(); T(String(i + 1), xRank, cy + 9, { s: 24, w: 800, c: SHOT.bg, a: 'center' }); }
+    else T(String(i + 1), xRank, cy + 9, { s: 24, w: 700, c: SHOT.muted, a: 'center' });
+    const nw = T(r.name, xName, cy + 11, { s: 32, w: 700, max: 330, min: 22 });
+    if (mv[r.name]) T(`⭐${mv[r.name]}`, xName + nw + 14, cy + 9, { s: 24, w: 800, c: SHOT.gold });
+    T(`${r.w}-${r.g - r.w}`, xWL, cy + 11, { s: 30, w: 800, a: 'right' });
+    shotRR(g, xBar, cy - 6, barW, 12, 6); g.fillStyle = SHOT.line; g.fill();
+    if (rate > 0) { shotRR(g, xBar, cy - 6, Math.max(12, barW * rate), 12, 6); g.fillStyle = rc; g.fill(); }
+    T(`${pct(r.w, r.g)}%`, xPct, cy + 11, { s: 28, w: 800, c: rc, a: 'right' });
+  });
+  if (pens.length) {
+    const py = top + panelH + 24;
+    shotRR(g, P, py, W - P * 2, penH, 24); g.lineWidth = 2; g.strokeStyle = SHOT.bad; g.setLineDash([10, 8]); g.stroke(); g.setLineDash([]);
+    T(`🎡 벌칙 ${pens.length}개`, P + 28, py + 50, { s: 28, w: 800, c: SHOT.bad });
+    penShow.forEach((m, j) => {
+      const y = py + 102 + j * 48, w1 = T(m.penalty.who, P + 28, y, { s: 28, w: 800, max: 260, min: 20 });
+      T(`→ ${m.penalty.what}`, P + 42 + w1, y, { s: 26, w: 600, c: SHOT.muted, max: W - P * 2 - 70 - w1, min: 18 });
+    });
+    if (pens.length > penShow.length) T(`외 ${pens.length - penShow.length}개`, P + 28, py + 98 + penShow.length * 48, { s: 22, w: 600, c: SHOT.muted });
+  }
+  shotFooter(k, H, `시즌 ${curSeason()} · 내전 ${ms.length}판`);
+  return k.cv;
+}
+
 // 공유: 폰은 공유 창, 컴퓨터는 클립보드, 안 되면 저장. 클립보드는 누른 순간에 바로 맡겨야 해서(사파리) 그림은 다 그려지면 채워 넣어요.
 function shareShot(cvP, name) {
   const blobP = cvP.then(cv => new Promise((ok, no) => cv.toBlob(b => b ? ok(b) : no(new Error('blob')), 'image/png')));
@@ -2335,6 +2385,9 @@ document.addEventListener('click', e => {
 // ---------- 버전 · 패치노트 ----------
 // 커밋해서 올릴 때마다 맨 위에 새 항목을 더해요(규칙은 CLAUDE.md). 오른쪽 위 버전은 맨 위 항목이에요.
 const NOTES = [
+  { v: '1.13.0', d: '2026-10-22', items: [
+    '결산 이미지: 내전 탭 "이 방 기록"의 "결산 이미지"를 누르면 오늘 이 방 순위(승-패·승률·⭐MVP)와 벌칙 목록을 그림 한 장으로 만들어요. 단톡방에 바로 올리세요.',
+  ] },
   { v: '1.12.0', d: '2026-10-22', items: [
     '시즌: 방장이 기록 탭에서 "🏁 시즌 2 시작"을 누르고, 3초 안에 "정말 시즌 2 시작"을 한 번 더 누르면 그때부터 새 시즌이에요. 내전 MMR과 1:1 MMR이 모두 1000점에서 다시 시작해요.',
     '새 시즌에는 티어·전적·분석·실력 밸런스·팀장 뽑기·이 방 기록·MVP 횟수도 새 시즌 판만 세요. 지금까지 한 판은 모두 시즌 1이에요.',
