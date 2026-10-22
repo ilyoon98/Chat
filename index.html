@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>롤 내전 기록실</title>
+<title>똥겜사랑단 놀이터</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=IBM+Plex+Sans+KR:wght@400;500;700&display=swap">
@@ -39,6 +39,10 @@ h1 em { font-style: normal; color: var(--gold); }
 .badge i { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
 .badge.shared i { background: var(--good); } .badge.readonly i { background: var(--bad); }
 
+.games { display: flex; flex-wrap: wrap; gap: 8px; }
+.games button { font-family: var(--display); font-weight: 400; font-size: 18px; padding: 9px 18px; border-radius: 12px; border: 1.5px solid var(--line); background: var(--surface); color: var(--muted); cursor: pointer; }
+.games button[aria-selected=true] { background: var(--gold); color: var(--on-gold); border-color: transparent; }
+.game { display: flex; flex-direction: column; gap: 18px; }
 .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); overflow-x: auto; }
 .tabs button { font: inherit; font-weight: 500; color: var(--muted); background: none; border: 0; padding: 10px 16px; cursor: pointer; border-bottom: 3px solid transparent; margin-bottom: -1px; white-space: nowrap; }
 .tabs button[aria-selected=true] { color: var(--ink); font-weight: 700; border-bottom-color: var(--gold); }
@@ -221,11 +225,18 @@ td.num, th.num { text-align: right; }
 <div class="wrap">
   <header>
     <div>
-      <h1>롤 내전 <em>기록실</em></h1>
-      <p class="sub">명단에서 오늘 할 사람을 고르고, 팀을 섞고, 이긴 팀만 누르세요. 승률과 천적은 알아서 쌓여요.</p>
+      <h1>똥겜사랑단 <em>놀이터</em></h1>
+      <p class="sub">우리끼리 하는 게임 기록을 모아 두는 곳이에요.</p>
     </div>
     <span class="badge" id="syncBadge"><i></i><span>연결 중…</span></span>
   </header>
+
+  <!-- 게임 탭: 지금은 롤 내전 하나. 다른 게임이 생기면 버튼과 section.game을 하나씩 더 붙이면 돼요. -->
+  <nav class="games" role="tablist" aria-label="게임">
+    <button role="tab" id="game-lol" aria-selected="true" aria-controls="g-lol">롤 내전 기록</button>
+  </nav>
+
+  <section class="game" id="g-lol" role="tabpanel" aria-labelledby="game-lol">
 
   <div id="exBanner" class="banner" hidden>
     <span><b>예시 데이터</b>를 보고 있어요. 실제 기록이 아니에요.</span>
@@ -312,6 +323,7 @@ td.num, th.num { text-align: right; }
       <h2>경기 기록 <span class="r"><span id="logMeta"></span> <button class="btn ghost small" id="backup">백업 받기</button></span></h2>
       <ul class="log" id="logBox"></ul>
     </div>
+  </section>
   </section>
 </div>
 <div class="toast" id="toast" hidden></div>
