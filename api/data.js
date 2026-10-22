@@ -8,8 +8,9 @@ const redis = globalThis.__redis ?? (url && token ? new Redis({ url, token }) : 
 
 const K = { players: 'lol:players', matches: 'lol:matches', ver: 'lol:ver', riot: 'lol:riot', riotLock: 'lol:riot:lock', riotRest: 'lol:riot:rest', riotGames: 'lol:riot:games', rooms: 'lol:rooms', hostSeen: 'lol:hostseen', nicks: 'lol:nicks', duels: 'lol:duels', mvp: 'lol:mvp', seasons: 'lol:seasons', pred: 'lol:pred', tourn: 'lol:tourn' };
 // 방마다 따로인 것: 오늘 할 사람(정렬 집합), 팀 배치, 지금 보고 있는 사람(정렬 집합, 점수 = 마지막 신호 시각)
-const RK = { sel: r => `lol:room:${r}:sel`, cur: r => `lol:room:${r}:cur`, seen: r => `lol:room:${r}:seen`, board: (r, s) => `lol:room:${r}:board:${s}` };
-// 인게임 타이머 보드: 방마다 블루팀·레드팀·솔랭(우리끼리) 셋. 해시 필드 'start'(게임 0초 시각), 'r:라인'({ s: [스펠 둘], e: [끝나는 시각 둘], b: 신발, c: 우주적 통찰력 }), 'o:오브젝트'(끝나는 시각)
+const RK = { sel: r => `lol:room:${r}:sel`, cur: r => `lol:room:${r}:cur`, seen: r => `lol:room:${r}:seen`, board: (r, s) => `lol:room:${r}:board:${s}`, bver: r => `lol:room:${r}:bver` };
+// 인게임 타이머 보드: 방마다 블루팀·레드팀·솔랭(우리끼리) 셋. 해시 필드 'start'(게임 0초 시각), 'r:라인'({ s: [스펠 둘], b: 신발, c: 우주적 통찰력 }),
+// 'e:라인:칸'(그 스펠이 돌아오는 시각, 0이면 준비), 'o:오브젝트'(끝나는 시각). 바뀌면 그 방 보드 버전(bver)만 올려요.
 const BOARD_SIDES = ['blue', 'red', 'solo'], BOARD_LANES = ['TOP', 'JUNGLE', 'MIDDLE', 'BOTTOM', 'UTILITY'];
 const BOARD_SPELLS = ['flash', 'tp', 'ignite', 'exhaust', 'cleanse', 'heal', 'barrier', 'ghost', 'smite'], BOARD_OBJS = ['drake', 'baron', 'elder', 'inhib'];
 const MAX_MATCHES = 5000;
@@ -222,7 +223,7 @@ async function readRooms() {
 const saveRoom = ({ id, hostAlive, ...r }) => redis.hset(K.rooms, { [id]: r });
 async function dropRoom(id) {
   await redis.hdel(K.rooms, id); await redis.hdel(K.hostSeen, id);
-  await redis.del(RK.sel(id), RK.cur(id), RK.seen(id), ...BOARD_SIDES.map(s => RK.board(id, s)));
+  await redis.del(RK.sel(id), RK.cur(id), RK.seen(id), RK.bver(id), ...BOARD_SIDES.map(s => RK.board(id, s)));
 }
 // 1:1 기록: { id, t, a, b(두 사람), w(이긴 사람 이름), rule('자유'·'퍼블'·'100CS'·'첫 타워') }. 내전 기록과 따로예요.
 const DUEL_RULES = ['자유', '퍼블', '100CS', '첫 타워'];
@@ -275,6 +276,12 @@ function makeTourn(name, game, ents) {
 }
 // 승부 예측: 해시 필드 '판round|기기id' → { s: 'blue'|'red', n: 닉네임, t }. 화면에는 기기id 대신 짧은 열쇠(k)만 줘요.
 const predKey = id => createHash('sha256').update(id).digest('hex').slice(0, 10);
+// 판을 지우거나 되돌리면 그 판(round)의 예측도 지워요(결과를 보고 다시 찍지 못하게).
+async function dropPredRounds(rounds) {
+  const rs = new Set(rounds.filter(Boolean).map(String)); if (!rs.size) return;
+  const keys = Object.keys((await redis.hgetall(K.pred)) || {}).filter(f => rs.has(f.split('|')[0]));
+  if (keys.length) await redis.hdel(K.pred, ...keys);
+}
 async function readPred() {
   return Object.entries((await redis.hgetall(K.pred)) || {}).map(([f, v]) => {
     const [r, id] = f.split('|'), x = parse(v);
@@ -283,25 +290,28 @@ async function readPred() {
 }
 async function readState(room) {
   // 방 정보(오늘 할 사람·팀 배치·타이머 보드)도 다른 기록과 한 번에 같이 읽어요(DB에 한 번만 다녀와요). 없는 방이면 버려요.
-  const roomPart = room ? Promise.all([readSelected(room), redis.get(RK.cur(room)), ...BOARD_SIDES.map(s => redis.hgetall(RK.board(room, s)))]) : null;
+  const roomPart = room ? Promise.all([readSelected(room), redis.get(RK.cur(room)), redis.get(RK.bver(room)), ...BOARD_SIDES.map(s => redis.hgetall(RK.board(room, s)))]) : null;
   const [players, matches, ver, riot, rooms, duels, mvp, seasons, pred, tourns, rp] = await Promise.all([readPlayers(), readMatches(), redis.get(K.ver), readRiot(), readRooms(), readDuels(), readMvp(), readSeasons(), readPred(), readTourns(), roomPart]);
   const r = rooms.find(x => x.id === room);
-  const roomState = r && rp ? { id: r.id, selected: rp[0], current: rp[1] || null, boards: Object.fromEntries(BOARD_SIDES.map((s, i) => [s, rp[2 + i] || {}])) } : null;
+  const roomState = r && rp ? { id: r.id, selected: rp[0], current: rp[1] || null, bver: Number(rp[2]) || 0, boards: Object.fromEntries(BOARD_SIDES.map((s, i) => [s, rp[3 + i] || {}])) } : null;
   return { players, matches, duels, mvp, pred, tourns, riot, rooms, seasons, room: roomState, ver: Number(ver) || 0, ably: ABLY_NS, now: Date.now() };
 }
 // 지금 보고 있다는 신호(15초마다). 멤버는 "기기id|닉네임"이고, 방장이면 방장 신호 시각도 남겨요.
 async function heartbeat(room, me, nick, claimsHost) {
+  // DB에 두 번만 다녀와요: ① 내 신호 남기기·오래된 신호 치우기·방 읽기를 같이, ② 방장 신호·지금 보는 사람 목록을 같이.
   const key = RK.seen(room), now = Date.now();
-  await redis.zadd(key, { score: now, member: `${me}|${nick}` });
-  await redis.zremrangebyscore(key, 0, now - HOST_AWAY);
-  if (claimsHost) {
-    const r = parse(await redis.hget(K.rooms, room));
-    if (r?.hostId === me) {
-      await redis.hset(K.hostSeen, { [room]: now });
-      if (r.hostNick !== nick) await redis.hset(K.rooms, { [room]: { ...r, hostNick: nick } }); // 방장이 닉네임을 바꿨으면 방 탭에도
-    }
-  }
-  const raw = await redis.zrange(key, 0, -1, { withScores: true }), seen = new Map();
+  const [, , rawRoom] = await Promise.all([
+    redis.zadd(key, { score: now, member: `${me}|${nick}` }),
+    redis.zremrangebyscore(key, 0, now - HOST_AWAY), // 방금 넣은 내 신호(now)는 안 지워져요
+    claimsHost ? redis.hget(K.rooms, room) : null,
+  ]);
+  const r = parse(rawRoom), host = claimsHost && r?.hostId === me;
+  const [raw] = await Promise.all([
+    redis.zrange(key, 0, -1, { withScores: true }),
+    host && redis.hset(K.hostSeen, { [room]: now }),
+    host && r.hostNick !== nick && redis.hset(K.rooms, { [room]: { ...r, hostNick: nick } }), // 방장이 닉네임을 바꿨으면 방 탭에도
+  ]);
+  const seen = new Map();
   for (let i = 0; i < raw.length; i += 2) {
     const [id, ...n] = String(raw[i]).split('|'), at = Number(raw[i + 1]);
     if (now - at < VIEW_FRESH && !(seen.get(id)?.at > at)) seen.set(id, { id, nick: n.join('|'), at }); // 닉네임을 바꿨으면 최근 것
@@ -314,13 +324,13 @@ async function heartbeat(room, me, nick, claimsHost) {
 // 채널 이름 앞에 배포 환경을 붙여서, 내 컴퓨터에서 시험한 신호가 실제 사이트로 가지 않게 해요.
 const ABLY_KEY = process.env.ABLY_API_KEY;
 const ABLY_NS = ABLY_KEY ? `ddong-${process.env.VERCEL_ENV || 'local'}` : null;
-async function ablyPublish(ver) {
+async function ablyPublish(ver, extra) {
   if (!ABLY_KEY) return;
   try {
     const r = await fetch(`https://rest.ably.io/channels/${encodeURIComponent(`${ABLY_NS}:all`)}/messages`, {
       method: 'POST',
       headers: { authorization: 'Basic ' + Buffer.from(ABLY_KEY).toString('base64'), 'content-type': 'application/json' },
-      body: JSON.stringify({ name: 'changed', data: { ver } }),
+      body: JSON.stringify({ name: 'changed', data: { ver, ...extra } }), // 타이머는 { room, bv }: 그 방 화면만 다시 받아요
     });
     if (!r.ok) console.error('ably publish', r.status, await r.text());
   } catch (e) { console.error('ably publish', e); } // 신호가 실패해도 저장은 끝났어요. 화면은 2분마다 직접 확인해요.
@@ -397,16 +407,18 @@ export default async function handler(req, res) {
       const me = cleanId(q.get('me')), nick = cleanName(q.get('nick'));
       const presence = q.get('hb') && room && me && nick ? await heartbeat(room, me, nick, q.get('host') === '1') : undefined;
       if (v !== null) {
-        const ver = Number(await redis.get(K.ver)) || 0;
-        if (String(ver) === v) return res.status(200).json({ same: true, ver, presence });
+        // bv: 그 방 타이머 보드 버전. 타이머는 전체 버전(ver)을 안 올려서, 다른 방 화면은 다시 안 받아요.
+        const bvq = q.get('bv');
+        const [ver, bv] = await Promise.all([redis.get(K.ver), room && bvq !== null ? redis.get(RK.bver(room)) : null]);
+        if (String(Number(ver) || 0) === v && (bvq === null || !room || String(Number(bv) || 0) === bvq)) return res.status(200).json({ same: true, ver: Number(ver) || 0, presence });
       }
       return res.status(200).json({ ...(await readState(room)), presence });
     }
     if (req.method !== 'POST') return res.status(405).json({ error: 'method_not_allowed' });
     const b = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body || {};
     // 솔랭 새로고침·닉네임 정하기는 기록을 바꾸지 않아서 비밀번호 없이도 돼요. MVP 투표도 구경하는 사람 누구나 해요.
-    // 승부 예측·참가 신청도 구경하는 친구 누구나 해요.
-    if (!['refreshRiot', 'claimNick', 'voteMvp', 'predict', 'selfSelect', 'board'].includes(b.action) && !pinOk(req)) return res.status(401).json({ error: 'pin_required' });
+    // 승부 예측·인게임 타이머도 구경하는 친구 누구나 해요(참가 신청은 비밀번호를 걸었으면 비밀번호가 필요해요).
+    if (!['refreshRiot', 'claimNick', 'voteMvp', 'predict', 'board'].includes(b.action) && !pinOk(req)) return res.status(401).json({ error: 'pin_required' });
     // 방장 확인: 기기마다 화면이 만든 id(x-device)로 구분해요. 친구끼리 쓰는 거라 로그인 없이 이 정도로 막아요.
     const me = cleanId(req.headers['x-device']), rooms = await readRooms();
     const room = rooms.find(r => r.id === cleanId(b.room)), isHost = r => !!r && !!me && r.hostId === me;
@@ -420,7 +432,7 @@ export default async function handler(req, res) {
       if (!room) return res.status(404).json({ error: 'no_room' });
       if (!isHost(room)) return notHost();
     }
-    let id, dup = false, refreshed, more, nick, roomId = room?.id, notify, imported;
+    let id, dup = false, refreshed, more, nick, roomId = room?.id, notify, imported, bv = null;
     switch (b.action) {
       case 'claimNick': {
         // 닉네임은 기기마다 하나예요. 다른 기기가 쓰고 있는 닉네임이면 뒤에 번호를 붙여서 돌려줘요('일윤' → '일윤 2').
@@ -500,9 +512,11 @@ export default async function handler(req, res) {
         // 여러 판을 한 번에 지워요(기록 탭 '여러 판 고르기', 방장). 그 판들의 MVP 표도 같이 지워요.
         const ids = Array.isArray(b.ids) ? [...new Set(b.ids.filter(x => typeof x === 'string' && x))].slice(0, MAX_MATCHES) : [];
         if (!ids.length) return bad(res);
+        const gone = new Set(ids), rounds = (await readMatches()).filter(m => gone.has(m.id)).map(m => m.round);
         await redis.hdel(K.matches, ...ids);
-        const gone = new Set(ids), votes = Object.keys((await redis.hgetall(K.mvp)) || {}).filter(k => gone.has(k.split('|')[0]));
+        const votes = Object.keys((await redis.hgetall(K.mvp)) || {}).filter(k => gone.has(k.split('|')[0]));
         if (votes.length) await redis.hdel(K.mvp, ...votes);
+        await dropPredRounds(rounds); // 그 판 승부 예측도 지워요
         break;
       }
       case 'resetRecords': {
@@ -557,18 +571,16 @@ export default async function handler(req, res) {
         } else if (b.op === 'obj') {
           if (!BOARD_OBJS.includes(b.key)) return bad(res);
           if (dur == null) await redis.hdel(key, 'o:' + b.key); else await redis.hset(key, { ['o:' + b.key]: now + dur * 1000 });
-        } else if (b.op === 'row' || b.op === 'spell') {
-          if (!BOARD_LANES.includes(b.lane)) return bad(res);
-          const row = parse(await redis.hget(key, 'r:' + b.lane)) || {}, e = Array.isArray(row.e) ? row.e : [0, 0];
-          if (b.op === 'row') {
-            if (!(Array.isArray(b.s) && b.s.length === 2 && b.s.every(x => BOARD_SPELLS.includes(x)))) return bad(res);
-            Object.assign(row, { s: b.s, b: !!b.b, c: !!b.c });
-          } else {
-            const k = Number(b.slot); if (k !== 0 && k !== 1) return bad(res);
-            e[k] = dur == null ? 0 : now + dur * 1000;
-          }
-          await redis.hset(key, { ['r:' + b.lane]: { ...row, e } });
+        } else if (b.op === 'row') {
+          // 라인 설정(스펠 둘·신발·통찰)은 'r:라인', 스펠 칸마다 끝나는 시각은 'e:라인:칸' 따로 둬서 같은 라인을 동시에 눌러도 안 지워져요
+          if (!BOARD_LANES.includes(b.lane) || !(Array.isArray(b.s) && b.s.length === 2 && b.s.every(x => BOARD_SPELLS.includes(x)))) return bad(res);
+          await redis.hset(key, { ['r:' + b.lane]: { s: b.s, b: !!b.b, c: !!b.c } });
+        } else if (b.op === 'spell') {
+          const k = Number(b.slot);
+          if (!BOARD_LANES.includes(b.lane) || (k !== 0 && k !== 1)) return bad(res);
+          await redis.hset(key, { [`e:${b.lane}:${k}`]: dur == null ? 0 : now + dur * 1000 });
         } else return bad(res);
+        bv = await redis.incr(RK.bver(room.id)); dup = true; // 전체 버전은 그대로, 이 방 보드 버전만 올려요
         break;
       }
       case 'selfSelect': {
@@ -694,6 +706,23 @@ export default async function handler(req, res) {
         for (const s of Array.isArray(b.seasons) ? b.seasons : []) { const t = Number(s); if (t > 0 && t <= Date.now() && !seasons.includes(t) && !addS.includes(t)) addS.push(t); }
         imported.seasons = addS.length;
         if (addS.length) await redis.set(K.seasons, [...seasons, ...addS].sort((x, y) => x - y));
+        // 토너먼트도 지금 없는 것만 다시 만들고, 백업에 있던 판 결과를 순서대로 다시 눌러요(같은 참가 순서라 같은 대진표가 돼요).
+        const haveT = new Set((await readTourns()).map(t => t.id)), addT = {};
+        imported.tourns = 0;
+        for (const x of Array.isArray(b.tourns) ? b.tourns.slice(0, MAX_TOURN) : []) {
+          const tid = typeof x?.id === 'string' && /^t[a-z0-9]{4,40}$/.test(x.id) ? x.id : null, name = typeof x?.name === 'string' && x.name.trim() ? x.name.trim().slice(0, 30) : null;
+          const ents = Array.isArray(x?.ents) ? x.ents.map(e => cleanNames(e, 5)).filter(e => e?.length) : [], all = ents.flat();
+          if (!tid || haveT.has(tid) || !name || ents.length < 2 || ents.length > 32 || new Set(all).size !== all.length) continue;
+          const T = makeTourn(name, typeof x.game === 'string' ? x.game.trim().slice(0, 20) : '', ents);
+          if (Number(x.t) > 0) T.t = Number(x.t);
+          (Array.isArray(x.rounds) ? x.rounds : []).forEach((rd, r) => (Array.isArray(rd) ? rd : []).forEach((m, i) => {
+            const cur = T.rounds[r]?.[i];
+            if (cur && !cur.w && cur.a != null && cur.b != null && (m?.w === 'a' || m?.w === 'b')) { cur.w = m.w; tournAdvance(T, r, i); }
+          }));
+          if (T.doneAt && Number(x.doneAt) > 0) T.doneAt = Number(x.doneAt);
+          addT[tid] = T; haveT.add(tid); imported.tourns++;
+        }
+        if (imported.tourns) await redis.hset(K.tourn, addT);
         if (!Object.values(imported).some(Boolean)) dup = true;
         break;
       }
@@ -784,8 +813,10 @@ export default async function handler(req, res) {
       }
       case 'deleteMatch': {
         if (typeof b.id !== 'string' || !b.id) return bad(res);
+        const gone = parse(await redis.hget(K.matches, b.id));
         await redis.hdel(K.matches, b.id);
         await dropMvp(b.id); // 그 판의 MVP 표도 같이 지워요
+        await dropPredRounds([gone?.round]); // 승부 예측도(되돌린 판을 결과 보고 다시 찍지 못하게)
         break;
       }
       case 'current': {
@@ -810,7 +841,7 @@ export default async function handler(req, res) {
     }
     // 바뀌었으면 버전을 올리고 Ably로 '바뀜' 신호를 쏴요(새 상태를 읽는 동안 같이).
     const newVer = dup ? null : await redis.incr(K.ver);
-    const [state] = await Promise.all([readState(roomId), newVer != null && ablyPublish(newVer), notify && discord(notify)]);
+    const [state] = await Promise.all([readState(roomId), newVer != null && ablyPublish(newVer), bv != null && ablyPublish(null, { room: roomId, bv }), notify && discord(notify)]);
     return res.status(200).json({ id, dup, refreshed, more, nick, imported, ...state });
   } catch (e) {
     if (e instanceof RiotError) return res.status(424).json({ error: e.code });

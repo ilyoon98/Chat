@@ -529,6 +529,7 @@ li.match.picked { outline: 2px solid var(--bad); outline-offset: -2px; }
     <input id="gateInput" type="text" maxlength="16" placeholder="닉네임 (예: 일윤)" autocomplete="off" aria-label="닉네임">
     <button class="btn gold" type="submit">입장하기</button>
     <p class="note" style="margin:0">방장이 누군지, 누가 구경 중인지 이 이름으로 보여요. 들어가서 언제든 바꿀 수 있어요.</p>
+    <button class="linkbtn" type="button" id="gateSkip">닉네임 없이 구경만 할게요</button>
   </form>
 </div>
 <div class="wrap">
@@ -654,8 +655,9 @@ li.match.picked { outline: 2px solid var(--bad); outline-offset: -2px; }
       <div class="row log-tools" id="logTools"></div>
       <div class="reset-panel" id="resetPanel" hidden>
         <b>전체 기록 초기화</b>
-        <p>내전·1:1 기록, MVP 표, 승부 예측, 토너먼트, 시즌이 모두 지워지고 처음부터 다시 시작해요. 선수 명단·Riot ID·방은 그대로예요. 누르면 먼저 지금 기록을 백업 파일로 받아 둬요("백업 불러오기"로 되살릴 수 있어요).</p>
-        <div class="row"><input id="resetInput" type="text" placeholder='여기에 "초기화"라고 적어 주세요' autocomplete="off" aria-label="확인 글자"><button class="btn small warn" id="resetGo" disabled>백업 받고 초기화</button><button class="btn ghost small" id="resetCancel">취소</button></div>
+        <p>내전·1:1 기록, MVP 표, 승부 예측, 토너먼트, 시즌이 모두 지워지고 처음부터 다시 시작해요. 선수 명단·Riot ID·방은 그대로예요.</p>
+        <p>먼저 <b>① 백업 받기</b>로 파일을 받아 두세요. 내전·1:1·토너먼트·시즌은 나중에 "백업 불러오기"로 되살릴 수 있어요. MVP 표와 승부 예측은 되살릴 수 없어요.</p>
+        <div class="row"><button class="btn small" id="resetBackup">① 백업 받기</button><input id="resetInput" type="text" placeholder='② 여기에 "초기화"라고 적어 주세요' autocomplete="off" aria-label="확인 글자"><button class="btn small warn" id="resetGo" disabled>③ 초기화</button><button class="btn ghost small" id="resetCancel">취소</button></div>
       </div>
       <ul class="log" id="logBox"></ul>
     </div>
@@ -819,7 +821,7 @@ const validDuel = d => d && typeof d.t === 'number' && typeof d.a === 'string' &
 const cleanSeasons = a => a.map(Number).filter(t => t > 0).sort((x, y) => x - y);
 
 // ---------- 서버 저장 (/api/data) ----------
-let status = 'connecting', pin = '', ver = null, writes = 0;
+let status = 'connecting', pin = '', ver = null, bver = null, writes = 0; // bver: 지금 방 타이머 보드 버전(타이머는 ver를 안 올려요)
 try { pin = localStorage.getItem(LS + ':pin') || ''; } catch {}
 function setBadge(s) {
   if (s) status = s;
@@ -882,6 +884,7 @@ function applyServer(d) {
   const rs = d.room?.id === S.room ? d.room : null; // 지금 방의 팀 배치·오늘 할 사람만 받아요
   if (!rs) return;
   if (rs.boards && typeof rs.boards === 'object') S.boards = rs.boards;
+  if (typeof rs.bver === 'number') bver = rs.bver;
   const c = rs.current;
   if (c && Array.isArray(c.blue) && Array.isArray(c.red) && (!S.current || (c.t || 0) > (S.current.t || 0))) S.current = c;
   // 오늘 할 사람: 내가 누른 게 아직 저장 중이면 화면에 보이는 내 선택을 그대로 둬요 (끝나면 syncSelect가 맞춰요)
@@ -897,7 +900,11 @@ function connectAbly(ns) {
   if (!window.Ably) { $('#ablyLib').addEventListener('load', () => connectAbly(ns), { once: true }); return; } // 라이브러리를 못 받으면 계속 물어보기로
   rtNs = ns;
   rt = new Ably.Realtime({ authUrl: `/api/data?ably=token&me=${ME.id}`, clientId: ME.id });
-  rt.channels.get(`${ns}:all`).subscribe('changed', m => { if (m.data?.ver !== ver) pull(); });
+  rt.channels.get(`${ns}:all`).subscribe('changed', m => {
+    const d = m.data || {};
+    if (d.room) { if (d.room === S.room && d.bv !== bver) pull(); return; } // 타이머 신호는 그 방 화면만 받아요
+    if (d.ver !== ver) pull();
+  });
   let wasLive = false;
   rt.connection.on(ch => {
     if (ch.current === 'connected') { syncPresence(); if (wasLive) pull(); wasLive = true; } // 끊겼다 다시 붙으면 그 사이 바뀐 걸 받아요
@@ -934,6 +941,7 @@ async function pull(beat) {
   const w = writes, q = new URLSearchParams();
   if (ver != null) q.set('v', ver);
   if (S.room) q.set('room', S.room);
+  if (S.room && bver != null) q.set('bv', bver);
   // 보고 있다는 신호: Ably가 연결돼 있으면 방장만(방장 자리 지키기, 10분 끊기면 비어요) 보내요.
   // 느리게 확인하는 동안은 '자리 비움'이라 안 보내고, 방장은 자리를 지키도록 매번 보내요.
   const idle = idleGap() > POLL[0][1];
@@ -952,12 +960,12 @@ async function pull(beat) {
 }
 function enterRoom(id) {
   if (S.room === id) return;
-  S.room = id; S.current = null; S.selected = new Set(); S.draft = null; S.presence = []; ver = null;
+  S.room = id; S.current = null; S.selected = new Set(); S.draft = null; S.presence = []; S.boards = {}; ver = bver = null;
   history.replaceState(null, '', id ? `?room=${id}${location.hash}` : location.pathname + location.hash);
   saveLocal(); renderAll(); pull(true);
 }
 function leaveRoom() {
-  S.room = null; S.current = null; S.selected = new Set(); S.draft = null; S.presence = [];
+  S.room = null; S.current = null; S.selected = new Set(); S.draft = null; S.presence = []; S.boards = {}; bver = null;
   history.replaceState(null, '', location.pathname + location.hash); saveLocal();
 }
 // 명단은 바로 화면에 반영하고, 서버가 거절하면 서버 상태로 되돌려요.
@@ -1252,8 +1260,10 @@ function renderRoster() {
   $('#rosterTools').innerHTML = !players.length ? '' : rosterSel
     ? `<span class="note" style="margin:0"><b>${rn}명</b> 골랐어요</span><button class="btn ghost small" id="rsAll">전체 고르기</button><button class="btn small warn" id="rsDel"${rn ? '' : ' disabled'}>${rosterDelConfirm ? `정말 ${rn}명 빼기` : `고른 ${rn}명 빼기`}</button><button class="btn ghost small" id="rsOff">끝내기</button>`
     : '<button class="btn ghost small" id="rsOn">☑ 여러 명 고르기</button>';
-  $('#rosterEdit').after($('#editBox'));
-  $('#rosterEdit').innerHTML = !players.length ? '<p class="empty">아직 명단이 없어요. 위 칸에 친구들 이름을 쉼표로 한 번에 넣어 주세요.</p>'
+  // 이름·Riot ID를 적는 중이면 목록과 고치는 칸을 다시 그리지 않아요(다른 사람이 바꿔서 새로 받아도 적던 글자가 안 날아가게).
+  const typing = !!S.editTarget && $('#editBox').contains(document.activeElement);
+  if (!typing) $('#rosterEdit').after($('#editBox'));
+  if (!typing) $('#rosterEdit').innerHTML = !players.length ? '<p class="empty">아직 명단이 없어요. 위 칸에 친구들 이름을 쉼표로 한 번에 넣어 주세요.</p>'
     : `<ol class="prows">${players.map((p, i) => { const s = st0.P[p], r = S.riot[p], on = S.editTarget === p, picked = !!rosterSel?.has(p);
       return `<li${on ? ' class="on"' : picked ? ' class="picked"' : ''}><button class="prow-btn" type="button" data-i="${i}" data-card="${esc(p)}" aria-${rosterSel ? `pressed="${picked}"` : `expanded="${on}"`} aria-label="${esc(p)} ${rosterSel ? '고르기' : '고치기'}">`
         + `<span class="prow-name">${rosterSel ? `<input type="checkbox" tabindex="-1" aria-hidden="true"${picked ? ' checked' : ''}>` : ''}${tierIcon(T[p])}<b>${esc(p)}</b>${quick(p)}</span><span class="prow-sub">${r ? esc(r.id) : 'Riot ID 없음'}</span>`
@@ -1270,6 +1280,7 @@ function renderRoster() {
   $('#rosterNote').textContent = host ? '이름을 누르면 아래 \'오늘 할 사람\' 칸으로 내려가요. 거기서 다시 누르면 명단으로 돌아와요. 이름 추가·바꾸기는 "선수 명단" 탭에서 해요.'
     : '구경 중이에요. 오늘 할 사람과 팀은 이 방 방장이 정해요.';
   // 고른 사람 한 명만 고치는 작은 칸: 이름 / Riot ID 두 줄, 지우는 건 아래 글자 버튼으로. 롤 정보 자세한 건 선수 카드에서 봐요.
+  if (typing) return;
   const t = S.editTarget, r = t && S.riot[t], lane = t && laneText(t, true);
   $('#editBox').innerHTML = t ? `<div class="editpanel">
       <div class="ep-head"><span>${esc(t)}</span><button class="xbtn" type="button" id="epClose" aria-label="닫기">✕</button></div>
@@ -1295,6 +1306,7 @@ $('#rosterEdit').addEventListener('click', e => {
   const b = e.target.closest('button[data-i]'); if (!b) return;
   const name = S.players[+b.dataset.i];
   if (rosterSel) { rosterSel.has(name) ? rosterSel.delete(name) : rosterSel.add(name); rosterDelConfirm = false; return renderRoster(); }
+  document.activeElement?.blur?.(); // 사파리는 버튼을 눌러도 입력칸 포커스가 남아서, 먼저 빼야 다른 사람 칸으로 바뀌어요
   S.editTarget = S.editTarget === name ? null : name; renderRoster();
   if (S.editTarget) $('#renameInput')?.focus();
 });
@@ -1414,7 +1426,7 @@ $('#editBox').addEventListener('submit', async e => {
   const merge = S.players.includes(to), before = cur && structuredClone(cur), selected = new Set(S.selected);
   S.players = merge ? S.players.filter(p => p !== from) : S.players.map(p => p === from ? to : p);
   if (S.selected.delete(from)) S.selected.add(to);
-  if (cur) for (const side of ['blue', 'red']) cur[side] = cur[side].map(p => p === from ? to : p);
+  if (cur) for (const side of ['blue', 'red', 'bench']) if (cur[side]) cur[side] = cur[side].map(p => p === from ? to : p);
   if (S.riot[from]) { S.riot[to] ??= S.riot[from]; delete S.riot[from]; }
   S.editTarget = null; renderAll();
   if (await rosterAction('renamePlayer', { from, to })) return toast(merge ? `${from}의 전적을 ${to}에 합쳤어요.` : `${from} → ${to}로 바꿨어요. 지난 전적도 같이 바뀌어요.`);
@@ -1728,7 +1740,8 @@ $('#teamsBox').addEventListener('click', async e => {
     penEdit = false; document.activeElement?.blur?.(); renderTeams(); return toast(e.target.id === 'penReset' ? '처음 벌칙 목록으로 돌렸어요.' : `벌칙 ${list.length}개를 저장했어요.`);
   }
   // 진영 바꾸기: 두 팀이 블루·레드를 통째로 맞바꿔요. 같은 판이라 round는 그대로, 다른 화면이 받아 가게 t만 올려요.
-  if (e.target.closest('#swapSides') && c && !rec) { [c.blue, c.red] = [c.red, c.blue]; c.t = Date.now(); renderTeams(); saveCurrent(); return toast('블루·레드를 바꿨어요.'); }
+  // 새 판(round)으로 해요: 승부 예측은 판마다 '블루/레드'로 남아서, 같은 판이면 진영을 바꿨을 때 찍은 팀이 뒤바뀌어요.
+  if (e.target.closest('#swapSides') && c && !rec) { [c.blue, c.red] = [c.red, c.blue]; newRound(c); renderTeams(); saveCurrent(); return toast('블루·레드를 바꿨어요. 승부 예측은 새로 찍어 주세요.'); }
   const mv = e.target.closest('button[data-swap]');
   if (mv && !rec) {
     const p = mv.dataset.swap, from = mv.dataset.side, to = from === 'blue' ? 'red' : 'blue';
@@ -2240,13 +2253,20 @@ $('#logTools').addEventListener('click', async e => {
   }
   renderLog();
 });
-$('#resetInput').addEventListener('input', e => { $('#resetGo').disabled = e.target.value.trim() !== '초기화'; });
-const closeReset = () => { resetOpen = false; $('#resetInput').value = ''; $('#resetGo').disabled = true; renderLogTools(); };
+// 초기화는 ① 백업 받기 → ② '초기화' 적기 → ③ 초기화 순서로만 돼요(브라우저가 다운로드를 막았는데 지워지는 일이 없게, 받은 걸 먼저 확인해요).
+let resetBacked = false;
+const resetReady = () => { $('#resetGo').disabled = !(resetBacked && $('#resetInput').value.trim() === '초기화'); };
+$('#resetInput').addEventListener('input', resetReady);
+$('#resetBackup').onclick = () => {
+  $('#backup').click(); resetBacked = true; resetReady();
+  $('#resetBackup').textContent = '① 백업 받았어요 ✓';
+  toast('백업 파일을 받았어요. 다운로드 폴더에 파일이 있는지 확인한 뒤 진행해 주세요.');
+};
+const closeReset = () => { resetOpen = false; resetBacked = false; $('#resetInput').value = ''; $('#resetBackup').textContent = '① 백업 받기'; resetReady(); renderLogTools(); };
 $('#resetCancel').onclick = closeReset;
 $('#resetGo').onclick = async () => {
-  if (!needRoster() || $('#resetInput').value.trim() !== '초기화') return;
-  $('#backup').click(); // 지우기 전에 지금 기록을 파일로 받아 둬요
-  try { await api('resetRecords', { confirm: '초기화' }); toast('전체 기록을 초기화했어요. 지우기 전 기록은 백업 파일로 받아 뒀어요.'); closeReset(); } catch {}
+  if (!needRoster() || !resetBacked || $('#resetInput').value.trim() !== '초기화') return;
+  try { await api('resetRecords', { confirm: '초기화' }); toast('전체 기록을 초기화했어요. 되살리려면 받아 둔 백업 파일을 "백업 불러오기"로 넣어요.'); closeReset(); } catch {}
   renderAll();
 };
 $('#seasonStart').onclick = async () => {
@@ -2270,7 +2290,7 @@ document.addEventListener('change', e => {
   renderStats(); renderAnalysis();
 });
 $('#backup').onclick = () => {
-  const blob = new Blob([JSON.stringify({ exportedAt: new Date().toISOString(), players: S.players, matches: S.matches, duels: S.duels, mvp: S.mvp, seasons: S.seasons, riot: S.riot }, null, 2)], { type: 'application/json' });
+  const blob = new Blob([JSON.stringify({ exportedAt: new Date().toISOString(), players: S.players, matches: S.matches, duels: S.duels, mvp: S.mvp, seasons: S.seasons, tourns: S.tourns, riot: S.riot }, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob); a.download = `lol-naejeon-backup-${new Date().toISOString().slice(0, 10)}.json`; a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
@@ -2283,13 +2303,14 @@ $('#restoreFile').onchange = async e => {
   let d = null; try { d = JSON.parse(await f.text()); } catch {}
   const ps = Array.isArray(d?.players) ? d.players.filter(p => typeof p === 'string') : [];
   const ms = Array.isArray(d?.matches) ? d.matches.filter(validMatch) : [], ds = Array.isArray(d?.duels) ? d.duels.filter(validDuel) : [];
-  if (!ps.length && !ms.length && !ds.length) return toast('불러올 기록이 없는 파일이에요. 기록 탭 "백업 받기"로 받은 .json 파일을 골라 주세요.');
+  const ts = Array.isArray(d?.tourns) ? d.tourns.filter(t => t && typeof t.id === 'string' && Array.isArray(t.ents)) : [];
+  if (!ps.length && !ms.length && !ds.length && !ts.length) return toast('불러올 기록이 없는 파일이에요. 기록 탭 "백업 받기"로 받은 .json 파일을 골라 주세요.');
   const when = d.exportedAt && !isNaN(new Date(d.exportedAt)) ? ` (${new Date(d.exportedAt).toLocaleString('ko-KR')} 백업)` : '';
   const ss = Array.isArray(d.seasons) ? cleanSeasons(d.seasons) : [];
-  if (!confirm(`백업 파일${when}\n선수 ${ps.length}명 · 내전 ${ms.length}판 · 1:1 ${ds.length}판${ss.length ? ` · 시즌 ${ss.length + 1}까지` : ''}\n\n지금 기록에 없는 것만 더해요. 지금 있는 기록은 지우거나 덮어쓰지 않아요.\n백업한 뒤에 일부러 지운 기록도 이 파일에 있으면 다시 들어와요. 불러올까요?`)) return;
+  if (!confirm(`백업 파일${when}\n선수 ${ps.length}명 · 내전 ${ms.length}판 · 1:1 ${ds.length}판${ts.length ? ` · 토너먼트 ${ts.length}개` : ''}${ss.length ? ` · 시즌 ${ss.length + 1}까지` : ''}\n\n지금 기록에 없는 것만 더해요. 지금 있는 기록은 지우거나 덮어쓰지 않아요.\n백업한 뒤에 일부러 지운 기록도 이 파일에 있으면 다시 들어와요. 불러올까요?`)) return;
   try {
-    const r = await api('importBackup', { players: ps, matches: ms, duels: ds, seasons: ss, riot: d.riot }), x = r.imported || {};
-    toast(r.dup ? '이미 다 들어 있는 기록이라 더할 게 없었어요.' : `불러왔어요: 선수 ${x.players}명 · 내전 ${x.matches}판 · 1:1 ${x.duels}판${x.riot ? ` · Riot ID ${x.riot}명` : ''}${x.seasons ? ` · 시즌 시작 ${x.seasons}개` : ''}`);
+    const r = await api('importBackup', { players: ps, matches: ms, duels: ds, seasons: ss, tourns: ts, riot: d.riot }), x = r.imported || {};
+    toast(r.dup ? '이미 다 들어 있는 기록이라 더할 게 없었어요.' : `불러왔어요: 선수 ${x.players}명 · 내전 ${x.matches}판 · 1:1 ${x.duels}판${x.tourns ? ` · 토너먼트 ${x.tourns}개` : ''}${x.riot ? ` · Riot ID ${x.riot}명` : ''}${x.seasons ? ` · 시즌 시작 ${x.seasons}개` : ''}`);
   } catch {}
   renderAll();
 };
@@ -2537,16 +2558,22 @@ const OBJS = { drake: ['드래곤', 300], baron: ['바론', 360], elder: ['장�
 const nowS = () => Date.now() + (S.skew || 0);
 const mmss = sec => `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, '0')}`;
 const cdOf = (sp, row) => Math.round(SPELLS[sp][2] * 100 / (100 + (row.b ? 10 : 0) + (row.c ? 18 : 0)));
-let TB = null; try { TB = localStorage.getItem(LS + ':board'); } catch {}
-const tmFired = new Set();
+let TB = null; try { TB = JSON.parse(localStorage.getItem(LS + ':board') || 'null'); } catch {} // { s: 보드, r: 고른 판 }
+const tmFired = new Set(), tmSeen = new Set(); // tmSeen: 돌고 있는 걸 본 타이머(화면이 늦게 깨어나도 끝난 걸 한 번은 알려 줘요)
 let tmResetConfirm = false;
-// 보드 고르기: 내가 고른 게 있으면 그거, 없으면 내 이름(참가 신청)이 지금 블루·레드 팀에 있는지 보고 그 팀 보드
+// 보드 고르기: 참가 신청한 내 이름이 지금 블루·레드 팀에 있으면 그 팀 보드. 내가 직접 고른 보드는 그 판 동안만 써요
+// (다음 판에 팀이 바뀌었는데 상대 보드에 계속 누르지 않게). 이름이 팀에 없으면 고른 보드를 계속 써요.
 function tmSide() {
-  if (['blue', 'red', 'solo'].includes(TB)) return TB;
-  const c = S.current; return IAM && c ? (c.blue.includes(IAM) ? 'blue' : c.red.includes(IAM) ? 'red' : 'solo') : 'solo';
+  const c = S.current, auto = IAM && c ? (c.blue.includes(IAM) ? 'blue' : c.red.includes(IAM) ? 'red' : null) : null;
+  if (['blue', 'red', 'solo'].includes(TB?.s) && (!auto || TB.r === roundOf(c))) return TB.s;
+  return auto || 'solo';
 }
 const tmBoard = () => S.boards?.[tmSide()] || {};
-const tmRow = (L, bd = tmBoard()) => { const r = bd['r:' + L] || {}; return { s: Array.isArray(r.s) && r.s.length === 2 ? r.s : LANE_SPELLS[L], e: Array.isArray(r.e) ? r.e : [0, 0], b: !!r.b, c: !!r.c }; };
+// 스펠 칸마다 끝나는 시각은 'e:라인:칸' 필드에 따로 있어요(예전 보드는 'r:라인'의 e).
+const tmRow = (L, bd = tmBoard()) => {
+  const r = bd['r:' + L] || {}, old = Array.isArray(r.e) ? r.e : [0, 0];
+  return { s: Array.isArray(r.s) && r.s.length === 2 ? r.s : LANE_SPELLS[L], e: [0, 1].map(k => Number(bd[`e:${L}:${k}`] ?? old[k]) || 0), b: !!r.b, c: !!r.c };
+};
 function renderTimer() {
   if (document.activeElement?.closest?.('#g-timer select, #g-timer input')) return; // 고르거나 적는 중엔 그대로 둬요
   const side = tmSide(), bd = tmBoard(), now = nowS();
@@ -2579,8 +2606,10 @@ function tmTick() {
   document.querySelectorAll('#g-timer [data-end]').forEach(el => { const end = +el.dataset.end; if (!end) return; if (end <= now) done = true; else el.textContent = mmss((end - now) / 1000); });
   // 돌아온 스펠 알림: 보드를 열어 둔 화면에서만, 타이머마다 한 번
   const bd = tmBoard(), side = tmSide();
-  for (const L of LANES) { const row = tmRow(L, bd); row.e.forEach((end, k) => { const key = `${side}|${L}|${k}|${end}`; if (end && end <= now && now - end < 15e3 && !tmFired.has(key)) { tmFired.add(key); if (open) { sfx('land'); toast(`${LANE[L]} ${SPELLS[row.s[k]][0]} 돌아왔어요!`); } } }); }
-  for (const k of Object.keys(OBJS)) { const end = Number(bd['o:' + k]) || 0, key = `${side}|o|${k}|${end}`; if (end && end <= now && now - end < 15e3 && !tmFired.has(key)) { tmFired.add(key); if (open) { sfx('win'); toast(`${OBJS[k][0]} 다시 나왔어요!`); } } }
+  // 끝난 타이머 알림: 돌고 있는 걸 본 적 있으면 얼마나 늦게 깨어났든 한 번, 처음 보는 거면 끝난 지 15초 안일 때만(열자마자 옛 알림이 우르르 안 오게)
+  const due = (key, end) => { if (!end) return false; if (end > now) { tmSeen.add(key); return false; } if (tmFired.has(key) || !(tmSeen.has(key) || now - end < 15e3)) return false; tmFired.add(key); return true; };
+  for (const L of LANES) { const row = tmRow(L, bd); row.e.forEach((end, k) => { if (due(`${side}|${L}|${k}|${end}`, end) && open) { sfx('land'); toast(`${LANE[L]} ${SPELLS[row.s[k]][0]} 돌아왔어요!`); } }); }
+  for (const k of Object.keys(OBJS)) { const end = Number(bd['o:' + k]) || 0; if (due(`${side}|o|${k}|${end}`, end) && open) { sfx('win'); toast(`${OBJS[k][0]} 다시 나왔어요!`); } }
   if (done) renderTimer();
 }
 setInterval(tmTick, 1000);
@@ -2590,14 +2619,18 @@ async function tmSend(body) {
 }
 // 화면은 바로 바꾸고(서버 시각 기준으로) 서버에 보내요. 다른 친구 화면은 서버에서 받아 가요.
 function tmLocal(field, value) { const side = tmSide(); S.boards[side] = { ...(S.boards[side] || {}), [field]: value }; if (value === undefined) delete S.boards[side][field]; }
-$('#tmBoard').addEventListener('click', e => { const b = e.target.closest('[data-tb]'); if (!b) return; TB = b.dataset.tb; try { localStorage.setItem(LS + ':board', TB); } catch {} renderTimer(); });
+$('#tmBoard').addEventListener('click', e => {
+  const b = e.target.closest('[data-tb]'); if (!b) return;
+  TB = { s: b.dataset.tb, r: S.current ? roundOf(S.current) : null }; try { localStorage.setItem(LS + ':board', JSON.stringify(TB)); } catch {}
+  renderTimer();
+});
 $('#g-timer').addEventListener('click', async e => {
   const t = e.target.closest('button'); if (!t) return;
   if (!S.room) return toast('롤 내전 탭에서 방에 먼저 들어가 주세요.');
   const now = nowS();
   if (t.dataset.tms) {
     const [L, k] = t.dataset.tms.split('|'), row = tmRow(L), cd = (Number(row.e[+k]) || 0) > now, dur = cd ? null : cdOf(row.s[+k], row);
-    const e2 = [...row.e]; e2[+k] = dur ? now + dur * 1000 : 0; tmLocal('r:' + L, { ...row, e: e2 });
+    tmLocal(`e:${L}:${k}`, dur ? now + dur * 1000 : 0);
     sfx(dur ? 'on' : 'off'); renderTimer();
     return tmSend({ op: 'spell', lane: L, slot: +k, dur });
   }
@@ -2719,6 +2752,12 @@ $('#gateForm').addEventListener('submit', async e => {
   const nick = await claimNick(v); showGate(false); renderAll(); pull(true);
   if (nick === v) toast(`${v}님, 반가워요!`);
 });
+// 기록만 보러 온 친구는 닉네임 없이 들어가요(이 기기에 기억). 참가·예측·방 만들기를 하려면 방 칸에서 닉네임을 정하면 돼요.
+let PEEK = false; try { PEEK = localStorage.getItem(LS + ':peek') === '1'; } catch {}
+$('#gateSkip').onclick = () => {
+  PEEK = true; try { localStorage.setItem(LS + ':peek', '1'); } catch {}
+  showGate(false); renderAll(); toast('구경만 하기로 들어왔어요. 참가하거나 예측하려면 위 "방" 칸에서 닉네임을 정해 주세요.');
+};
 
 // ---------- 결과 이미지 ----------
 // 경기 결과를 그림 한 장(PNG)으로 그려서 단톡방에 바로 올려요. 버튼에 data-shot="match"(내전) 또는 "duel"(1:1)과 data-id만 달면 여기서 받아요.
@@ -2932,6 +2971,14 @@ document.addEventListener('click', e => {
 // ---------- 버전 · 패치노트 ----------
 // 커밋해서 올릴 때마다 맨 위에 새 항목을 더해요(규칙은 CLAUDE.md). 오른쪽 위 버전은 맨 위 항목이에요.
 const NOTES = [
+  { v: '1.21.0', d: '2026-10-23', items: [
+    '처음 들어올 때 "닉네임 없이 구경만 할게요"를 누르면 닉네임 없이 기록을 볼 수 있어요(그 폰에 기억해요). 참가·예측을 하려면 나중에 방 칸에서 닉네임을 정하면 돼요.',
+    '인게임 타이머를 누를 때 그 방을 보는 화면만 새로 받아요. 다른 방·다른 탭을 보던 친구 화면은 안 흔들려요. 같은 라인 스펠 두 개를 동시에 눌러도 둘 다 남아요.',
+    '타이머 알림이 폰 화면을 꺼 뒀다 켜도 놓치지 않고 한 번은 와요. 직접 고른 보드는 그 판 동안만 쓰고, 다음 판엔 내 팀 보드로 돌아가요.',
+    '"⇄ 블루·레드 바꾸기"를 누르면 승부 예측이 새로 시작돼요(예전엔 찍은 팀이 거꾸로 바뀌었어요). 기록을 되돌리거나 지우면 그 판 예측도 지워져서, 결과를 보고 다시 찍을 수 없어요.',
+    '전체 기록 초기화는 ① 백업 받기 → ② "초기화" 적기 → ③ 초기화 순서로만 돼요. 백업 파일에 토너먼트도 들어가서, 백업 불러오기로 대진표와 결과까지 되살려요.',
+    '선수 명단에서 이름·Riot ID를 적는 중에 화면이 새로 그려져도 적던 글자가 안 날아가요. 이름을 바꾸면 "이번 판 쉬어요"의 이름도 같이 바뀌어요.',
+  ] },
   { v: '1.20.1', d: '2026-10-22', items: [
     '사이트가 빨라졌어요: 기록을 처리하는 서버를 미국에서 서울로 옮기고, 한 번에 읽어 오게 바꿨어요.',
     '기록 탭의 MVP 투표를 한 줄로 접어 뒀어요("⭐ MVP 투표 · n표 — 펼치기"). 누르면 그 판만 펼쳐져서, 판이 많아도 기록을 훑어보기 쉬워요.',
@@ -3142,7 +3189,7 @@ renderNotes();
 setMode(S.mode);
 renderLaneToggle();
 setBadge();
-showGate(!ME.nick);
+showGate(!ME.nick && !PEEK);
 renderAll();
 if (ME.nick) claimNick(ME.nick).then(n => { if (n) renderAll(); });
 startSync();
