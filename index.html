@@ -441,6 +441,25 @@ body.gated { overflow: hidden; }
    기록 탭: '이미지' 버튼이 '삭제' 옆에 붙어요(오른쪽 끝은 삭제). 최근 1:1: 버튼 두 개를 한 줄로 */
 .rec-head b { flex: 1 0 auto; }
 .mhead [data-shot] + .btn { margin-left: 0; }
+/* 인게임 타이머: 라인마다 한 줄(라인 · 스펠 두 칸 · 신발/통찰), 쿨이면 남은 시간, 돌아오면 반짝 */
+.tm-top { margin: 10px 0 12px; }
+.tm-top input { width: 90px; }
+.tmrow { display: grid; grid-template-columns: 64px minmax(0, 1fr) minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 8px 0; border-top: 1px solid var(--line); }
+.tml { display: flex; align-items: center; gap: 4px; font-size: 14px; }
+.tms { display: grid; gap: 4px; min-width: 0; }
+.tmbtn { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; padding: 10px 12px; border-radius: 10px; border: 1.5px solid var(--good); background: color-mix(in srgb, var(--good) 14%, var(--surface)); color: var(--ink); font: inherit; font-weight: 700; cursor: pointer; min-width: 0; }
+.tmbtn .tt { font-variant-numeric: tabular-nums; font-size: 13px; color: var(--good); }
+.tmbtn.cd { border-color: var(--bad); background: color-mix(in srgb, var(--bad) 12%, var(--surface)); }
+.tmbtn.cd .tt { color: var(--bad); font-size: 16px; }
+.tmbtn.back { animation: tmBack 1s ease-in-out 3; }
+@keyframes tmBack { 50% { background: color-mix(in srgb, var(--good) 45%, var(--surface)); } }
+.tmsel { font-size: 12px; padding: 2px 4px; }
+.tmopt { display: flex; flex-direction: column; gap: 4px; }
+.tg { font-size: 15px; line-height: 1; padding: 5px 7px; border-radius: 8px; border: 1px solid var(--line); background: var(--sunk); cursor: pointer; opacity: .45; }
+.tg.on { opacity: 1; border-color: var(--gold); background: color-mix(in srgb, var(--gold) 22%, var(--surface)); }
+.tm-h { margin: 16px 0 8px; font-size: 13px; color: var(--muted); }
+.tm-objs { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; }
+@media (max-width: 520px) { .tmrow { grid-template-columns: 48px minmax(0, 1fr) minmax(0, 1fr) auto; gap: 6px; } .tml b { font-size: 13px; } .tmbtn { padding: 9px 8px; } }
 /* 토너먼트 대진표: 라운드마다 한 칸(가로로 넘기기), 판마다 두 줄(누르면 그쪽이 이겨요) */
 .tform { display: grid; grid-template-columns: auto minmax(0, 1fr) auto minmax(0, 1fr); gap: 8px 10px; align-items: center; }
 .tform label { color: var(--muted); font-size: 13px; }
@@ -535,6 +554,7 @@ li.match.picked { outline: 2px solid var(--bad); outline-offset: -2px; }
     <button role="tab" id="game-duel" aria-selected="false" aria-controls="g-duel">롤 1:1</button>
     <button role="tab" id="game-five" aria-selected="false" aria-controls="g-five">롤 5인 큐</button>
     <button role="tab" id="game-tourn" aria-selected="false" aria-controls="g-tourn">토너먼트</button>
+    <button role="tab" id="game-timer" aria-selected="false" aria-controls="g-timer">인게임 타이머</button>
     <button role="tab" id="game-roster" aria-selected="false" aria-controls="g-roster">선수 명단</button>
   </nav>
 
@@ -677,6 +697,19 @@ li.match.picked { outline: 2px solid var(--bad); outline-offset: -2px; }
     <div id="tournList"></div>
   </section>
 
+  <!-- 인게임 타이머: 게임하는 동안 옆에 켜 두는 보드. 상대 스펠·오브젝트 시간을 같은 보드를 연 친구들과 같이 봐요. -->
+  <section class="game" id="g-timer" role="tabpanel" aria-labelledby="game-timer" hidden>
+    <div class="card">
+      <h2>인게임 타이머 <span class="r" id="tmClock"></span></h2>
+      <div class="seg" id="tmBoard" role="group" aria-label="보드"><button data-tb="blue">블루팀 보드</button><button data-tb="red">레드팀 보드</button><button data-tb="solo">솔랭·일반</button></div>
+      <p class="note" id="tmNote"></p>
+      <div class="row tm-top" id="tmTop"></div>
+      <div id="tmRows"></div>
+      <h3 class="tm-h">오브젝트</h3>
+      <div class="tm-objs" id="tmObjs"></div>
+    </div>
+  </section>
+
   <!-- 선수 명단: 롤 내전·1:1·롤 5인 큐가 같이 쓰는 명단을 여기서 관리해요(추가·이름 바꾸기·빼기·Riot ID). -->
   <section class="game" id="g-roster" role="tabpanel" aria-labelledby="game-roster" hidden>
     <div class="card">
@@ -725,7 +758,7 @@ async function copyText(text) {
 
 // ---------- 상태 ----------
 // current·selected는 지금 들어가 있는 방(room)의 팀 배치·오늘 할 사람이에요. presence = 이 방을 보고 있는 사람들.
-const S = { players: [], matches: [], duels: [], mvp: {}, pred: [], tourns: [], seasons: [], current: null, selected: new Set(), riot: {}, rooms: [], room: null, presence: [], mode: 'random', editing: false, editTarget: null, period: 'all', season: 'cur', capMethod: 'top', draft: null };
+const S = { players: [], matches: [], duels: [], mvp: {}, pred: [], tourns: [], boards: {}, skew: 0, seasons: [], current: null, selected: new Set(), riot: {}, rooms: [], room: null, presence: [], mode: 'random', editing: false, editTarget: null, period: 'all', season: 'cur', capMethod: 'top', draft: null };
 const LS = 'lol-naejeon-v1';
 // 이 기기를 구분하는 id와 닉네임. 로그인 없이 방장을 가려요.
 const ME = (() => {
@@ -833,6 +866,7 @@ function applyServer(d) {
   if (Array.isArray(d.pred)) S.pred = d.pred.filter(x => x && typeof x.n === 'string' && ['blue', 'red'].includes(x.s));
   if (Array.isArray(d.seasons)) S.seasons = cleanSeasons(d.seasons);
   if (d.riot && typeof d.riot === 'object') S.riot = d.riot;
+  if (typeof d.now === 'number') S.skew = d.now - Date.now(); // 서버 시계 - 내 폰 시계 (타이머를 서버 시각으로 맞춰요)
   if (d.ably) connectAbly(d.ably);
   if (Array.isArray(d.rooms)) {
     S.rooms = d.rooms;
@@ -840,6 +874,7 @@ function applyServer(d) {
   }
   const rs = d.room?.id === S.room ? d.room : null; // 지금 방의 팀 배치·오늘 할 사람만 받아요
   if (!rs) return;
+  if (rs.boards && typeof rs.boards === 'object') S.boards = rs.boards;
   const c = rs.current;
   if (c && Array.isArray(c.blue) && Array.isArray(c.red) && (!S.current || (c.t || 0) > (S.current.t || 0))) S.current = c;
   // 오늘 할 사람: 내가 누른 게 아직 저장 중이면 화면에 보이는 내 선택을 그대로 둬요 (끝나면 syncSelect가 맞춰요)
@@ -2390,7 +2425,7 @@ $('#fivePick').addEventListener('click', e => {
 $('#fiveClear').onclick = () => { FIVE = []; saveFive(); renderFive(); };
 $('#fiveRefresh').onclick = e => refreshRiotNow(e.currentTarget);
 // 게임 탭(롤 내전 / 롤 5인 큐). 마지막에 본 탭을 기억해요.
-const GAMES = ['lol', 'duel', 'five', 'tourn', 'roster'];
+const GAMES = ['lol', 'duel', 'five', 'tourn', 'timer', 'roster'];
 function showGame(g) {
   for (const x of GAMES) { $('#game-' + x).setAttribute('aria-selected', x === g); $('#g-' + x).hidden = x !== g; }
   try { localStorage.setItem(LS + ':game', g); } catch {}
@@ -2472,7 +2507,120 @@ $('#g-duel').addEventListener('click', async e => {
   if (del && needRoster() && confirm('이 1:1 기록을 지울까요?')) { try { await api('deleteDuel', { id: del.dataset.duelDel }); toast('1:1 기록을 지웠어요.'); } catch {} renderAll(); }
 });
 
-function renderAll() { syncPresence(); renderSeasonPick(); renderRoomBar(); renderRoster(); renderTeams(); renderSession(); renderStats(); renderAnalysis(); renderLog(); renderFive(); renderDuel(); renderTourn(); }
+function renderAll() { syncPresence(); renderSeasonPick(); renderRoomBar(); renderRoster(); renderTeams(); renderSession(); renderStats(); renderAnalysis(); renderLog(); renderFive(); renderDuel(); renderTourn(); renderTimer(); }
+
+// ---------- 인게임 타이머 ----------
+// 게임하면서 옆에 켜 두는 보드. 상대가 스펠을 쓰면 그 칸을 눌러요 → 쿨타임이 돌고, 돌아오면 소리·알림. 다시 누르면 취소.
+// 같은 방에서 같은 보드(블루팀·레드팀·솔랭)를 연 친구 화면에 같이 떠요. 시간은 서버 시계 기준이에요(S.skew로 맞춰요).
+// 쿨타임은 기본값에 스펠 가속을 넣어 계산해요: 신발(명석함의 아이오니아 장화) 10, 우주적 통찰력 18 → 기본 × 100 / (100 + 가속)
+const SPELLS = { flash: ['점멸', '플', 300], tp: ['순간이동', '텔', 360], ignite: ['점화', '점화', 180], exhaust: ['탈진', '탈진', 240], cleanse: ['정화', '정화', 240],
+  heal: ['회복', '힐', 240], barrier: ['방어막', '베리어', 180], ghost: ['유체화', '유체', 240], smite: ['강타', '강타', 90] };
+const LANE_SPELLS = { TOP: ['flash', 'tp'], JUNGLE: ['flash', 'smite'], MIDDLE: ['flash', 'ignite'], BOTTOM: ['flash', 'heal'], UTILITY: ['flash', 'exhaust'] };
+const OBJS = { drake: ['드래곤', 300], baron: ['바론', 360], elder: ['장로', 360], inhib: ['억제기', 300] };
+const nowS = () => Date.now() + (S.skew || 0);
+const mmss = sec => `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, '0')}`;
+const cdOf = (sp, row) => Math.round(SPELLS[sp][2] * 100 / (100 + (row.b ? 10 : 0) + (row.c ? 18 : 0)));
+let TB = null; try { TB = localStorage.getItem(LS + ':board'); } catch {}
+const tmFired = new Set();
+let tmResetConfirm = false;
+// 보드 고르기: 내가 고른 게 있으면 그거, 없으면 내 이름(참가 신청)이 지금 블루·레드 팀에 있는지 보고 그 팀 보드
+function tmSide() {
+  if (['blue', 'red', 'solo'].includes(TB)) return TB;
+  const c = S.current; return IAM && c ? (c.blue.includes(IAM) ? 'blue' : c.red.includes(IAM) ? 'red' : 'solo') : 'solo';
+}
+const tmBoard = () => S.boards?.[tmSide()] || {};
+const tmRow = (L, bd = tmBoard()) => { const r = bd['r:' + L] || {}; return { s: Array.isArray(r.s) && r.s.length === 2 ? r.s : LANE_SPELLS[L], e: Array.isArray(r.e) ? r.e : [0, 0], b: !!r.b, c: !!r.c }; };
+function renderTimer() {
+  if (document.activeElement?.closest?.('#g-timer select, #g-timer input')) return; // 고르거나 적는 중엔 그대로 둬요
+  const side = tmSide(), bd = tmBoard(), now = nowS();
+  document.querySelectorAll('#tmBoard [data-tb]').forEach(b => b.setAttribute('aria-pressed', b.dataset.tb === side));
+  if (!S.room) { $('#tmNote').textContent = '롤 내전 탭에서 방에 먼저 들어가 주세요. 같은 방에서 같은 보드를 연 친구들과 타이머를 같이 봐요.'; $('#tmTop').innerHTML = $('#tmRows').innerHTML = $('#tmObjs').innerHTML = ''; return; }
+  $('#tmNote').textContent = side === 'solo' ? '솔랭·일반: 같이 큐 돌리는 친구들끼리 상대 스펠을 같이 봐요.' : `${TEAM[side]} 보드: 우리 팀끼리 상대 팀 스펠을 같이 봐요. 상대 팀은 자기 보드를 따로 써요.`;
+  const start = Number(bd.start) || 0;
+  $('#tmTop').innerHTML = (start ? `<button class="btn small" id="tmCopy">채팅용 복사</button><label class="note" style="margin:0">게임 시간 맞추기 <input id="tmSet" type="text" inputmode="numeric" placeholder="12:30"></label>`
+    : '<button class="btn gold small" id="tmStart">⏱ 게임 시작</button><span class="note" style="margin:0">로딩 끝나고 게임이 시작될 때 눌러요(늦었으면 시작하고 시간을 맞춰요)</span>')
+    + `<button class="btn ghost small" id="tmReset" style="${tmResetConfirm ? 'color:var(--bad);border-color:var(--bad)' : ''}">${tmResetConfirm ? '정말 새 게임' : '새 게임'}</button>`;
+  $('#tmRows').innerHTML = LANES.map(L => {
+    const row = tmRow(L, bd);
+    return `<div class="tmrow"><div class="tml">${laneIcon(L)}<b>${LANE[L]}</b></div>${[0, 1].map(k => {
+      const sp = row.s[k], end = Number(row.e[k]) || 0, cd = end > now;
+      return `<div class="tms"><button class="tmbtn${cd ? ' cd' : ''}" data-tms="${L}|${k}" aria-label="${LANE[L]} ${SPELLS[sp][0]} ${cd ? '쿨 취소' : '썼어요'}"><span>${SPELLS[sp][0]}</span><span class="tt" data-end="${cd ? end : 0}">${cd ? mmss((end - now) / 1000) : '준비'}</span></button>`
+        + `<select class="tmsel" data-tmsel="${L}|${k}" aria-label="${LANE[L]} ${k + 1}번째 스펠">${Object.entries(SPELLS).map(([id, [nm]]) => `<option value="${id}"${id === sp ? ' selected' : ''}>${nm}</option>`).join('')}</select></div>`;
+    }).join('')}<div class="tmopt"><button class="tg${row.b ? ' on' : ''}" data-tmb="${L}" title="신발(명석함의 아이오니아 장화): 스펠 가속 10" aria-pressed="${row.b}">👟</button><button class="tg${row.c ? ' on' : ''}" data-tmc="${L}" title="우주적 통찰력: 스펠 가속 18" aria-pressed="${row.c}">🔭</button></div></div>`;
+  }).join('');
+  $('#tmObjs').innerHTML = Object.entries(OBJS).map(([k, [nm, sec]]) => {
+    const end = Number(bd['o:' + k]) || 0, cd = end > now;
+    return `<button class="tmbtn${cd ? ' cd' : ''}" data-tmo="${k}" aria-label="${nm} ${cd ? '타이머 취소' : `잡았어요(${mmss(sec)} 뒤 다시 나와요)`}"><span>${nm}</span><span class="tt" data-end="${cd ? end : 0}">${cd ? mmss((end - now) / 1000) : mmss(sec)}</span></button>`;
+  }).join('');
+  tmTick();
+}
+// 1초마다: 남은 시간 글자만 바꾸고, 게임 시계도 돌려요. 끝난 타이머가 있으면 소리·알림 한 번 하고 다시 그려요.
+function tmTick() {
+  const now = nowS(), start = Number(tmBoard().start) || 0, open = !$('#g-timer').hidden;
+  $('#tmClock').textContent = start ? `게임 시간 ${mmss(Math.max(0, now - start) / 1000)}` : '';
+  let done = false;
+  document.querySelectorAll('#g-timer [data-end]').forEach(el => { const end = +el.dataset.end; if (!end) return; if (end <= now) done = true; else el.textContent = mmss((end - now) / 1000); });
+  // 돌아온 스펠 알림: 보드를 열어 둔 화면에서만, 타이머마다 한 번
+  const bd = tmBoard(), side = tmSide();
+  for (const L of LANES) { const row = tmRow(L, bd); row.e.forEach((end, k) => { const key = `${side}|${L}|${k}|${end}`; if (end && end <= now && now - end < 15e3 && !tmFired.has(key)) { tmFired.add(key); if (open) { sfx('land'); toast(`${LANE[L]} ${SPELLS[row.s[k]][0]} 돌아왔어요!`); } } }); }
+  for (const k of Object.keys(OBJS)) { const end = Number(bd['o:' + k]) || 0, key = `${side}|o|${k}|${end}`; if (end && end <= now && now - end < 15e3 && !tmFired.has(key)) { tmFired.add(key); if (open) { sfx('win'); toast(`${OBJS[k][0]} 다시 나왔어요!`); } } }
+  if (done) renderTimer();
+}
+setInterval(tmTick, 1000);
+async function tmSend(body) {
+  try { await api('board', { side: tmSide(), ...body }, true); } catch { ver = null; await pull(); }
+  renderTimer();
+}
+// 화면은 바로 바꾸고(서버 시각 기준으로) 서버에 보내요. 다른 친구 화면은 서버에서 받아 가요.
+function tmLocal(field, value) { const side = tmSide(); S.boards[side] = { ...(S.boards[side] || {}), [field]: value }; if (value === undefined) delete S.boards[side][field]; }
+$('#tmBoard').addEventListener('click', e => { const b = e.target.closest('[data-tb]'); if (!b) return; TB = b.dataset.tb; try { localStorage.setItem(LS + ':board', TB); } catch {} renderTimer(); });
+$('#g-timer').addEventListener('click', async e => {
+  const t = e.target.closest('button'); if (!t) return;
+  if (!S.room) return toast('롤 내전 탭에서 방에 먼저 들어가 주세요.');
+  const now = nowS();
+  if (t.dataset.tms) {
+    const [L, k] = t.dataset.tms.split('|'), row = tmRow(L), cd = (Number(row.e[+k]) || 0) > now, dur = cd ? null : cdOf(row.s[+k], row);
+    const e2 = [...row.e]; e2[+k] = dur ? now + dur * 1000 : 0; tmLocal('r:' + L, { ...row, e: e2 });
+    sfx(dur ? 'on' : 'off'); renderTimer();
+    return tmSend({ op: 'spell', lane: L, slot: +k, dur });
+  }
+  if (t.dataset.tmb || t.dataset.tmc) {
+    const L = t.dataset.tmb || t.dataset.tmc, row = tmRow(L), next = { ...row, [t.dataset.tmb ? 'b' : 'c']: !row[t.dataset.tmb ? 'b' : 'c'] };
+    tmLocal('r:' + L, next); renderTimer();
+    return tmSend({ op: 'row', lane: L, s: next.s, b: next.b, c: next.c });
+  }
+  if (t.dataset.tmo) {
+    const k = t.dataset.tmo, cd = (Number(tmBoard()['o:' + k]) || 0) > now, dur = cd ? null : OBJS[k][1];
+    tmLocal('o:' + k, dur ? now + dur * 1000 : undefined); sfx(dur ? 'on' : 'off'); renderTimer();
+    return tmSend({ op: 'obj', key: k, dur });
+  }
+  if (t.id === 'tmStart') { tmLocal('start', now); sfx('done'); renderTimer(); return tmSend({ op: 'start', offset: 0 }); }
+  if (t.id === 'tmReset') {
+    if (!tmResetConfirm) { tmResetConfirm = true; renderTimer(); clearTimeout(renderTimer.t); renderTimer.t = setTimeout(() => { tmResetConfirm = false; renderTimer(); }, 3000); return; }
+    tmResetConfirm = false; clearTimeout(renderTimer.t); S.boards[tmSide()] = {}; renderTimer(); toast('새 게임: 이 보드의 타이머를 다 지웠어요.');
+    return tmSend({ op: 'reset' });
+  }
+  if (t.id === 'tmCopy') {
+    // 롤 채팅에 붙여 넣는 글: '탑 플 23:45 / 원딜 힐 21:10' (스펠이 돌아오는 게임 시간)
+    const bd = tmBoard(), start = Number(bd.start) || 0, out = [];
+    for (const L of LANES) { const row = tmRow(L, bd); row.e.forEach((end, k) => { if (end > now) out.push([end, `${LANE[L]} ${SPELLS[row.s[k]][1]} ${mmss((end - start) / 1000)}`]); }); }
+    for (const [k, [nm]] of Object.entries(OBJS)) { const end = Number(bd['o:' + k]) || 0; if (end > now) out.push([end, `${nm} ${mmss((end - start) / 1000)}`]); }
+    if (!out.length) return toast('돌고 있는 타이머가 없어요.');
+    return copyText(out.sort((a, b) => a[0] - b[0]).map(x => x[1]).join(' / '));
+  }
+});
+$('#g-timer').addEventListener('change', e => {
+  const s = e.target.closest('[data-tmsel]'); if (!s) return;
+  const [L, k] = s.dataset.tmsel.split('|'), row = tmRow(L), sp = [...row.s]; sp[+k] = s.value;
+  tmLocal('r:' + L, { ...row, s: sp }); s.blur(); renderTimer();
+  tmSend({ op: 'row', lane: L, s: sp, b: row.b, c: row.c });
+});
+$('#g-timer').addEventListener('keydown', e => {
+  if (e.target.id !== 'tmSet' || e.key !== 'Enter') return;
+  const m = e.target.value.trim().match(/^(\d{1,3})[:.]?(\d{2})$/); if (!m) return toast('게임 시간을 12:30처럼 적어 주세요.');
+  const off = +m[1] * 60 + +m[2]; tmLocal('start', nowS() - off * 1000); e.target.blur(); renderTimer(); toast(`게임 시간을 ${mmss(off)}로 맞췄어요.`);
+  tmSend({ op: 'start', offset: off });
+});
 
 // ---------- 토너먼트 ----------
 // 만들기: 게임 이름·참가 방식(개인전 / 2·3·5인 팀)을 고르고 참가할 사람을 누르면, 팀은 무작위로 묶고 순서도 섞어서 대진표를 짜요.
@@ -2767,6 +2915,12 @@ document.addEventListener('click', e => {
 // ---------- 버전 · 패치노트 ----------
 // 커밋해서 올릴 때마다 맨 위에 새 항목을 더해요(규칙은 CLAUDE.md). 오른쪽 위 버전은 맨 위 항목이에요.
 const NOTES = [
+  { v: '1.20.0', d: '2026-10-22', items: [
+    '⏱ 인게임 타이머 탭이 생겼어요: 게임하면서 옆에 켜 두는 보드예요. 상대가 스펠을 쓰면 그 라인 칸(점멸·순간이동·점화…)을 눌러요. 쿨타임이 돌고, 돌아오면 소리와 알림이 와요. 잘못 눌렀으면 다시 누르면 취소돼요.',
+    '같은 방에서 같은 보드를 연 친구 폰에 똑같이 떠요. 내전이면 블루팀 보드·레드팀 보드를 따로 쓰고(참가 신청한 이름으로 내 팀 보드가 먼저 열려요), 솔랭·일반 보드도 있어요.',
+    '👟 신발·🔭 우주적 통찰력을 켜면 쿨타임이 줄어요. 스펠은 칸 아래에서 바꿔요. 드래곤·바론·장로·억제기 타이머도 있어요.',
+    '"게임 시작"을 누르면 게임 시간이 나오고, "채팅용 복사"를 누르면 "탑 플 23:45 / 원딜 힐 21:10"처럼 롤 채팅에 바로 붙여 넣을 글이 복사돼요. 늦게 켰으면 게임 시간을 12:30처럼 적고 엔터로 맞춰요.',
+  ] },
   { v: '1.19.0', d: '2026-10-22', items: [
     '🏆 토너먼트 탭이 생겼어요: 게임 이름(롤 1:1, 칼바람, 마리오카트… 아무 게임이나)과 참가 방식(개인전 / 2·3·5인 팀)을 고르고 참가할 사람을 누르면 대진표를 짜 줘요. 인원이 안 맞으면 부전승이 들어가요.',
     '판마다 이긴 쪽을 누르면 다음 라운드로 올라가고, 결승이 끝나면 🏆 우승자가 나와요. 잘못 눌렀으면 같은 줄을 다시 누르면 풀려요. 우승 횟수는 선수 카드에 남아요. 만들기·결과 누르기는 어느 방이든 방장이 해요.',

@@ -8,7 +8,10 @@ const redis = globalThis.__redis ?? (url && token ? new Redis({ url, token }) : 
 
 const K = { players: 'lol:players', matches: 'lol:matches', ver: 'lol:ver', riot: 'lol:riot', riotLock: 'lol:riot:lock', riotRest: 'lol:riot:rest', riotGames: 'lol:riot:games', rooms: 'lol:rooms', hostSeen: 'lol:hostseen', nicks: 'lol:nicks', duels: 'lol:duels', mvp: 'lol:mvp', seasons: 'lol:seasons', pred: 'lol:pred', tourn: 'lol:tourn' };
 // 방마다 따로인 것: 오늘 할 사람(정렬 집합), 팀 배치, 지금 보고 있는 사람(정렬 집합, 점수 = 마지막 신호 시각)
-const RK = { sel: r => `lol:room:${r}:sel`, cur: r => `lol:room:${r}:cur`, seen: r => `lol:room:${r}:seen` };
+const RK = { sel: r => `lol:room:${r}:sel`, cur: r => `lol:room:${r}:cur`, seen: r => `lol:room:${r}:seen`, board: (r, s) => `lol:room:${r}:board:${s}` };
+// 인게임 타이머 보드: 방마다 블루팀·레드팀·솔랭(우리끼리) 셋. 해시 필드 'start'(게임 0초 시각), 'r:라인'({ s: [스펠 둘], e: [끝나는 시각 둘], b: 신발, c: 우주적 통찰력 }), 'o:오브젝트'(끝나는 시각)
+const BOARD_SIDES = ['blue', 'red', 'solo'], BOARD_LANES = ['TOP', 'JUNGLE', 'MIDDLE', 'BOTTOM', 'UTILITY'];
+const BOARD_SPELLS = ['flash', 'tp', 'ignite', 'exhaust', 'cleanse', 'heal', 'barrier', 'ghost', 'smite'], BOARD_OBJS = ['drake', 'baron', 'elder', 'inhib'];
 const MAX_MATCHES = 5000;
 const MAX_PLAYERS = 60;
 const MAX_ROOMS = 10;
@@ -219,7 +222,7 @@ async function readRooms() {
 const saveRoom = ({ id, hostAlive, ...r }) => redis.hset(K.rooms, { [id]: r });
 async function dropRoom(id) {
   await redis.hdel(K.rooms, id); await redis.hdel(K.hostSeen, id);
-  await redis.del(RK.sel(id), RK.cur(id), RK.seen(id));
+  await redis.del(RK.sel(id), RK.cur(id), RK.seen(id), ...BOARD_SIDES.map(s => RK.board(id, s)));
 }
 // 1:1 기록: { id, t, a, b(두 사람), w(이긴 사람 이름), rule('자유'·'퍼블'·'100CS'·'첫 타워') }. 내전 기록과 따로예요.
 const DUEL_RULES = ['자유', '퍼블', '100CS', '첫 타워'];
@@ -281,8 +284,9 @@ async function readPred() {
 async function readState(room) {
   const [players, matches, ver, riot, rooms, duels, mvp, seasons, pred, tourns] = await Promise.all([readPlayers(), readMatches(), redis.get(K.ver), readRiot(), readRooms(), readDuels(), readMvp(), readSeasons(), readPred(), readTourns()]);
   const r = rooms.find(x => x.id === room);
-  const roomState = r ? { id: r.id, selected: await readSelected(r.id), current: (await redis.get(RK.cur(r.id))) || null } : null;
-  return { players, matches, duels, mvp, pred, tourns, riot, rooms, seasons, room: roomState, ver: Number(ver) || 0, ably: ABLY_NS };
+  const boards = r ? Object.fromEntries(await Promise.all(BOARD_SIDES.map(async s => [s, (await redis.hgetall(RK.board(r.id, s))) || {}]))) : null;
+  const roomState = r ? { id: r.id, selected: await readSelected(r.id), current: (await redis.get(RK.cur(r.id))) || null, boards } : null;
+  return { players, matches, duels, mvp, pred, tourns, riot, rooms, seasons, room: roomState, ver: Number(ver) || 0, ably: ABLY_NS, now: Date.now() };
 }
 // 지금 보고 있다는 신호(15초마다). 멤버는 "기기id|닉네임"이고, 방장이면 방장 신호 시각도 남겨요.
 async function heartbeat(room, me, nick, claimsHost) {
@@ -401,7 +405,7 @@ export default async function handler(req, res) {
     const b = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body || {};
     // 솔랭 새로고침·닉네임 정하기는 기록을 바꾸지 않아서 비밀번호 없이도 돼요. MVP 투표도 구경하는 사람 누구나 해요.
     // 승부 예측·참가 신청도 구경하는 친구 누구나 해요.
-    if (!['refreshRiot', 'claimNick', 'voteMvp', 'predict', 'selfSelect'].includes(b.action) && !pinOk(req)) return res.status(401).json({ error: 'pin_required' });
+    if (!['refreshRiot', 'claimNick', 'voteMvp', 'predict', 'selfSelect', 'board'].includes(b.action) && !pinOk(req)) return res.status(401).json({ error: 'pin_required' });
     // 방장 확인: 기기마다 화면이 만든 id(x-device)로 구분해요. 친구끼리 쓰는 거라 로그인 없이 이 정도로 막아요.
     const me = cleanId(req.headers['x-device']), rooms = await readRooms();
     const room = rooms.find(r => r.id === cleanId(b.room)), isHost = r => !!r && !!me && r.hostId === me;
@@ -534,6 +538,36 @@ export default async function handler(req, res) {
       case 'deleteTourn': {
         if (typeof b.id !== 'string' || !b.id) return bad(res);
         await redis.hdel(K.tourn, b.id);
+        break;
+      }
+      case 'board': {
+        // 인게임 타이머(누구나): 게임하면서 상대 스펠·오브젝트 시간을 같은 보드를 연 친구들과 같이 봐요.
+        // 끝나는 시각은 서버 시계로 정해요(폰마다 시계가 조금씩 달라도 같게 보이게). dur은 초.
+        if (!room) return res.status(404).json({ error: 'no_room' });
+        const side = BOARD_SIDES.includes(b.side) ? b.side : null, now = Date.now(), dur = b.dur == null ? null : Number(b.dur);
+        if (!side || (dur != null && !(dur > 0 && dur <= 900))) return bad(res);
+        const key = RK.board(room.id, side);
+        if (b.op === 'reset') await redis.del(key);
+        else if (b.op === 'start') {
+          const off = b.offset == null ? null : Number(b.offset);
+          if (off == null) await redis.hdel(key, 'start');
+          else if (off >= 0 && off <= 7200) await redis.hset(key, { start: now - off * 1000 });
+          else return bad(res);
+        } else if (b.op === 'obj') {
+          if (!BOARD_OBJS.includes(b.key)) return bad(res);
+          if (dur == null) await redis.hdel(key, 'o:' + b.key); else await redis.hset(key, { ['o:' + b.key]: now + dur * 1000 });
+        } else if (b.op === 'row' || b.op === 'spell') {
+          if (!BOARD_LANES.includes(b.lane)) return bad(res);
+          const row = parse(await redis.hget(key, 'r:' + b.lane)) || {}, e = Array.isArray(row.e) ? row.e : [0, 0];
+          if (b.op === 'row') {
+            if (!(Array.isArray(b.s) && b.s.length === 2 && b.s.every(x => BOARD_SPELLS.includes(x)))) return bad(res);
+            Object.assign(row, { s: b.s, b: !!b.b, c: !!b.c });
+          } else {
+            const k = Number(b.slot); if (k !== 0 && k !== 1) return bad(res);
+            e[k] = dur == null ? 0 : now + dur * 1000;
+          }
+          await redis.hset(key, { ['r:' + b.lane]: { ...row, e } });
+        } else return bad(res);
         break;
       }
       case 'selfSelect': {
