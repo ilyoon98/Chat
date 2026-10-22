@@ -103,6 +103,15 @@ td .tier { margin-right: 6px; }
 .draft-caps { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .cap { display: grid; gap: 6px; padding: 10px 12px; border-radius: 12px; color: #fff; min-width: 0; }
 .cap.blue { background: var(--blue); } .cap.red { background: var(--red); }
+.draft-sum { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 10px 12px; border-radius: 12px; background: var(--sunk); border: 1px solid var(--line); }
+.capchip { padding: 3px 10px; border-radius: 999px; color: #fff; font-size: 13.5px; } .capchip.blue { background: var(--blue); } .capchip.red { background: var(--red); }
+.draft-turnrow { justify-content: space-between; } .draft-turnrow .draft-turn { flex: 1 1 220px; min-width: 0; }
+/* 남은 사람 칩: 위 줄은 엠블럼·이름·간단 정보, 아래 줄은 승률·MMR. 칸 밖으로 튀어나오지 않게 두 줄로 */
+.pool .pchip { flex-direction: column; align-items: flex-start; gap: 2px; padding: 7px 10px; white-space: nowrap; overflow: hidden; }
+.pchip .pc-top { display: flex; align-items: center; gap: 5px; min-width: 0; max-width: 100%; }
+.pchip .pc-top b { overflow: hidden; text-overflow: ellipsis; }
+.pool .chip.pchip small { margin-left: 0; text-align: left; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.qi { display: inline-flex; align-items: center; gap: 2px; margin-left: 2px; flex: none; } .qi .tier { width: 16px; height: 16px; margin: 0; }
 .cap span { font-family: var(--display); font-weight: 800; font-size: 17px; } .cap select { width: 100%; min-width: 0; font-weight: 700; }
 .draft-order { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; padding: 14px; border-radius: 12px; background: var(--sunk); border: 1px solid var(--line); }
 .draft-order-r { display: grid; gap: 8px; flex: 1 1 220px; }
@@ -313,8 +322,13 @@ body.gated { overflow: hidden; }
 @keyframes crownDrop { from { opacity: 0; transform: translateY(-26px) rotate(-25deg) scale(1.6); } to { opacity: 1; transform: none; } }
 .recorded.celebrate .rec-head b { animation: pop .6s cubic-bezier(.2, .9, .3, 1.5) both; }
 @keyframes pop { from { opacity: 0; transform: scale(.6); } to { opacity: 1; transform: none; } }
-.draft-team li.fresh { animation: dropIn .45s cubic-bezier(.2, .9, .3, 1.4) both; }
-.draft-team li.fresh .pl { box-shadow: inset 0 0 0 2px var(--side); border-radius: 8px; }
+.fly { position: fixed; z-index: 65; pointer-events: none; display: flex; align-items: center; gap: 6px; padding: 8px 12px; border-radius: 10px; font-weight: 800;
+  background: var(--surface); border: 2px solid var(--side, var(--gold)); box-shadow: 0 14px 32px rgba(0, 0, 0, .5); transform-origin: center; }
+.fly.blue { --side: var(--blue); } .fly.red { --side: var(--red); }
+.draft-team li.land { animation: land .55s cubic-bezier(.2, .9, .3, 1.4) both; }
+.draft-team li.land .pl { box-shadow: inset 0 0 0 2px var(--side); border-radius: 8px; }
+@keyframes land { 0% { transform: scale(1.12); filter: brightness(1.6); } 100% { transform: none; filter: none; } }
+.draft-turn.changed { animation: pop .5s cubic-bezier(.2, .9, .3, 1.5) both; }
 .draft-team.turn { animation: turnPulse 1.4s ease-in-out infinite; }
 @keyframes turnPulse { 50% { outline-color: color-mix(in srgb, var(--gold) 35%, transparent); } }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
@@ -468,7 +482,7 @@ async function copyText(text) {
 
 // ---------- 상태 ----------
 // current·selected는 지금 들어가 있는 방(room)의 팀 배치·오늘 할 사람이에요. presence = 이 방을 보고 있는 사람들.
-const S = { players: [], matches: [], current: null, selected: new Set(), riot: {}, rooms: [], room: null, presence: [], mode: 'random', editing: false, editTarget: null, period: 'all', draftOrder: 'alt', draft: null };
+const S = { players: [], matches: [], current: null, selected: new Set(), riot: {}, rooms: [], room: null, presence: [], mode: 'random', editing: false, editTarget: null, period: 'all', capMethod: 'top', draft: null };
 const LS = 'lol-naejeon-v1';
 // 이 기기를 구분하는 id와 닉네임. 로그인 없이 방장을 가려요.
 const ME = (() => {
@@ -488,13 +502,13 @@ function loadLocal() {
     if (s.riot && typeof s.riot === 'object') S.riot = s.riot;
     if (typeof s.room === 'string') S.room = s.room;
     if (['balance', 'draft'].includes(s.mode)) S.mode = s.mode;
-    if (['alt', 'snake', 'free'].includes(s.draftOrder)) S.draftOrder = s.draftOrder;
+    if (s.capMethod in { top: 1, bottom: 1, random: 1 }) S.capMethod = s.capMethod;
   } catch {}
   const q = new URLSearchParams(location.search).get('room'); // 카톡으로 받은 방 링크가 먼저
   if (q) S.room = q;
 }
 function saveLocal() {
-  try { localStorage.setItem(LS, JSON.stringify({ room: S.room, mode: S.mode, draftOrder: S.draftOrder, players: S.players, matches: S.matches, riot: S.riot })); } catch {}
+  try { localStorage.setItem(LS, JSON.stringify({ room: S.room, mode: S.mode, capMethod: S.capMethod, players: S.players, matches: S.matches, riot: S.riot })); } catch {}
 }
 // ---------- 방장 ----------
 const curRoom = () => S.rooms.find(r => r.id === S.room) || null;
@@ -755,6 +769,13 @@ function laneText(p, short) {
 const LANE_IC = 'https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-clash/global/default/assets/images/position-selector/positions/icon-position-';
 const LANE_FILE = { TOP: 'top', JUNGLE: 'jungle', MIDDLE: 'middle', BOTTOM: 'bottom', UTILITY: 'utility' };
 const laneIcon = k => `<img class="laneic" src="${LANE_IC}${LANE_FILE[k]}.png" alt="" width="16" height="16" loading="lazy">`;
+// 이름 옆에 붙이는 간단 정보: 주 라인 아이콘 + 솔랭 엠블럼. 마우스를 올리면 글자로도 나와요. Riot ID가 없으면 빈칸.
+function quick(p) {
+  const lanes = laneTop(p).map(([k]) => laneIcon(k)).join(''), solo = soloIcon(p);
+  if (!lanes && !solo) return '';
+  const tip = [laneText(p, true), soloText(p, true)].filter(Boolean).join(' · ');
+  return `<span class="qi" title="${esc(tip)}">${lanes}${solo}</span>`;
+}
 // 솔랭 티어 엠블럼: 내전 티어와 같은 모양에 실제 솔랭 티어 색을 입혀요. 언랭이면 없음.
 function soloIcon(p) {
   const s = S.riot[p]?.solo, c = s && EMBLEM[RIOT_TIER[s.tier]];
@@ -996,7 +1017,7 @@ function setMode(m) {
   $('#modeNote').textContent = {
     random: '완전 랜덤: 실력 상관없이 무작위로 나눠요.',
     balance: '실력 밸런스: MMR 평균이 가장 비슷한 조합 몇 개 중에서 무작위로 골라요. 판수가 쌓일수록 정확해져요.',
-    draft: '팀장 뽑기: MMR 1·2위가 팀장이 되고(바꿀 수 있어요), 동전 던지기로 순서를 정한 뒤 번갈아 한 명씩 끌어 와요.',
+    draft: '팀장 뽑기: 팀장을 정하고(MMR 1·2위 / 꼴찌 둘 / 랜덤) 동전으로 먼저 뽑을 팀을 정해요. 차례인 팀장이 원하는 만큼 뽑고 넘겨요.',
   }[m];
   $('#shuffle').textContent = m === 'draft' ? '팀장 뽑기 시작' : '팀 섞기';
 }
@@ -1028,7 +1049,7 @@ function burst(el, side, big) {
   confetti({ ...o, particleCount: big ? 120 : 36, spread: big ? 90 : 55, startVelocity: big ? 45 : 26, scalar: big ? 1 : .8 });
   if (big) setTimeout(() => confetti({ ...o, particleCount: 80, spread: 130, startVelocity: 32 }), 250);
 }
-// S.fx = 'reveal'이면 다음에 팀을 그릴 때 한 명씩 튀어 들어와요(팀 섞기·팀장 뽑기 끝).
+// S.fx = 'reveal'이면 다음에 팀을 그릴 때 한 명씩 튀어 들어와요(팀 섞기·팀장 뽑기 끝). 색종이는 승리 때만 터져요.
 // 승리는 새 기록이 생기면(내가 눌렀든 다른 화면에서 왔든) 한 번 축하해요. 처음 열었을 때 이미 있던 기록은 축하하지 않아요.
 let fxRec;
 function renderTeams(shuffling) {
@@ -1050,7 +1071,7 @@ function renderTeams(shuffling) {
   const before = rec && computeStats(S.players, S.matches.filter(m => m !== rec));
   const mmrMove = p => { const a = Math.round(mmrOf(before, p)), b = Math.round(mmrOf(st, p)), d = b - a;
     return `MMR ${a} → <b>${b}</b> <span class="${d >= 0 ? 'up' : 'down'}">${d >= 0 ? '+' : ''}${d}</span>`; };
-  const li = (p, side, i) => { const s = st.P[p], x = ss.P[p]; return `<li style="--i:${i}"><div class="pl" data-p="${esc(p)}" data-card="${esc(p)}" data-side="${side}"><span class="who">${tierIcon(T[p])}<span class="nm">${esc(p)}</span><span class="lane">${laneText(p, true)}</span></span><span class="st">${rec ? mmrMove(p) : s?.g ? `${pct(s.w, s.g)}% · ${s.g}판` : '첫 판'}${x?.g ? `<br><span class="sess">이 방 ${x.w}승 ${x.g - x.w}패</span>` : ''}</span></div>${swapBtn(p, side)}</li>`; };
+  const li = (p, side, i) => { const s = st.P[p], x = ss.P[p]; return `<li style="--i:${i}"><div class="pl" data-p="${esc(p)}" data-card="${esc(p)}" data-side="${side}"><span class="who">${tierIcon(T[p])}<span class="nm">${esc(p)}</span>${quick(p)}</span><span class="st">${rec ? mmrMove(p) : s?.g ? `${pct(s.w, s.g)}% · ${s.g}판` : '첫 판'}${x?.g ? `<br><span class="sess">이 방 ${x.w}승 ${x.g - x.w}패</span>` : ''}</span></div>${swapBtn(p, side)}</li>`; };
   const avg = (t, from = st) => t.reduce((s, p) => s + mmrOf(from, p), 0) / (t.length || 1);
   const eb = 1 / (1 + Math.pow(10, (avg(c.red) - avg(c.blue)) / 400)), both = c.blue.length && c.red.length;
   // 한쪽 팀을 다 비워도 빈 팀 칸은 남겨서 다시 옮겨 올 수 있게 해요.
@@ -1071,7 +1092,6 @@ function renderTeams(shuffling) {
         ${host ? '<div class="rec-actions"><button class="big primary" id="reshuffle">새로 섞기</button><button class="big" id="again">같은 팀으로 한 판 더</button></div>' : ''}</div>` : !host ? '' : `
       <div class="result"><button class="win blue" data-win="blue" ${canRec ? '' : 'disabled'}>${TEAM.blue} 승리</button><button class="win red" data-win="red" ${canRec ? '' : 'disabled'}>${TEAM.red} 승리</button></div>`}`;
   if (celebrate) burst(box.querySelector('.team.' + rec.win), rec.win, true);
-  if (reveal) setTimeout(() => { burst(box.querySelector('.team.blue'), 'blue'); burst(box.querySelector('.team.red'), 'red'); }, (c.blue.length + c.red.length) * 70 + 200);
 }
 const TEAM = { blue: '1팀 블루', red: '2팀 레드' };
 // 판(round): 팀을 섞거나 옮기거나 '한 판 더'를 누를 때마다 새로 생겨요. 예전 팀 배치에는 round가 없어서 t를 대신 써요.
@@ -1184,47 +1204,44 @@ document.addEventListener('touchmove', e => { if (drag?.on) e.preventDefault(); 
 $('#teamsBox').addEventListener('contextmenu', e => { if (e.target.closest('[data-p], [data-pick]')) e.preventDefault(); });
 
 // ---------- 팀장 뽑기 ----------
-// 1) 시작하면 오늘 할 사람 중 MMR 1·2위가 팀장(바꿀 수 있어요) 2) 뽑는 순서(1명씩 / 1-2-2 / 자유롭게)와 먼저 뽑을 팀 정하기
-// 3) 남은 사람을 끌어서 팀 칸에 놓거나 눌러서 지금 차례 팀에 넣어요. 다 뽑으면 그대로 팀 배치가 돼요.
-// 뽑는 동안 화면이 들썩이지 않게: 팀 칸은 처음부터 빈 자리까지 다 그려 두고, 남은 사람 칸은 뽑힌 사람도 흐리게 자리를 지켜요.
+// 1) 팀장 정하기: MMR 1·2위 / MMR 꼴찌 둘 / 랜덤 중에서 고르고, 다른 사람이 하고 싶으면 칸을 눌러 바꿔요.
+// 2) 동전을 던져(또는 직접 골라) 먼저 뽑을 팀을 정해요.
+// 3) 차례인 팀장이 원하는 만큼 뽑고 '넘기기'를 누르면 상대 차례예요. 팀이 다 차면 알아서 넘어가요.
+// 뽑는 동안 화면이 들썩이지 않게: 팀 칸은 빈 자리까지 다 그려 두고, 남은 사람 칸은 뽑힌 사람도 흐리게 자리를 지켜요.
 // 뽑는 과정은 이 기기에서만 진행돼요. 끝나면 팀 배치가 저장돼서 다른 사람 화면에도 나와요.
 let coinBusy = false;
 const other = side => side === 'blue' ? 'red' : 'blue';
-const DRAFT_ORDERS = {
-  alt: ['1명씩 번갈아', '한 명씩 번갈아 뽑아요. 1 → 2 → 1 → 2 …'],
-  snake: ['1-2-2-2…', '먼저 뽑는 팀이 1명, 그다음부터는 2명씩 번갈아 뽑아요. 먼저 뽑는 쪽 이득이 줄어요.'],
-  free: ['자유롭게', '순서 없이 아무 팀에나 끌어 넣어요. 누르면 인원이 적은 팀으로 가요.'],
-};
+const CAP_METHODS = { top: 'MMR 1·2위', bottom: 'MMR 꼴찌 둘', random: '랜덤' };
 const draftSize = d => Math.ceil(d.names.length / 2); // 한 팀 최대 인원(팀장 포함)
 const teamLen = (d, s) => 1 + d.picks[s].length;
+const isFull = (d, s) => teamLen(d, s) >= draftSize(d);
 const draftPool = d => d.names.filter(p => p !== d.cap.blue && p !== d.cap.red && !d.picks.blue.includes(p) && !d.picks.red.includes(p));
-// k번째(0부터) 뽑을 팀. 1-2-2는 첫 번째만 먼저 팀, 그다음부터 두 번씩 번갈아요.
-const turnAt = (d, k) => d.order === 'snake' ? (k === 0 || Math.floor((k - 1) / 2) % 2 ? d.first : other(d.first)) : k % 2 ? other(d.first) : d.first;
-function draftTurn(d) {
-  if (!d.first || d.order === 'free') return null;
-  const t = turnAt(d, d.history.length);
-  return teamLen(d, t) >= draftSize(d) ? other(t) : t; // 다 찬 팀은 건너뛰어요
+// 고른 방법으로 팀장 둘을 정해요. 둘 중 누가 1팀일지는 무작위. 랜덤은 누를 때마다 다시 뽑아요.
+function pickCaps(d) {
+  const st = computeStats(S.players, S.matches), byMmr = [...d.names].sort((a, b) => mmrOf(st, b) - mmrOf(st, a));
+  const two = d.method === 'bottom' ? byMmr.slice(-2) : d.method === 'random' ? shuffle(d.names).slice(0, 2) : byMmr.slice(0, 2);
+  const [a, b] = rnd(2) ? two : [two[1], two[0]];
+  d.cap = { blue: a, red: b };
 }
-const smaller = d => teamLen(d, 'red') < teamLen(d, 'blue') ? 'red' : 'blue';
 function startDraft(names) {
-  const st = computeStats(S.players, S.matches), byMmr = [...names].sort((a, b) => mmrOf(st, b) - mmrOf(st, a));
-  const [a, b] = rnd(2) ? [byMmr[0], byMmr[1]] : [byMmr[1], byMmr[0]]; // 1·2위 중 누가 1팀일지는 무작위
-  S.draft = { names, cap: { blue: a, red: b }, picks: { blue: [], red: [] }, history: [], order: S.draftOrder, first: null, coin: null };
+  S.draft = { names, method: S.capMethod, picks: { blue: [], red: [] }, history: [], first: null, coin: null, turn: null };
+  pickCaps(S.draft);
   renderTeams(); // 화면은 그대로 두고(아래로 끌어내리지 않아요), 팀 칸 자리에 뽑기 화면이 나와요
 }
+// 차례인 팀에 넣어요(끌어서 놓아도 차례인 팀만). 그 팀이 다 차면 상대에게 차례가 넘어가요.
 function draftPick(p, side) {
   const d = S.draft;
-  if (!d?.first || !draftPool(d).includes(p)) return renderTeams();
-  const turn = draftTurn(d), to = side || turn || smaller(d);
-  if (turn && to !== turn) { toast(`지금은 ${TEAM[turn]} 차례예요.`); return renderTeams(); }
-  if (teamLen(d, to) >= draftSize(d)) { toast(`${TEAM[to]}은 다 찼어요.`); return renderTeams(); }
-  d.picks[to].push(p); d.history.push(to); d.fresh = p;
+  if (!d?.turn || !draftPool(d).includes(p)) return renderTeams();
+  const to = side || d.turn;
+  if (to !== d.turn) { toast(`지금은 ${TEAM[d.turn]} 차례예요. 다 뽑았으면 '넘기기'를 눌러요.`); return renderTeams(); }
+  const from = document.querySelector(`#teamsBox [data-pick="${CSS.escape(p)}"]`)?.getBoundingClientRect();
+  d.history.push({ side: to, turn: d.turn }); d.picks[to].push(p); d.fresh = { p, from };
+  if (isFull(d, to)) d.turn = other(to);
   // 한 팀이 다 찼거나 한 명만 남으면 나머지는 자동으로 넣어요.
   for (let pool = draftPool(d); pool.length; pool = draftPool(d)) {
-    const full = ['blue', 'red'].find(s => teamLen(d, s) >= draftSize(d));
-    if (!full && pool.length > 1) break;
-    const t = full ? other(full) : draftTurn(d) || smaller(d);
-    d.picks[t].push(pool[0]); d.history.push(t);
+    const f = ['blue', 'red'].find(s => isFull(d, s));
+    if (!f && pool.length > 1) break;
+    d.picks[f ? other(f) : d.turn].push(pool[0]);
   }
   if (!draftPool(d).length) return finishDraft();
   renderTeams();
@@ -1237,22 +1254,25 @@ function finishDraft() {
 function coinFlip() {
   const d = S.draft; if (!d || coinBusy) return;
   d.coin = rnd(2) ? 'blue' : 'red';
-  if (reduceMotion) { d.first = d.coin; return renderTeams(); }
+  const go = () => { if (S.draft === d && !d.first) { d.first = d.turn = d.coin; d.byCoin = true; renderTeams(); } };
+  if (reduceMotion) return go();
   d.flipping = true; renderTeams(); coinBusy = true; // 동전이 1.2초 돌다가 결과 면에서 멈춰요
-  setTimeout(() => {
-    coinBusy = false; d.flipping = false; renderTeams();
-    setTimeout(() => { if (S.draft === d && !d.first) { d.first = d.coin; renderTeams(); } }, 800);
-  }, 1200);
+  setTimeout(() => { coinBusy = false; d.flipping = false; renderTeams(); setTimeout(go, 900); }, 1200);
 }
 function draftClick(e) {
   const d = S.draft, t = e.target;
-  if (t.closest('[data-order]')) { d.order = S.draftOrder = t.closest('[data-order]').dataset.order; saveLocal(); return renderTeams(); }
+  const m = t.closest('[data-method]');
+  if (m) { d.method = S.capMethod = m.dataset.method; saveLocal(); pickCaps(d); return renderTeams(); }
   if (t.id === 'flip') return coinFlip();
-  if (t.id === 'freeStart') { d.first = 'blue'; return renderTeams(); }
-  if (t.closest('[data-first]')) { d.first = t.closest('[data-first]').dataset.first; d.coin = null; return renderTeams(); }
+  if (t.closest('[data-first]')) { d.first = d.turn = t.closest('[data-first]').dataset.first; d.coin = null; d.byCoin = false; return renderTeams(); }
+  if (t.id === 'passTurn') { // 넘기기: 상대 팀이 아직 덜 찼으면 상대 차례로
+    const n = other(d.turn); if (isFull(d, n)) return;
+    d.history.push({ turn: d.turn }); d.turn = n; return renderTeams();
+  }
   const chip = t.closest('[data-pick]'); if (chip) return draftPick(chip.dataset.pick);
-  if (t.id === 'draftUndo') { // 한 명씩 되돌리고, 다 되돌리면 순서 정하기로
-    if (d.history.length) d.picks[d.history.pop()].pop(); else { d.first = null; d.coin = null; }
+  if (t.id === 'draftUndo') { // 뽑기·넘기기를 하나씩 되돌리고, 다 되돌리면 먼저 뽑을 팀 정하기로
+    const h = d.history.pop();
+    if (h) { if (h.side) d.picks[h.side].pop(); d.turn = h.turn; } else { d.first = d.turn = d.coin = null; }
     return renderTeams();
   }
   if (t.id === 'draftCancel') { S.draft = null; renderTeams(); }
@@ -1263,50 +1283,69 @@ $('#teamsBox').addEventListener('change', e => {
   if (d.cap[other(side)] === s.value) d.cap[other(side)] = d.cap[side]; // 상대 팀장을 고르면 둘이 바꿔요
   d.cap[side] = s.value; renderTeams();
 });
+// 뽑힌 사람이 남은 사람 칸에서 팀 칸 빈 자리로 날아가요. 도착하면 그 자리가 반짝여요.
+function flyIn(from, li, html) {
+  if (!li) return;
+  const land = () => { li.style.visibility = ''; li.classList.add('land'); };
+  if (reduceMotion || !from || !li.animate) return land();
+  const to = li.getBoundingClientRect(), side = li.closest('[data-team]')?.dataset.team;
+  const g = Object.assign(document.createElement('div'), { className: `fly ${side}`, innerHTML: html });
+  Object.assign(g.style, { left: from.left + 'px', top: from.top + 'px', minWidth: from.width + 'px' });
+  document.body.append(g); li.style.visibility = 'hidden';
+  const dx = to.left - from.left, dy = to.top - from.top;
+  g.animate([
+    { transform: 'translate(0, 0) scale(1)' },
+    { transform: `translate(${dx * .5}px, ${dy * .5 - 50}px) scale(1.15) rotate(-3deg)`, offset: .55 },
+    { transform: `translate(${dx}px, ${dy}px) scale(1)` },
+  ], { duration: 560, easing: 'cubic-bezier(.3, .7, .3, 1)' }).finished.then(() => { g.remove(); land(); }, () => { g.remove(); land(); });
+}
 function renderDraft() {
   const d = S.draft, box = $('#teamsBox'), st = computeStats(S.players, S.matches), T = tierMap(st);
   const byMmr = [...d.names].sort((a, b) => mmrOf(st, b) - mmrOf(st, a));
   const rec = p => { const s = st.P[p]; return s?.g ? `${pct(s.w, s.g)}% · MMR ${Math.round(s.mmr)}` : '첫 판'; };
-  const info = (p, sep = ' · ') => { const riot = [soloText(p, true), laneText(p, true)].filter(Boolean).join(' · '); return esc(rec(p)) + (riot ? sep + esc(riot) : ''); };
+  const info = p => { const riot = [soloText(p, true), laneText(p, true)].filter(Boolean).join(' · '); return rec(p) + (riot ? ' · ' + riot : ''); };
   const head = `<div class="row draft-bar"><b class="draft-title">팀장 뽑기</b><button class="btn ghost small" id="draftUndo"${d.first ? '' : ' hidden'}>↶ 되돌리기</button><button class="btn ghost small" id="draftCancel">그만하기</button></div>`;
   if (!d.first) {
-    const sel = side => `<select data-cap="${side}" aria-label="${TEAM[side]} 팀장">${byMmr.map(p => `<option value="${esc(p)}"${p === d.cap[side] ? ' selected' : ''}>${esc(p)} (${info(p)})</option>`).join('')}</select>`;
+    const sel = side => `<select data-cap="${side}" aria-label="${TEAM[side]} 팀장">${byMmr.map(p => `<option value="${esc(p)}"${p === d.cap[side] ? ' selected' : ''}>${esc(p)} (${esc(info(p))})</option>`).join('')}</select>`;
     const coin = d.coin ? `<div class="coin ${d.flipping ? 'flip-' + d.coin : d.coin}"><i class="face b">1팀</i><i class="face r">2팀</i></div>` : '<div class="coin-q">?</div>';
-    const who = d.order === 'free'
-      ? `<div class="draft-order"><div class="draft-order-r"><b>순서 없이 뽑아요</b><div class="row"><button class="btn gold" id="freeStart">뽑기 시작</button></div></div></div>`
-      : `<div class="draft-order">${coin}<div class="draft-order-r"><b>누가 먼저 뽑을까요?</b>
-          <div class="row"><button class="btn gold" id="flip"${d.flipping ? ' disabled' : ''}>동전 던지기</button><button class="btn ghost small" data-first="blue">1팀 먼저</button><button class="btn ghost small" data-first="red">2팀 먼저</button></div>
-          ${d.coin && !d.flipping ? `<p class="coin-res" style="color:var(--${d.coin})">${TEAM[d.coin]} 먼저 뽑아요!</p>` : ''}</div></div>`;
     box.innerHTML = `<div class="draft">${head}
-      <div class="draft-caps"><label class="cap blue"><span>1팀 팀장</span>${sel('blue')}</label><label class="cap red"><span>2팀 팀장</span>${sel('red')}</label></div>
-      <p class="note" style="margin:0">MMR이 가장 높은 두 명을 팀장으로 골라 뒀어요. 다른 사람이 하고 싶으면 눌러서 바꾸세요.</p>
-      <div class="draft-order"><div class="draft-order-r"><b>뽑는 순서</b>
-        <div class="seg" role="group" aria-label="뽑는 순서">${Object.entries(DRAFT_ORDERS).map(([k, [label]]) => `<button data-order="${k}" aria-pressed="${d.order === k}">${label}</button>`).join('')}</div>
-        <p class="note" style="margin:0">${DRAFT_ORDERS[d.order][1]}</p></div></div>
-      ${who}</div>`;
+      <div class="draft-order"><div class="draft-order-r"><b>① 팀장 정하기</b>
+        <div class="seg" role="group" aria-label="팀장 정하는 방법">${Object.entries(CAP_METHODS).map(([k, label]) => `<button data-method="${k}" aria-pressed="${d.method === k}">${label}</button>`).join('')}</div>
+        <div class="draft-caps"><label class="cap blue"><span>1팀 팀장</span>${sel('blue')}</label><label class="cap red"><span>2팀 팀장</span>${sel('red')}</label></div>
+        <p class="note" style="margin:0">${d.method === 'random' ? '랜덤을 다시 누르면 다시 뽑아요. ' : ''}다른 사람이 하고 싶으면 칸을 눌러서 바꿔요.</p></div></div>
+      <div class="draft-order">${coin}<div class="draft-order-r"><b>② 누가 먼저 뽑을까요?</b>
+        <div class="row"><button class="btn gold" id="flip"${d.flipping ? ' disabled' : ''}>동전 던지기</button><button class="btn ghost small" data-first="blue">1팀 먼저</button><button class="btn ghost small" data-first="red">2팀 먼저</button></div>
+        ${d.coin && !d.flipping ? `<p class="coin-res" style="color:var(--${d.coin})">${TEAM[d.coin]} 먼저 뽑아요!</p>` : ''}</div></div></div>`;
     return;
   }
-  const turn = draftTurn(d), left = draftPool(d).length;
-  const row = (p, cap) => `<li${d.fresh === p ? ' class="fresh"' : ''}><div class="pl" data-card="${esc(p)}"><span class="who">${tierIcon(T[p])}<span class="nm">${esc(p)}</span>${cap ? '<span class="capb">팀장</span>' : ''}</span><span class="st">${info(p, '<br>')}</span></div></li>`;
+  const turn = d.turn, left = draftPool(d).length, changed = d.shownTurn !== turn; d.shownTurn = turn;
+  const row = (p, cap) => `<li${d.fresh?.p === p ? ' class="fresh"' : ''}><div class="pl" data-card="${esc(p)}"><span class="who">${tierIcon(T[p])}<span class="nm">${esc(p)}</span>${cap ? '<span class="capb">팀장</span>' : ''}${quick(p)}</span><span class="st">${esc(rec(p))}</span></div></li>`;
   const slots = side => Array.from({ length: draftSize(d) - teamLen(d, side) }, () => '<li class="slot">빈 자리</li>').join('');
-  const team = side => `<div class="team ${side} draft-team${turn === side ? ' turn' : ''}" data-team="${side}"><h3>${TEAM[side]} <small>${turn === side ? '뽑을 차례' : ''}</small></h3>
+  const team = side => `<div class="team ${side} draft-team${turn === side ? ' turn' : ''}" data-team="${side}"><h3>${TEAM[side]} <small>${turn === side ? '뽑을 차례' : isFull(d, side) ? '다 찼어요' : ''}</small></h3>
     <ul>${row(d.cap[side], true)}${d.picks[side].map(p => row(p)).join('')}${slots(side)}</ul></div>`;
-  const again = turn && d.order === 'snake' && turnAt(d, d.history.length + 1) === turn ? ' · 이어서 한 명 더' : '';
-  const title = turn ? `<span style="color:var(--${turn})">${TEAM[turn]} 팀장 ${esc(d.cap[turn])} 차례</span>` : '자유롭게 뽑기';
-  const sub = `${DRAFT_ORDERS[d.order][0]} · ${d.history.length + 1}번째${again} · 남은 ${left}명`;
+  // 위쪽 요약: 팀장 둘과 먼저 뽑은 팀(동전)을 계속 보여줘서, 정하기 화면이 사라져도 헷갈리지 않게
+  const sum = `<div class="draft-sum"><span class="capchip blue">👑 1팀 <b>${esc(d.cap.blue)}</b></span><span class="capchip red">👑 2팀 <b>${esc(d.cap.red)}</b></span>
+    <span class="note" style="margin:0">${d.byCoin ? '🪙 동전으로' : '직접 골라'} ${TEAM[d.first]} 먼저 · 팀장은 ${CAP_METHODS[d.method]}</span></div>`;
+  const canPass = !isFull(d, other(turn));
   // 남은 사람 칸: 처음 순서(MMR 높은 순) 그대로 두고, 뽑힌 사람은 흐리게 "1팀/2팀"만 남겨서 자리가 안 바뀌어요.
   const all = byMmr.filter(p => p !== d.cap.blue && p !== d.cap.red);
   const chip = p => {
     const side = d.picks.blue.includes(p) ? 'blue' : d.picks.red.includes(p) ? 'red' : null;
-    return side ? `<span class="chip taken ${side}" aria-hidden="true">${tierIcon(T[p])}${esc(p)}<small>${side === 'blue' ? '1팀' : '2팀'}</small></span>`
-      : `<button class="chip" data-pick="${esc(p)}" data-card="${esc(p)}" aria-label="${esc(p)} 뽑기">${tierIcon(T[p])}${esc(p)}<span class="champs">${mostIcons(p)}</span><small>${info(p, '<br>')}</small></button>`;
+    const top = `<span class="pc-top">${tierIcon(T[p])}<b>${esc(p)}</b>${side ? '' : quick(p)}</span>`;
+    return side ? `<span class="chip pchip taken ${side}" aria-hidden="true">${top}<small>${side === 'blue' ? '1팀' : '2팀'}</small></span>`
+      : `<button class="chip pchip" data-pick="${esc(p)}" data-card="${esc(p)}" aria-label="${esc(p)} 뽑기">${top}<small>${esc(rec(p))}</small></button>`;
   };
-  box.innerHTML = `<div class="draft">${head}
-    <p class="draft-turn">${title}<small>${sub}</small></p>
+  box.innerHTML = `<div class="draft">${head}${sum}
+    <div class="row draft-turnrow"><p class="draft-turn${changed ? ' changed' : ''}"><span style="color:var(--${turn})">${TEAM[turn]} 팀장 ${esc(d.cap[turn])} 차례</span>
+      <small>원하는 만큼 뽑고 '넘기기'를 눌러요 · 남은 ${left}명</small></p>
+      ${canPass ? `<button class="btn ghost" id="passTurn">넘기기 → ${TEAM[other(turn)]}</button>` : ''}</div>
     <div class="teams">${team('blue')}${team('red')}</div>
-    <div class="pool"><p class="pick-h">남은 사람 · 끌어서 팀 칸에 놓거나, 누르면 ${turn ? TEAM[turn] + '로' : '인원이 적은 팀으로'} 가요</p>
+    <div class="pool"><p class="pick-h">남은 사람 · 누르거나 끌어서 ${TEAM[turn]}에 넣어요</p>
       <div class="chips">${all.map(chip).join('')}</div></div></div>`;
-  if (d.fresh) { const li = box.querySelector('.draft-team li.fresh'); burst(li, li?.closest('[data-team]')?.dataset.team); d.fresh = null; }
+  if (d.fresh) {
+    const { p, from } = d.fresh; d.fresh = null;
+    flyIn(from, box.querySelector('.draft-team li.fresh'), `${tierIcon(T[p])}${esc(p)}`);
+  }
 }
 
 // ---------- 전적 탭 ----------
@@ -1540,6 +1579,15 @@ $('#gateForm').addEventListener('submit', async e => {
 // ---------- 버전 · 패치노트 ----------
 // 커밋해서 올릴 때마다 맨 위에 새 항목을 더해요(규칙은 CLAUDE.md). 오른쪽 위 버전은 맨 위 항목이에요.
 const NOTES = [
+  { v: '1.2.0', d: '2026-10-22', items: [
+    '팀장 뽑기: 팀장 정하는 방법을 고를 수 있어요 — MMR 1·2위 / MMR 꼴찌 둘 / 랜덤(다시 누르면 다시 뽑아요). 직접 바꾸는 것도 돼요.',
+    '팀장 뽑기: 뽑는 순서를 정하지 않아요. 동전으로 먼저 뽑을 팀을 정하면, 차례인 팀장이 원하는 만큼 뽑고 "넘기기"를 눌러요. 팀이 다 차면 알아서 넘어가요.',
+    '팀장 뽑기: 뽑는 동안 위에 팀장 둘과 동전 결과(먼저 뽑은 팀)가 계속 보여요.',
+    '팀장 뽑기: 뽑힌 사람이 남은 사람 칸에서 팀 칸 빈 자리로 날아가고, 도착하면 반짝여요. 차례가 바뀌면 안내 글씨가 튀어나와요.',
+    '이름 옆 간단 정보: 팀 칸·팀장 뽑기에서 이름 옆에 주 라인 아이콘과 솔랭 엠블럼이 붙어요(마우스를 올리면 글자로).',
+    '남은 사람 칸이 두 줄(이름·정보 / 승률·MMR)로 바뀌어서 칸 밖으로 튀어나오지 않아요.',
+    '색종이는 이제 승리할 때만 터져요.',
+  ] },
   { v: '1.1.0', d: '2026-10-22', items: [
     '팀 섞기 효과: 이름이 흔들리며 섞이다가 점점 느려지고, 다 섞이면 한 명씩 튀어 들어오며 양 팀에서 색종이가 터져요.',
     '승리 효과: 이긴 팀 칸이 빛나고 👑 왕관이 떨어지며 팀 색 색종이가 터져요. 구경하는 화면에서도 같이 나와요.',
