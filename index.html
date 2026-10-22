@@ -448,6 +448,7 @@ body.gated { overflow: hidden; }
     </div>
     <div class="head-r">
       <button class="badge ver" id="verBtn" aria-haspopup="dialog"><i class="dot" hidden></i><span id="verText">v</span> · 패치노트</button>
+      <button class="badge ver" id="sfxBtn" aria-pressed="true" title="효과음 켜기/끄기 (이 기기에 기억해요)">🔊 소리</button>
       <span class="badge" id="syncBadge"><i></i><span>연결 중…</span></span>
     </div>
   </header>
@@ -1081,6 +1082,7 @@ $('#roster').addEventListener('click', async e => {
   if (!needHost()) return;
   const on = !S.selected.has(name);
   on ? S.selected.add(name) : S.selected.delete(name); renderRoster(); syncSelect([name], on);
+  sfx(on ? 'on' : 'off');
 });
 // 선수 명단 탭: 고칠 사람 고르기 (다시 누르면 닫혀요)
 $('#rosterEdit').addEventListener('click', e => {
@@ -1094,6 +1096,7 @@ $('#today').addEventListener('click', e => {
   const b = e.target.closest('button[data-i]'); if (!b || !needHost()) return;
   const name = S.players[+b.dataset.i];
   S.selected.delete(name); renderRoster(); syncSelect([name], false);
+  sfx('off');
 });
 // 오늘 할 사람은 서버에 저장해서 모두의 화면에 같이 보여요. 화면은 바로 바꾸고, 서버 답이 오면 맞춰요.
 let selPending = 0;
@@ -1157,7 +1160,7 @@ $('#addForm').addEventListener('submit', e => {
   toast(already.length ? `${already.join(', ')}은(는) 이미 명단에 있어요.${added ? ` 나머지 ${added}명을 넣었어요.` : ''}` : `${added}명을 명단에 넣었어요. ↓를 누르면 오늘 할 사람으로 내려가요.`);
   rosterAction('addPlayers', { names });
 });
-$('#selNone').onclick = () => { if (!needHost()) return; const off = [...S.selected]; S.selected.clear(); renderRoster(); syncSelect(off, false); };
+$('#selNone').onclick = () => { if (!needHost()) return; const off = [...S.selected]; S.selected.clear(); renderRoster(); syncSelect(off, false); sfx('off'); };
 
 // ---------- 팀 섞기 ----------
 function setMode(m) {
@@ -1289,7 +1292,7 @@ async function voteMvp(id, name) {
   if (prev && v[prev] && !--v[prev]) delete v[prev]; // 화면은 바로 바꾸고, 서버 답이 오면 진짜 표 수로 맞춰요
   if (next) v[next] = (v[next] || 0) + 1;
   if (next) MY_MVP[id] = next; else delete MY_MVP[id];
-  saveMyMvp(); renderTeams();
+  saveMyMvp(); renderTeams(); sfx(next ? 'on' : 'off');
   try { await api('voteMvp', { id, name: next }); if (next) toast(`${next}에게 MVP 한 표!`); }
   catch { if (prev) MY_MVP[id] = prev; else delete MY_MVP[id]; saveMyMvp(); ver = null; await pull(); }
   renderAll();
@@ -1301,7 +1304,7 @@ const PEN_ALL = '진 팀 전체';
 const PEN_DEFAULT = ['음료수 한 잔 쏘기', '다음 판 서폿 고정', '다음 판 챔피언은 이긴 팀이 골라 주기', '단톡방에 반성문 세 줄', '팔굽혀펴기 10개', '다음 판 정글 금지', '이긴 팀 한 명씩 칭찬하기', '다음 판 와드 15개 이상 박기', '노래 한 소절 부르기', '다음 판 원딜 고정'];
 let PENS = [...PEN_DEFAULT];
 try { const x = JSON.parse(localStorage.getItem(LS + ':pens') || 'null'); if (Array.isArray(x) && x.some(s => typeof s === 'string' && s.trim())) PENS = x.filter(s => typeof s === 'string' && s.trim()); } catch {}
-let penSeen, penSpin = null, penEdit = false;
+let penSeen, penSpin = null, penEdit = false, penMine = null; // penMine: 이 기기에서 돌린 결과(소리는 내가 누른 것만)
 const penWho = rec => { const l = rec.win === 'blue' ? rec.red : rec.blue; return l.length > 1 ? [...l, PEN_ALL] : l; };
 function penBox(pen, spinning, host) {
   if (!pen && !host) return '';
@@ -1314,6 +1317,7 @@ function spinPenalty() {
   const c = S.current, rec = recordedMatch(); if (!c || !rec || penSpin) return;
   const who = penWho(rec);
   c.penalty = { who: who[rnd(who.length)], what: PENS[rnd(PENS.length)], t: Date.now(), round: roundOf(c) };
+  penMine = c.penalty.t;
   c.t = Date.now(); // 같은 판이라 round는 그대로, 다른 화면이 새로 받아 가게 t만
   renderTeams(); saveCurrent();
 }
@@ -1321,10 +1325,10 @@ function spinPenalty() {
 function runPenSpin(pen, rec) {
   const a = $('#penWho'), b = $('#penWhat'), who = penWho(rec), what = PENS.length > 1 ? PENS : PEN_DEFAULT;
   if (!a || !b) return;
-  penSpin = pen; let k = 0;
+  penSpin = pen; let k = 0; const loud = pen.t === penMine;
   const step = () => {
     if (penSpin !== pen) return;
-    k++;
+    k++; if (loud) sfx(k === 14 || k === 22 ? 'land' : 'tick');
     if (k < 14) a.textContent = who[rnd(who.length)]; else if (k === 14) { a.textContent = pen.who; a.classList.add('landed'); }
     if (k < 22) b.textContent = what[rnd(what.length)]; else { b.textContent = pen.what; b.classList.add('landed'); burst(b, 'gold'); }
     if (k >= 22) { setTimeout(() => { if (penSpin === pen) { penSpin = null; renderTeams(); } }, 1200); return; }
@@ -1375,7 +1379,8 @@ $('#shuffle').onclick = () => {
   let k = 0; const frames = reduceMotion ? 0 : 12, d = S;
   const tick = () => {
     d.current = makeTeams(names, k < frames ? 'random' : S.mode, st);
-    if (k++ < frames) { renderTeams(true); setTimeout(tick, 40 + k * 12); return; }
+    if (k++ < frames) { renderTeams(true); sfx('tick'); setTimeout(tick, 40 + k * 12); return; }
+    sfx('done');
     newRound(d.current); assignLanes(d.current); S.fx = 'reveal'; renderTeams(); btn.disabled = false; saveCurrent();
   };
   tick();
@@ -1414,13 +1419,14 @@ $('#teamsBox').addEventListener('click', async e => {
     w.disabled = true;
     try {
       const { dup } = await addMatch(m), saved = recordedMatch();
+      if (!dup) sfx('win');
       toast(!dup ? `${TEAM[m.win]} 승리로 기록했어요.` : saved ? `이 판은 이미 ${TEAM[saved.win]} 승리로 기록돼 있어요.` : '이 판은 이미 기록돼 있어요.');
     } catch { w.disabled = false; return; }
     renderAll(); return;
   }
   if (e.target.id === 'undo' && rec) {
     try {
-      await deleteMatch(rec.id); toast('방금 기록을 지웠어요.');
+      await deleteMatch(rec.id); sfx('undo'); toast('방금 기록을 지웠어요.');
       if (c.penalty) { delete c.penalty; c.t = Date.now(); saveCurrent(); } // 결과를 지우면 그 판 벌칙도 같이 지워요
       renderAll();
     } catch {}
@@ -1508,6 +1514,7 @@ function spinCaps(d) {
   const step = () => {
     if (capSpin?.d !== d || S.draft !== d) return;
     k++;
+    sfx(k === stopAt.blue || k === stopAt.red ? 'land' : 'tick');
     for (const side of ['blue', 'red']) {
       const el = els[side]; if (!el) continue;
       if (k < stopAt[side]) {
@@ -1560,15 +1567,16 @@ function draftPick(p, side) {
 function finishDraft() {
   const d = S.draft, cur = { blue: [d.cap.blue, ...d.picks.blue], red: [d.cap.red, ...d.picks.red] };
   S.draft = null; S.current = cur; newRound(cur); assignLanes(cur); S.fx = 'reveal';
-  renderTeams(); saveCurrent(); toast('팀이 다 짜였어요. 끝나면 이긴 팀을 눌러 주세요.');
+  renderTeams(); saveCurrent(); sfx('done'); toast('팀이 다 짜였어요. 끝나면 이긴 팀을 눌러 주세요.');
 }
 function coinFlip() {
   const d = S.draft; if (!d || coinBusy) return;
   d.coin = rnd(2) ? 'blue' : 'red';
   const go = () => { if (S.draft === d && !d.first) { d.first = d.turn = d.coin; d.byCoin = true; renderTeams(); } };
-  if (reduceMotion) return go();
+  if (reduceMotion) { sfx('land'); return go(); }
   d.flipping = true; renderTeams(); coinBusy = true; // 동전이 1.2초 돌다가 결과 면에서 멈춰요
-  setTimeout(() => { coinBusy = false; d.flipping = false; renderTeams(); setTimeout(go, 900); }, 1200);
+  sfx('coin');
+  setTimeout(() => { coinBusy = false; d.flipping = false; renderTeams(); sfx('land'); setTimeout(go, 900); }, 1200);
 }
 function draftClick(e) {
   const d = S.draft, t = e.target;
@@ -1584,7 +1592,7 @@ function draftClick(e) {
   }
   const chip = t.closest('[data-pick]'); if (chip) return draftPick(chip.dataset.pick);
   if (t.id === 'draftUndo') { // 뽑기·넘기기를 하나씩 되돌리고, 다 되돌리면 먼저 뽑을 팀 정하기로
-    const h = d.history.pop();
+    const h = d.history.pop(); sfx('undo');
     if (h) { if (h.side) d.picks[h.side].pop(); d.turn = h.turn; } else { d.first = d.turn = d.coin = null; }
     return renderTeams();
   }
@@ -2052,6 +2060,7 @@ $('#g-duel').addEventListener('click', async e => {
     const winner = DUEL[w.dataset.duelwin]; w.disabled = true;
     try {
       const d = await api('addDuel', { a: DUEL.a, b: DUEL.b, win: winner, rule: DUEL.rule });
+      if (!d.dup) sfx('win');
       toast(d.dup ? '방금 같은 결과가 이미 기록돼 있어서 한 번만 남겼어요.' : `${winner} 승리! 1:1로 기록했어요.`);
     } catch {}
     renderAll();
@@ -2319,6 +2328,58 @@ function renderNotes() {
 $('#verBtn').onclick = () => { $('#notes').showModal(); try { localStorage.setItem(LS + ':seenVer', VERSION); } catch {} renderNotes(); };
 $('#notesClose').onclick = () => $('#notes').close();
 $('#notes').addEventListener('click', e => { if (e.target === e.currentTarget) e.currentTarget.close(); }); // 바깥(어두운 곳)을 눌러도 닫혀요
+
+// ---------- 효과음 ----------
+// 소리 파일 없이 브라우저(Web Audio)가 짧은 소리를 그때그때 만들어요. 각 기능에서는 sfx('win')처럼 한 줄로 불러요.
+// 내가 누른 동작에만 소리가 나요(다른 사람이 기록해서 바뀐 화면은 조용해요). 오른쪽 위 버튼으로 끄면 이 기기에 기억해요.
+let sfxOn = true; try { sfxOn = localStorage.getItem(LS + ':sfx') !== '0'; } catch {}
+let actx = null, sfxOut = null;
+function audio() {
+  if (!actx) {
+    const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return null;
+    try { actx = new AC(); } catch { return null; }
+    sfxOut = actx.createGain(); sfxOut.gain.value = .6; sfxOut.connect(actx.destination); // 전체 크기는 여기서 줄여요
+  }
+  if (actx.state === 'suspended') actx.resume().catch(() => {});
+  return actx;
+}
+// 음 하나: f Hz로 시작해서(f2가 있으면 그쪽으로 미끄러지며) at초 뒤에 len초 동안, 크기 vol로 울려요.
+function tone(a, f, at, len, vol, type = 'sine', f2) {
+  const o = a.createOscillator(), g = a.createGain(), s = a.currentTime + at;
+  o.type = type; o.frequency.setValueAtTime(f, s);
+  if (f2) o.frequency.exponentialRampToValueAtTime(f2, s + len);
+  g.gain.setValueAtTime(.0001, s); g.gain.exponentialRampToValueAtTime(vol, s + .006); g.gain.exponentialRampToValueAtTime(.0001, s + len);
+  o.connect(g).connect(sfxOut); o.start(s); o.stop(s + len + .03);
+}
+const SFX = {
+  tick: a => tone(a, 1400 + rnd(400), 0, .03, .03, 'triangle'),                                     // 섞이는 중·룰렛 도는 중
+  on: a => tone(a, 880, 0, .05, .035, 'sine', 1250),                                               // 오늘 할 사람 넣기
+  off: a => tone(a, 760, 0, .05, .03, 'sine', 520),                                                // 오늘 할 사람 빼기
+  done: a => [660, 880, 1320].forEach((f, i) => tone(a, f, i * .06, .18, .05, 'triangle')),          // 팀이 다 짜였어요
+  win: a => { [523, 659, 784, 1047].forEach((f, i) => tone(a, f, i * .09, i === 3 ? .55 : .16, .07, 'triangle')); tone(a, 2093, .3, .45, .015); }, // 승리 빰빠밤
+  undo: a => tone(a, 520, 0, .2, .055, 'triangle', 240),                                           // 되돌리기
+  coin: a => { for (let i = 0; i < 9; i++) tone(a, i % 2 ? 2300 : 2700, i * .13, .05, .02); },        // 동전이 도는 1.2초
+  land: a => { tone(a, 1320, 0, .4, .06); tone(a, 2640, 0, .2, .015); },                            // 동전·룰렛이 멈췄어요
+};
+function sfx(name) {
+  if (!sfxOn) return;
+  const a = audio(); if (!a || a.state === 'closed') return;
+  try { SFX[name]?.(a); } catch {}
+}
+// 브라우저는 사용자가 한 번 누르기 전엔 소리를 막아요. 처음 누르거나 만질 때 깨워 두고, 깨어나면 더 듣지 않아요.
+const SFX_WAKE = ['pointerdown', 'touchend', 'keydown'];
+function sfxWake() {
+  if (!sfxOn) return;
+  const a = audio(); if (!a) return;
+  if (a.state === 'running') SFX_WAKE.forEach(ev => removeEventListener(ev, sfxWake, true));
+}
+SFX_WAKE.forEach(ev => addEventListener(ev, sfxWake, true));
+function renderSfx() { const b = $('#sfxBtn'); b.setAttribute('aria-pressed', sfxOn); b.textContent = sfxOn ? '🔊 소리' : '🔇 소리 꺼짐'; }
+$('#sfxBtn').onclick = () => {
+  sfxOn = !sfxOn; try { localStorage.setItem(LS + ':sfx', sfxOn ? '1' : '0'); } catch {}
+  renderSfx(); sfx('on');
+};
+renderSfx();
 
 loadLocal();
 renderNotes();
