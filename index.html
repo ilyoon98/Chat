@@ -275,6 +275,7 @@ select { font: inherit; color: var(--ink); background: var(--sunk); border: 1px 
 .pen-res .what { font-weight: 700; font-size: 17px; }
 .pen-res .landed { display: inline-block; animation: pop .5s cubic-bezier(.2, .9, .3, 1.5) both; }
 .pen-edit { display: grid; gap: 8px; }
+.log-mvp .mvp { --side: var(--gold); margin-top: 10px; }
 .pen-edit textarea { width: 100%; font: inherit; color: var(--ink); background: var(--sunk); border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; resize: vertical; }
 
 .tbl-wrap { overflow-x: auto; }
@@ -1284,7 +1285,7 @@ function mvpBox(rec) {
   const v = S.mvp[rec.id] || {}, mine = MY_MVP[rec.id], open = Date.now() - rec.t < MVP_OPEN, top = mvpTop(rec.id);
   const total = Object.values(v).reduce((s, n) => s + n, 0), lose = rec.win === 'blue' ? 'red' : 'blue';
   const chip = (p, side) => `<button class="chip mvpc ${side}${mine === p ? ' on' : ''}" data-mvp="${esc(p)}" aria-pressed="${mine === p}"${open ? '' : ' disabled'}>${top.includes(p) ? '⭐ ' : ''}${esc(p)}${v[p] ? `<b>${v[p]}</b>` : ''}</button>`;
-  return `<div class="mvp"><p class="mvp-h"><b>⭐ MVP 투표</b><small>${!open ? '투표가 끝났어요' : mine ? `내 표: ${esc(mine)} · 다시 누르면 취소` : '누구나 한 표 · 이긴 팀 진 팀 상관없이'} · ${total}표</small></p>
+  return `<div class="mvp"><p class="mvp-h"><b>⭐ MVP 투표</b><small>${!open ? '투표가 끝났어요' : mine ? `내 표: ${esc(mine)} · 다시 누르면 취소` : '누구나 한 표 · 이긴 팀 진 팀 상관없이 · 하루 동안은 기록 탭에서도 돼요'} · ${total}표</small></p>
     <div class="mvp-chips">${rec[rec.win].map(p => chip(p, rec.win)).join('')}</div><div class="mvp-chips">${rec[lose].map(p => chip(p, lose)).join('')}</div></div>`;
 }
 async function voteMvp(id, name) {
@@ -1800,10 +1801,13 @@ function renderLog() {
     return `${head}<li class="match"><div class="mhead"><time>${p2(t.getHours())}:${p2(t.getMinutes())}</time>${room ? `<span>· ${esc(room.name)}</span>` : ''}
       <button class="btn ghost small" data-shot="match" data-id="${esc(m.id)}">이미지</button>
       ${!canRoster() ? '' : `<button class="btn ghost small" data-del="${esc(m.id)}" style="${confirmId === m.id ? 'color:var(--bad);border-color:var(--bad)' : ''}">${confirmId === m.id ? '정말 삭제' : '삭제'}</button>`}</div>
-      <div class="mteams">${team(m, 'blue')}${team(m, 'red')}</div></li>`;
+      <div class="mteams">${team(m, 'blue')}${team(m, 'red')}</div>${Date.now() - m.t < MVP_OPEN ? `<div class="log-mvp" data-mid="${esc(m.id)}">${mvpBox(m)}</div>` : ''}</li>`;
   }).join('') : '<li><p class="empty">아직 기록이 없어요.</p></li>';
 }
 $('#logBox').addEventListener('click', async e => {
+  // 지난 판 MVP 투표(기록하고 하루 안): 방장이 다음 판으로 넘어가도 여기서 할 수 있어요. 구경하는 사람도 돼요.
+  const vote = e.target.closest('[data-mvp]');
+  if (vote) { const mid = vote.closest('[data-mid]')?.dataset.mid; if (mid && !vote.disabled) voteMvp(mid, vote.dataset.mvp); return; }
   const b = e.target.closest('[data-del]'); if (!b || !needRoster()) return;
   const id = b.dataset.del;
   if (confirmId !== id) { confirmId = id; renderLog(); clearTimeout(renderLog.t); renderLog.t = setTimeout(() => { confirmId = null; renderLog(); }, 3000); return; }
@@ -1834,7 +1838,7 @@ $('#restoreFile').onchange = async e => {
   const ms = Array.isArray(d?.matches) ? d.matches.filter(validMatch) : [], ds = Array.isArray(d?.duels) ? d.duels.filter(validDuel) : [];
   if (!ps.length && !ms.length && !ds.length) return toast('불러올 기록이 없는 파일이에요. 기록 탭 "백업 받기"로 받은 .json 파일을 골라 주세요.');
   const when = d.exportedAt && !isNaN(new Date(d.exportedAt)) ? ` (${new Date(d.exportedAt).toLocaleString('ko-KR')} 백업)` : '';
-  if (!confirm(`백업 파일${when}\n선수 ${ps.length}명 · 내전 ${ms.length}판 · 1:1 ${ds.length}판\n\n지금 기록에 없는 것만 더해요. 지금 있는 기록은 지우거나 덮어쓰지 않아요. 불러올까요?`)) return;
+  if (!confirm(`백업 파일${when}\n선수 ${ps.length}명 · 내전 ${ms.length}판 · 1:1 ${ds.length}판\n\n지금 기록에 없는 것만 더해요. 지금 있는 기록은 지우거나 덮어쓰지 않아요.\n백업한 뒤에 일부러 지운 기록도 이 파일에 있으면 다시 들어와요. 불러올까요?`)) return;
   try {
     const r = await api('importBackup', { players: ps, matches: ms, duels: ds, riot: d.riot }), x = r.imported || {};
     toast(r.dup ? '이미 다 들어 있는 기록이라 더할 게 없었어요.' : `불러왔어요: 선수 ${x.players}명 · 내전 ${x.matches}판 · 1:1 ${x.duels}판${x.riot ? ` · Riot ID ${x.riot}명` : ''}`);
@@ -2237,6 +2241,15 @@ document.addEventListener('click', e => {
 // ---------- 버전 · 패치노트 ----------
 // 커밋해서 올릴 때마다 맨 위에 새 항목을 더해요(규칙은 CLAUDE.md). 오른쪽 위 버전은 맨 위 항목이에요.
 const NOTES = [
+  { v: '1.9.0', d: '2026-10-22', items: [
+    'MVP 투표: 결과를 기록하면 그 판에 뛴 사람 이름이 나와요. 보고 있는 사람 누구나 한 표씩 눌러요(다시 누르면 취소). 하루 동안은 방장이 다음 판으로 넘어가도 기록 탭의 그 판 아래에서 투표할 수 있어요. MVP는 기록 탭 ⭐, 전적 표, 이 방 기록, 선수 카드, 분석에 쌓여요.',
+    '진 팀 벌칙 룰렛: 결과를 기록한 뒤 방장이 "🎡 진 팀 벌칙 룰렛"을 누르면 진 팀에서 한 명(또는 진 팀 전체)과 벌칙이 정해져요. 구경하는 화면에서도 같이 돌아요. 벌칙 목록은 방장이 고칠 수 있어요.',
+    '결과 이미지: 기록된 판의 "결과 이미지"(기록 탭·1:1은 "이미지")를 누르면 결과를 그림 한 장으로 만들어요. 폰은 공유 창, 컴퓨터는 복사돼서 단톡방에 바로 붙여넣을 수 있어요.',
+    '이 방 기록 "카톡용 복사": 오늘 순위·승패·MVP를 글자로 복사해요. 결과 아래에는 3연승·3연패 이상인 사람이 나와요.',
+    '효과음: 팀 섞기·승리·되돌리기·룰렛·동전에 짧은 소리가 나요. 오른쪽 위 "🔊 소리"로 끌 수 있어요(이 기기에 기억해요).',
+    '백업 불러오기(방장): 기록 탭에서 받아 둔 백업 파일을 고르면 지금 없는 선수·내전·1:1만 더해요. 있는 기록은 안 건드려요.',
+    '디스코드 알림: 사이트 주인이 설정하면 내전·1:1 결과와 벌칙 당첨이 디스코드 채널에 올라가요.',
+  ] },
   { v: '1.8.0', d: '2026-10-22', items: [
     '블루·레드 바꾸기: 롤 내전에서 팀을 짠 뒤 "⇄ 블루·레드 바꾸기"를 누르면 두 팀이 진영을 통째로 맞바꿔요(방장, 결과 기록 전). 정해 둔 라인은 그대로예요.',
     '롤 1:1에서도 두 명을 고르면 가운데 "VS ⇄ 바꾸기"를 눌러 파랑·빨강 자리를 바꿀 수 있어요.',

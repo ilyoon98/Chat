@@ -239,7 +239,8 @@ async function readMvp() {
   return out;
 }
 async function dropMvp(mid) {
-  for (const k of Object.keys((await redis.hgetall(K.mvp)) || {})) if (k.startsWith(mid + '|')) await redis.hdel(K.mvp, k);
+  const keys = Object.keys((await redis.hgetall(K.mvp)) || {}).filter(k => k.startsWith(mid + '|'));
+  if (keys.length) await redis.hdel(K.mvp, ...keys); // 한 번에 지워요
 }
 // 진 팀 벌칙 룰렛 결과: 방 팀 배치(current)에 같이 저장해서 구경하는 화면에도 같은 결과가 돌아가요.
 const PEN_ALL = '진 팀 전체';
@@ -306,7 +307,8 @@ async function discord(content) {
   if (!DISCORD) return;
   try {
     // allowed_mentions를 비워서 이름에 @everyone 같은 게 있어도 아무도 안 불려요
-    const r = await fetch(DISCORD, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ content: content.slice(0, 1900), allowed_mentions: { parse: [] } }) });
+    // 4초 안에 답이 없으면 포기해요. 디스코드가 느려도 기록 저장 답은 바로 가요.
+    const r = await fetch(DISCORD, { method: 'POST', signal: AbortSignal.timeout(4000), headers: { 'content-type': 'application/json' }, body: JSON.stringify({ content: content.slice(0, 1900), allowed_mentions: { parse: [] } }) });
     if (!r.ok) console.error('discord', r.status, await r.text());
   } catch (e) { console.error('discord', e); } // 알림이 실패해도 기록은 저장됐어요
 }
@@ -508,7 +510,7 @@ export default async function handler(req, res) {
         const seenId = new Set(matches.map(m => m.id)), seenKey = new Set(matches.map(mKey)), addM = {};
         for (const m of Array.isArray(b.matches) ? b.matches : []) {
           const blue = cleanNames(m?.blue, 10), red = cleanNames(m?.red, 10), t = Number(m?.t);
-          if (!blue?.length || !red?.length || blue.some(p => red.includes(p)) || !['blue', 'red'].includes(m.win) || !(t > 0)) continue;
+          if (!blue?.length || !red?.length || blue.some(p => red.includes(p)) || !['blue', 'red'].includes(m.win) || !(t > 0 && t <= Date.now() + 6e4)) continue; // 앞날짜 판은 빼요
           const x = { t, blue, red, win: m.win }, mid = okId(m.id) || newId(t);
           if (seenId.has(mid) || seenKey.has(mKey(x)) || matches.length + imported.matches >= MAX_MATCHES) continue;
           const lanes = cleanLanes(m.lanes, [...blue, ...red]), round = Number(m.round) || 0, rid = cleanId(m.room);
@@ -519,7 +521,7 @@ export default async function handler(req, res) {
         const seenD = new Set(duels.map(d => d.id)), seenDK = new Set(duels.map(dKey)), addD = {};
         for (const d of Array.isArray(b.duels) ? b.duels : []) {
           const a = cleanName(d?.a), bb = cleanName(d?.b), w = cleanName(d?.w), t = Number(d?.t);
-          if (!a || !bb || a === bb || ![a, bb].includes(w) || !(t > 0)) continue;
+          if (!a || !bb || a === bb || ![a, bb].includes(w) || !(t > 0 && t <= Date.now() + 6e4)) continue;
           const x = { t, a, b: bb, w, rule: DUEL_RULES.includes(d.rule) ? d.rule : '자유' }, did = okId(d.id) || newId(t, 'd');
           if (seenD.has(did) || seenDK.has(dKey(x)) || duels.length + imported.duels >= MAX_MATCHES) continue;
           addD[did] = x; seenD.add(did); seenDK.add(dKey(x)); imported.duels++;
@@ -528,7 +530,7 @@ export default async function handler(req, res) {
         const roster = [...players, ...addP], addR = {};
         for (const [n, e] of Object.entries(b.riot && typeof b.riot === 'object' ? b.riot : {})) {
           const rid = e && cleanRiotId(e.id);
-          if (rid && roster.includes(n) && !riotNow[n]) { addR[n] = { id: rid, ...(typeof e.puuid === 'string' && { puuid: e.puuid }), at: 0, gAt: 0 }; imported.riot++; } // 시각을 0으로 둬서 곧 새로 불러와요
+          if (rid && roster.includes(n) && !Object.hasOwn(riotNow, n)) { addR[n] = { id: rid, ...(typeof e.puuid === 'string' && { puuid: e.puuid }), at: 0, gAt: 0 }; imported.riot++; } // 시각을 0으로 둬서 곧 새로 불러와요
         }
         if (imported.riot) await redis.hset(K.riot, addR);
         if (!Object.values(imported).some(Boolean)) dup = true;

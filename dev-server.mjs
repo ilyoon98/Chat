@@ -22,7 +22,7 @@ const redis = {
   async hget(k, f) { return kv.get(k)?.get(f) ?? null; },
   async hgetall(k) { const h = kv.get(k); return h ? Object.fromEntries(h) : null; },
   async hset(k, obj) { const h = kv.get(k) ?? new Map(); for (const [f, v] of Object.entries(obj)) h.set(f, structuredClone(v)); kv.set(k, h); save(); return 1; },
-  async hdel(k, f) { const n = kv.get(k)?.delete(f) ? 1 : 0; save(); return n; },
+  async hdel(k, ...fs) { let n = 0; for (const f of fs) if (kv.get(k)?.delete(f)) n++; save(); return n; },
   async incr(k) { const n = (kv.get(k) ?? 0) + 1; kv.set(k, n); save(); return n; },
   // @upstash/redis와 같은 모양: zadd(key, [opts], {score, member}, ...)
   async zadd(k, ...args) {
