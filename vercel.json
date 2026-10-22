@@ -1,4 +1,5 @@
 {
+  "regions": ["icn1"],
   "functions": {
     "api/data.js": { "maxDuration": 60 }
   },

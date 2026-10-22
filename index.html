@@ -75,6 +75,12 @@ h1 em { font-style: normal; color: var(--gold); }
 .room-info p { margin: 0 0 6px; } .room-info .row { margin-top: 4px; }
 .linkbtn { font: inherit; font-size: 12.5px; background: none; border: 0; padding: 0; color: var(--gold); cursor: pointer; text-decoration: underline; }
 .games { display: flex; flex-wrap: wrap; gap: 8px; }
+/* 폰: 게임 탭이 여러 줄로 쌓이지 않게 한 줄로 두고 옆으로 밀어요 */
+@media (max-width: 640px) {
+  .games { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
+  .games::-webkit-scrollbar { display: none; }
+  .games button { flex: 0 0 auto; }
+}
 .games button { font-family: var(--display); font-weight: 800; font-size: 18px; padding: 9px 18px; border-radius: 12px; border: 1.5px solid var(--line); background: var(--surface); color: var(--muted); cursor: pointer; }
 .games button[aria-selected=true] { background: var(--gold); color: var(--on-gold); border-color: transparent; }
 .game { display: flex; flex-direction: column; gap: 18px; }
@@ -278,6 +284,7 @@ select { font: inherit; color: var(--ink); background: var(--sunk); border: 1px 
 .pen-res .landed { display: inline-block; animation: pop .5s cubic-bezier(.2, .9, .3, 1.5) both; }
 .pen-edit { display: grid; gap: 8px; }
 .log-mvp .mvp { --side: var(--gold); margin-top: 10px; }
+.mvp-fold { margin-top: 8px; font-size: 13px; }
 .log-pen { margin: 8px 0 0; font-size: 14px; color: var(--muted); } .log-pen b { color: var(--bad); }
 .sess-pen { margin-top: 12px; padding: 10px 14px; border-radius: 12px; border: 1px dashed var(--bad); }
 .sess-pen ul { margin: 6px 0 0; padding-left: 18px; display: grid; gap: 2px; } .sess-pen b.k { color: var(--bad); }
@@ -2146,6 +2153,12 @@ $('#minG').onchange = renderAnalysis;
 
 // ---------- 기록 탭 ----------
 let confirmId = null, seasonConfirm = false;
+// 기록 탭의 MVP 투표는 한 줄로 접어 둬요(판이 많으면 버튼이 너무 길어져서). 누르면 그 판만 펼쳐져요.
+const logMvpOpen = new Set();
+function mvpFold(m) {
+  const v = S.mvp[m.id] || {}, total = Object.values(v).reduce((s, n) => s + n, 0), top = mvpTop(m.id), mine = MY_MVP[m.id];
+  return `<button class="linkbtn mvp-fold" data-mvpfold="${esc(m.id)}">⭐ MVP 투표 · ${total}표${top.length ? ` · 1등 ${top.map(esc).join(', ')}` : ''}${mine ? ` · 내 표 ${esc(mine)}` : ''} — 펼치기</button>`;
+}
 function renderLog() {
   const ms = [...S.matches].sort((a, b) => b.t - a.t), T = tierMap(computeStats(S.players, seasonMatches()));
   $('#logMeta').textContent = `총 ${ms.length}판${S.seasons.length ? ` · 지금 시즌 ${curSeason()}` : ''}`;
@@ -2172,7 +2185,7 @@ function renderLog() {
     return `${head}<li class="match${logSel?.has(m.id) ? ' picked' : ''}"><div class="mhead"><time>${p2(t.getHours())}:${p2(t.getMinutes())}</time>${room ? `<span>· ${esc(room.name)}</span>` : ''}
       <button class="btn ghost small" data-shot="match" data-id="${esc(m.id)}">이미지</button>
       ${logSel ? `<label class="msel"><input type="checkbox" data-sel="${esc(m.id)}"${logSel.has(m.id) ? ' checked' : ''}> 고르기</label>` : !canRoster() ? '' : `<button class="btn ghost small" data-del="${esc(m.id)}" style="${confirmId === m.id ? 'color:var(--bad);border-color:var(--bad)' : ''}">${confirmId === m.id ? '정말 삭제' : '삭제'}</button>`}</div>
-      <div class="mteams">${team(m, 'blue')}${team(m, 'red')}</div>${penLine(m)}${Date.now() - m.t < MVP_OPEN ? `<div class="log-mvp" data-mid="${esc(m.id)}">${mvpBox(m)}</div>` : ''}</li>`;
+      <div class="mteams">${team(m, 'blue')}${team(m, 'red')}</div>${penLine(m)}${Date.now() - m.t < MVP_OPEN ? `<div class="log-mvp" data-mid="${esc(m.id)}">${logMvpOpen.has(m.id) ? `${mvpBox(m)}<button class="linkbtn mvp-fold" data-mvpfold="${esc(m.id)}">접기</button>` : mvpFold(m)}</div>` : ''}</li>`;
   }).join('') : '<li><p class="empty">아직 기록이 없어요.</p></li>';
 }
 $('#logBox').addEventListener('click', async e => {
@@ -2180,6 +2193,8 @@ $('#logBox').addEventListener('click', async e => {
   const vote = e.target.closest('[data-mvp]');
   if (vote) { const mid = vote.closest('[data-mid]')?.dataset.mid; if (mid && !vote.disabled) voteMvp(mid, vote.dataset.mvp); return; }
   // 여러 판 고르기: 판마다 체크, 날짜 줄의 '이날 전체 고르기'(다 골라져 있으면 그날 것을 풀어요)
+  const fold = e.target.closest('[data-mvpfold]'); // 접어 둔 MVP 투표 펼치기·접기
+  if (fold) { const id = fold.dataset.mvpfold; logMvpOpen.has(id) ? logMvpOpen.delete(id) : logMvpOpen.add(id); return renderLog(); }
   const cb = e.target.closest('[data-sel]');
   if (cb && logSel) { cb.checked ? logSel.add(cb.dataset.sel) : logSel.delete(cb.dataset.sel); logDelConfirm = false; cb.closest('li.match')?.classList.toggle('picked', cb.checked); return renderLogTools(); }
   const sd = e.target.closest('[data-selday]');
@@ -2428,6 +2443,8 @@ $('#fiveRefresh').onclick = e => refreshRiotNow(e.currentTarget);
 const GAMES = ['lol', 'duel', 'five', 'tourn', 'timer', 'roster'];
 function showGame(g) {
   for (const x of GAMES) { $('#game-' + x).setAttribute('aria-selected', x === g); $('#g-' + x).hidden = x !== g; }
+  const nav = $('#game-' + g).parentElement, b = $('#game-' + g); // 폰에서 한 줄로 밀어 보는 탭이면 고른 탭이 보이게
+  if (nav.scrollWidth > nav.clientWidth) nav.scrollTo({ left: Math.max(0, b.offsetLeft - nav.offsetLeft - 16), behavior: 'smooth' });
   try { localStorage.setItem(LS + ':game', g); } catch {}
 }
 GAMES.forEach(g => $('#game-' + g).addEventListener('click', () => showGame(g)));
@@ -2915,6 +2932,11 @@ document.addEventListener('click', e => {
 // ---------- 버전 · 패치노트 ----------
 // 커밋해서 올릴 때마다 맨 위에 새 항목을 더해요(규칙은 CLAUDE.md). 오른쪽 위 버전은 맨 위 항목이에요.
 const NOTES = [
+  { v: '1.20.1', d: '2026-10-22', items: [
+    '사이트가 빨라졌어요: 기록을 처리하는 서버를 미국에서 서울로 옮기고, 한 번에 읽어 오게 바꿨어요.',
+    '기록 탭의 MVP 투표를 한 줄로 접어 뒀어요("⭐ MVP 투표 · n표 — 펼치기"). 누르면 그 판만 펼쳐져서, 판이 많아도 기록을 훑어보기 쉬워요.',
+    '폰에서 맨 위 게임 탭이 여러 줄로 쌓이지 않고 한 줄로 나와요. 옆으로 밀어서 골라요.',
+  ] },
   { v: '1.20.0', d: '2026-10-22', items: [
     '⏱ 인게임 타이머 탭이 생겼어요: 게임하면서 옆에 켜 두는 보드예요. 상대가 스펠을 쓰면 그 라인 칸(점멸·순간이동·점화…)을 눌러요. 쿨타임이 돌고, 돌아오면 소리와 알림이 와요. 잘못 눌렀으면 다시 누르면 취소돼요.',
     '같은 방에서 같은 보드를 연 친구 폰에 똑같이 떠요. 내전이면 블루팀 보드·레드팀 보드를 따로 쓰고(참가 신청한 이름으로 내 팀 보드가 먼저 열려요), 솔랭·일반 보드도 있어요.',

@@ -282,10 +282,11 @@ async function readPred() {
   }).filter(Boolean);
 }
 async function readState(room) {
-  const [players, matches, ver, riot, rooms, duels, mvp, seasons, pred, tourns] = await Promise.all([readPlayers(), readMatches(), redis.get(K.ver), readRiot(), readRooms(), readDuels(), readMvp(), readSeasons(), readPred(), readTourns()]);
+  // 방 정보(오늘 할 사람·팀 배치·타이머 보드)도 다른 기록과 한 번에 같이 읽어요(DB에 한 번만 다녀와요). 없는 방이면 버려요.
+  const roomPart = room ? Promise.all([readSelected(room), redis.get(RK.cur(room)), ...BOARD_SIDES.map(s => redis.hgetall(RK.board(room, s)))]) : null;
+  const [players, matches, ver, riot, rooms, duels, mvp, seasons, pred, tourns, rp] = await Promise.all([readPlayers(), readMatches(), redis.get(K.ver), readRiot(), readRooms(), readDuels(), readMvp(), readSeasons(), readPred(), readTourns(), roomPart]);
   const r = rooms.find(x => x.id === room);
-  const boards = r ? Object.fromEntries(await Promise.all(BOARD_SIDES.map(async s => [s, (await redis.hgetall(RK.board(r.id, s))) || {}]))) : null;
-  const roomState = r ? { id: r.id, selected: await readSelected(r.id), current: (await redis.get(RK.cur(r.id))) || null, boards } : null;
+  const roomState = r && rp ? { id: r.id, selected: rp[0], current: rp[1] || null, boards: Object.fromEntries(BOARD_SIDES.map((s, i) => [s, rp[2 + i] || {}])) } : null;
   return { players, matches, duels, mvp, pred, tourns, riot, rooms, seasons, room: roomState, ver: Number(ver) || 0, ably: ABLY_NS, now: Date.now() };
 }
 // 지금 보고 있다는 신호(15초마다). 멤버는 "기기id|닉네임"이고, 방장이면 방장 신호 시각도 남겨요.
