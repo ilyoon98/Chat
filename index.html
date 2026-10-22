@@ -205,6 +205,20 @@ select { font: inherit; color: var(--ink); background: var(--sunk); border: 1px 
 /* 이름 칸: 끌어서 옮기는 손잡이. 좁은 폰에선 기록 글자가 이름 아래로 내려가요 */
 .team li .pl { flex: 1; min-width: 0; color: var(--ink); padding: 7px 8px; border-radius: 8px; cursor: grab; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 8px; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 .team li .pl:hover { background: var(--surface); }
+/* 내전 라인: 방장은 고를 수 있는 칸, 구경하는 사람은 글자만 */
+/* 폰에서도 이름 칸이 안 밀리게 좁게(40px): 고르는 칸은 화살표 없이 글자만, 구경은 글자만 */
+.team li .lanesel, .team li .lanetag { flex: none; width: 40px; font: inherit; font-size: 12px; font-weight: 800; color: var(--gold); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 5px 0; text-align: center; text-align-last: center; -webkit-appearance: none; appearance: none; cursor: pointer; }
+.team li .lanetag { display: inline-flex; justify-content: center; border-color: transparent; background: none; cursor: default; }
+.team li .lanetag .laneic { display: none; }
+@media (min-width: 600px) { .team li .lanesel, .team li .lanetag { width: 56px; } .team li .lanetag .laneic { display: inline; margin-right: 2px; } }
+/* 폰(팀 칸이 150px쯤): 라인은 이름 아래 작은 줄로, 화살표는 오른쪽에 세로로 가운데 */
+@media (max-width: 599px) {
+  .team li.haslane { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 2px; align-items: center; }
+  .team li.haslane .pl { grid-column: 1; grid-row: 1; }
+  .team li.haslane .lanesel, .team li.haslane .lanetag { grid-column: 1; grid-row: 2; justify-self: start; width: auto; min-width: 40px; margin: -4px 0 4px 8px; padding: 2px 8px; }
+  .team li.haslane .swap { grid-column: 2; grid-row: 1 / 3; }
+}
+#laneToggle[aria-pressed=false] { color: var(--muted); }
 .team li .swap { flex: none; width: 30px; height: 30px; font: inherit; font-weight: 700; color: var(--muted); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
 .team li .swap:hover { color: var(--ink); border-color: var(--gold); }
 .team li.empty-team { display: block; padding: 18px 8px; color: var(--muted); font-size: 13px; text-align: center; }
@@ -448,6 +462,7 @@ body.gated { overflow: hidden; }
           <button id="mDraft" aria-pressed="false">팀장 뽑기</button>
         </div>
         <button class="btn gold" id="shuffle">팀 섞기</button>
+        <button class="btn ghost small" id="laneToggle" aria-pressed="true" title="팀을 짜면 탑·정글·미드·원딜·서폿까지 정해 줘요">라인도 정하기 켜짐</button>
       </div>
       <p class="note" id="modeNote">완전 랜덤: 실력 상관없이 무작위로 나눠요.</p>
       <div id="teamsBox"></div>
@@ -862,6 +877,9 @@ function playerCard(p) {
   const r = S.riot[p], wl = (w, l) => `<span class="w">${w}승</span> <span class="l">${l}패</span>`;
   const rows = [['내전', s?.g ? `${wl(s.w, s.g - s.w)} · <b>${pct(s.w, s.g)}%</b> · MMR ${Math.round(s.mmr)}` : '아직 기록 없음']];
   if (x?.g) rows.push(['이 방', wl(x.w, x.g - x.w)]);
+  // 내전에서 라인을 정해 뛴 판: '탑 3승 1패 · 미드 1승 2패' (많이 한 라인부터)
+  const nl = Object.entries(naeLanes()[p] || {}).sort((a, b) => b[1][0] - a[1][0]);
+  if (nl.length) rows.push(['내전 라인', `<span class="lanes">${nl.map(([k, [g, w]]) => `<span>${laneIcon(k)}<b>${LANE[k]}</b> ${wl(w, g - w)}</span>`).join('')}</span>`]);
   if (r) {
     rows.push(['솔랭', `${soloIcon(p)}<b>${esc(soloText(p))}</b>${r.solo ? ` · ${wl(r.solo.w, r.solo.l)}` : ''}`]);
     if (r.n) rows.push(['주 라인', `<span class="lanes">${laneTop(p).map(([k, n]) => `<span>${laneIcon(k)}<b>${LANE[k]}</b> ${pct(n, r.n)}%</span>`).join('')}</span>`]);
@@ -1120,11 +1138,19 @@ function renderTeams(shuffling) {
   const before = rec && computeStats(S.players, S.matches.filter(m => m !== rec));
   const mmrMove = p => { const a = Math.round(mmrOf(before, p)), b = Math.round(mmrOf(st, p)), d = b - a;
     return `MMR ${a} → <b>${b}</b> <span class="${d >= 0 ? 'up' : 'down'}">${d >= 0 ? '+' : ''}${d}</span>`; };
-  const li = (p, side, i) => { const s = st.P[p], x = ss.P[p]; return `<li style="--i:${i}"><div class="pl" data-p="${esc(p)}" data-card="${esc(p)}" data-side="${side}"><span class="who">${tierIcon(T[p])}<span class="nm">${esc(p)}</span>${quick(p)}</span><span class="st">${rec ? mmrMove(p) : s?.g ? `${pct(s.w, s.g)}% · ${s.g}판` : '첫 판'}${x?.g ? `<br><span class="sess">이 방 ${x.w}승 ${x.g - x.w}패</span>` : ''}</span></div>${swapBtn(p, side)}</li>`; };
+  // 라인: 방장은 바로 바꿀 수 있는 칸(기록 전), 구경하는 사람·기록 뒤엔 아이콘+글자만
+  const lanes = (rec ? rec.lanes : c.lanes) || {};
+  const laneCell = p => { const L = lanes[p]; if (!L) return '';
+    return host && !rec && !shuffling ? `<select class="lanesel" data-lane="${esc(p)}" aria-label="${esc(p)} 라인">${LANES.map(k => `<option value="${k}"${k === L ? ' selected' : ''}>${LANE[k]}</option>`).join('')}</select>`
+      : `<span class="lanetag">${laneIcon(L)}${LANE[L]}</span>`; };
+  const li = (p, side, i) => { const s = st.P[p], x = ss.P[p]; return `<li style="--i:${i}"${lanes[p] ? ' class="haslane"' : ''}>${laneCell(p)}<div class="pl" data-p="${esc(p)}" data-card="${esc(p)}" data-side="${side}"><span class="who">${tierIcon(T[p])}<span class="nm">${esc(p)}</span>${quick(p)}</span><span class="st">${rec ? mmrMove(p) : s?.g ? `${pct(s.w, s.g)}% · ${s.g}판` : '첫 판'}${x?.g ? `<br><span class="sess">이 방 ${x.w}승 ${x.g - x.w}패</span>` : ''}</span></div>${swapBtn(p, side)}</li>`; };
   const avg = (t, from = st) => t.reduce((s, p) => s + mmrOf(from, p), 0) / (t.length || 1);
   const eb = 1 / (1 + Math.pow(10, (avg(c.red) - avg(c.blue)) / 400)), both = c.blue.length && c.red.length;
   // 한쪽 팀을 다 비워도 빈 팀 칸은 남겨서 다시 옮겨 올 수 있게 해요.
-  const ul = side => `<ul>${c[side].map((p, i) => li(p, side, i + (side === 'red' ? c.blue.length : 0))).join('') || `<li class="empty-team">비었어요. ${side === 'blue' ? '←' : '→'} 버튼이나 끌어서 옮겨 오세요.</li>`}</ul>`;
+  // 라인을 정했으면 탑→서폿 순서로 보여줘요
+  const laneRank = p => lanes[p] ? LANES.indexOf(lanes[p]) : 9; // 라인 없는 사람(6명째부터)은 뒤로
+  const byLane = arr => Object.keys(lanes).length ? [...arr].sort((a, b) => laneRank(a) - laneRank(b)) : arr;
+  const ul = side => `<ul>${byLane(c[side]).map((p, i) => li(p, side, i + (side === 'red' ? c.blue.length : 0))).join('') || `<li class="empty-team">비었어요. ${side === 'blue' ? '←' : '→'} 버튼이나 끌어서 옮겨 오세요.</li>`}</ul>`;
   const mmr = side => !c[side].length ? '' : rec ? `MMR ${Math.round(avg(c[side], before))} → ${Math.round(avg(c[side]))}` : `MMR ${Math.round(avg(c[side]))}`;
   const bp = Math.round(eb * 100), canRec = c.blue.length && c.red.length;
   // 카톡용 복사는 팀 바로 위에 둬요. 섞는 동안에도 자리를 지켜서 화면이 들썩이지 않게 해요.
@@ -1146,6 +1172,35 @@ const TEAM = { blue: '1팀 블루', red: '2팀 레드' };
 // 판(round): 팀을 섞거나 옮기거나 '한 판 더'를 누를 때마다 새로 생겨요. 예전 팀 배치에는 round가 없어서 t를 대신 써요.
 const roundOf = c => c.round ?? c.t;
 const newRound = c => { c.t = c.round = Date.now(); };
+// ---------- 내전 라인 배정 ----------
+// 팀이 정해지면(섞기·옮기기·팀장 뽑기 끝) 팀마다 라인 추천 엔진으로 탑~서폿을 정해요. 5명 넘는 팀은 다섯 명까지만.
+// 끄면(이 기기 설정) 라인 없이 팀만 짜요. 방장이 칸을 눌러 바꾸면 그 라인이던 팀원과 서로 바꿔요.
+let laneOn = true; try { laneOn = localStorage.getItem(LS + ':laneOn') !== '0'; } catch {}
+function assignLanes(c) {
+  if (!laneOn) { delete c.lanes; return; }
+  c.lanes = {};
+  for (const side of ['blue', 'red']) {
+    const best = c[side].length <= 5 ? bestLanes(c[side], 1)[0] : bestLanes(c[side].slice(0, 5), 1)[0];
+    for (const [p, L] of best?.picks || []) c.lanes[p] = L;
+  }
+}
+function renderLaneToggle() {
+  const b = $('#laneToggle'); b.setAttribute('aria-pressed', laneOn); b.textContent = laneOn ? '라인도 정하기 켜짐' : '라인 정하기 꺼짐';
+}
+$('#laneToggle').onclick = () => {
+  laneOn = !laneOn; try { localStorage.setItem(LS + ':laneOn', laneOn ? '1' : '0'); } catch {}
+  renderLaneToggle();
+  const c = S.current;
+  if (c && isHost() && !recordedMatch() && !S.draft) { assignLanes(c); c.t = Date.now(); renderTeams(); saveCurrent(); }
+};
+$('#teamsBox').addEventListener('change', e => {
+  const s = e.target.closest('select.lanesel'), c = S.current; if (!s || !c?.lanes || !needHost()) return;
+  const p = s.dataset.lane, L = s.value, side = c.blue.includes(p) ? 'blue' : 'red';
+  const mate = c[side].find(q => q !== p && c.lanes[q] === L); // 그 라인이던 팀원과 자리 바꾸기
+  if (mate) c.lanes[mate] = c.lanes[p];
+  c.lanes[p] = L; c.t = Date.now(); // 같은 판이라 round는 그대로, 다른 화면이 새로 받아 가게 t만
+  renderTeams(); saveCurrent();
+});
 // 지금 판이 이미 기록됐는지는 서버 기록에서 찾아요. 그래서 다른 사람이 기록해도 내 화면이 같이 '기록됨'으로 바뀌어요.
 const recordedMatch = () => { const c = S.current, r = c && roundOf(c); return r ? S.matches.find(m => m.round === r) : null; };
 $('#shuffle').onclick = () => {
@@ -1158,26 +1213,29 @@ $('#shuffle').onclick = () => {
   const tick = () => {
     d.current = makeTeams(names, k < frames ? 'random' : S.mode, st);
     if (k++ < frames) { renderTeams(true); setTimeout(tick, 40 + k * 12); return; }
-    newRound(d.current); S.fx = 'reveal'; renderTeams(); btn.disabled = false; saveCurrent();
+    newRound(d.current); assignLanes(d.current); S.fx = 'reveal'; renderTeams(); btn.disabled = false; saveCurrent();
   };
   tick();
 };
 $('#teamsBox').addEventListener('click', async e => {
   if (Date.now() < dropClickUntil) return; // 끌어서 놓은 직후 따라오는 클릭은 무시해요
   const c = S.current, rec = recordedMatch();
-  if (e.target.id === 'copyTeams' && c) return copyText(`[${TEAM.blue}] ${c.blue.join(', ')}\n[${TEAM.red}] ${c.red.join(', ')}`);
+  if (e.target.id === 'copyTeams' && c) { // 라인을 정했으면 '[1팀 블루] 탑 일윤, 정글 기종, …'
+    const L = c.lanes || {}, order = p => L[p] ? LANES.indexOf(L[p]) : 9;
+    return copyText(['blue', 'red'].map(side => `[${TEAM[side]}] ${[...c[side]].sort((a, b) => order(a) - order(b)).map(p => L[p] ? `${LANE[L[p]]} ${p}` : p).join(', ')}`).join('\n'));
+  }
   if (!e.target.closest('button') || !needHost()) return; // 복사 말고는 방장만
   if (S.draft) return draftClick(e);
   const mv = e.target.closest('button[data-swap]');
   if (mv && !rec) {
     const p = mv.dataset.swap, from = mv.dataset.side, to = from === 'blue' ? 'red' : 'blue';
-    c[from] = c[from].filter(x => x !== p); c[to].push(p); newRound(c);
+    c[from] = c[from].filter(x => x !== p); c[to].push(p); newRound(c); assignLanes(c);
     renderTeams(); saveCurrent(); return;
   }
   const w = e.target.closest('button[data-win]');
   if (w) {
     if (!roundOf(c)) { newRound(c); saveCurrent(); }
-    const m = { t: Date.now(), blue: [...c.blue], red: [...c.red], win: w.dataset.win, round: roundOf(c) };
+    const m = { t: Date.now(), blue: [...c.blue], red: [...c.red], win: w.dataset.win, round: roundOf(c), ...(c.lanes && { lanes: { ...c.lanes } }) };
     w.disabled = true;
     try {
       const { dup } = await addMatch(m), saved = recordedMatch();
@@ -1228,7 +1286,7 @@ function endDrag(e) {
       const to = from === 'blue' ? 'red' : 'blue';
       c[from] = c[from].filter(x => x !== d.p); c[to].push(d.p);
     }
-    newRound(c); saveCurrent();
+    newRound(c); assignLanes(c); saveCurrent();
   }
   renderTeams();
 }
@@ -1322,7 +1380,7 @@ function draftPick(p, side) {
 }
 function finishDraft() {
   const d = S.draft, cur = { blue: [d.cap.blue, ...d.picks.blue], red: [d.cap.red, ...d.picks.red] };
-  S.draft = null; S.current = cur; newRound(cur); S.fx = 'reveal';
+  S.draft = null; S.current = cur; newRound(cur); assignLanes(cur); S.fx = 'reveal';
   renderTeams(); saveCurrent(); toast('팀이 다 짜였어요. 끝나면 이긴 팀을 눌러 주세요.');
 }
 function coinFlip() {
@@ -1642,13 +1700,26 @@ $('#roomCard').addEventListener('click', async e => {
 // 한 사람이 한 라인에 얼마나 잘 맞는지 점수예요. 많이 해 본 라인일수록(비율), 그 라인 승률이 높을수록(판이 쌓일수록 믿어요),
 // 그 라인에서 2판 넘게 한 챔피언이 많을수록 높아요. 서버가 모아 둔 판(ls, 최대 100판)이 없으면 최근 20판 주 라인(lanes)으로 대신해요.
 const LANES = ['TOP', 'JUNGLE', 'MIDDLE', 'BOTTOM', 'UTILITY'];
+// 내전에서 라인을 정해 기록한 판: { 이름: { 라인: [판, 승] } }. 기록이 바뀔 때만 다시 세요.
+let naeMemo = { of: null, v: {} };
+function naeLanes() {
+  if (naeMemo.of === S.matches) return naeMemo.v;
+  const v = {};
+  for (const m of S.matches) for (const [p, L] of Object.entries(m.lanes || {})) {
+    const x = (v[p] ??= {})[L] ??= [0, 0]; x[0]++; if ((m.win === 'blue') === m.blue.includes(p)) x[1]++;
+  }
+  return (naeMemo = { of: S.matches, v }).v;
+}
+// 롤 정보(최근 판)에 내전에서 그 라인으로 뛴 판도 더해서 봐요. 롤 정보가 없는 사람도 내전 기록만으로 추천돼요.
 function laneFit(p, L) {
-  const r = S.riot[p], ls = r?.ls || (r?.lanes && Object.fromEntries(Object.entries(r.lanes).map(([k, n]) => [k, [n, n / 2, []]])));
-  const all = ls ? Object.values(ls).reduce((s, x) => s + x[0], 0) : 0;
-  if (!all) return { score: 0, g: 0, w: 0, all: 0, champs: [], known: false };
+  const r = S.riot[p], base = r?.ls || (r?.lanes && Object.fromEntries(Object.entries(r.lanes).map(([k, n]) => [k, [n, n / 2, []]]))) || {};
+  const nae = naeLanes()[p] || {}, ls = {};
+  for (const k of LANES) { const a = base[k], b = nae[k]; if (a || b) ls[k] = [(a?.[0] || 0) + (b?.[0] || 0), (a?.[1] || 0) + (b?.[1] || 0), a?.[2] || []]; }
+  const all = Object.values(ls).reduce((s, x) => s + x[0], 0);
+  if (!all) return { score: 0, g: 0, w: 0, all: 0, champs: [], known: false, ng: 0 };
   const [g = 0, w = 0, champs = []] = ls[L] || [];
   const conf = g / (g + 4), wr = (w + 2.5) / (g + 5), pool = champs.filter(c => c[1] >= 2).length;
-  return { score: 70 * Math.sqrt(g / all) + 60 * conf * (wr - .5) + 4 * pool, g, w, all, champs, known: true };
+  return { score: 70 * Math.sqrt(g / all) + 60 * conf * (wr - .5) + 4 * pool, g, w, all, champs, known: true, ng: nae[L]?.[0] || 0 };
 }
 // 사람들을 서로 다른 라인에 놓는 모든 경우(5명이면 120가지)를 다 계산해서 점수 합이 높은 순으로 돌려줘요. [{ total, picks: [[이름, 라인, fit]] }]
 function bestLanes(names, top = 3) {
@@ -1676,8 +1747,8 @@ function renderFive() {
   const plans = bestLanes(FIVE), none = FIVE.filter(p => !linked(p)), loading = FIVE.filter(p => linked(p) && !S.riot[p].hFull);
   const hn = p => S.riot[p]?.hn ?? S.riot[p]?.n ?? 0;
   $('#fiveMeta').textContent = `사람당 최근 ${Math.min(...FIVE.filter(linked).map(hn).concat(100))}~${Math.max(0, ...FIVE.map(hn))}판 기준`;
-  const why = (p, L, f) => !f.known ? '롤 정보 없음 (Riot ID 연결 필요)' : !f.g ? `<span class="bad">최근 ${f.all}판 중 이 라인 0판</span>`
-    : `최근 ${f.all}판 중 ${f.g}판(${pct(f.g, f.all)}%) · 승률 ${pct(f.w, f.g)}%`;
+  const why = (p, L, f) => !f.known ? '기록 없음 (Riot ID를 연결하거나 내전에서 라인을 정해 뛰면 생겨요)' : !f.g ? `<span class="bad">${f.all}판 중 이 라인 0판</span>`
+    : `${f.all}판 중 ${f.g}판(${pct(f.g, f.all)}%) · 승률 ${pct(f.w, f.g)}%${f.ng ? ` · 내전 ${f.ng}판 포함` : ''}`;
   const champs = f => `<span class="ch">${f.champs.map(([c, g, w]) => champIcon(c, `이 라인 ${g}판 ${pct(w, g)}%`)).join('')}</span>`;
   const plan = (pl, i) => i === 0
     ? `<div class="fiveplan best"><div class="fp-head"><b>추천 1순위</b><span>잘 맞는 정도 ${Math.round(pl.total)}</span></div><ul>${
@@ -1726,6 +1797,12 @@ $('#gateForm').addEventListener('submit', async e => {
 // ---------- 버전 · 패치노트 ----------
 // 커밋해서 올릴 때마다 맨 위에 새 항목을 더해요(규칙은 CLAUDE.md). 오른쪽 위 버전은 맨 위 항목이에요.
 const NOTES = [
+  { v: '1.5.0', d: '2026-10-22', items: [
+    '내전 라인 배정: 팀을 섞거나 옮기거나 팀장 뽑기가 끝나면, 팀마다 탑·정글·미드·원딜·서폿까지 정해 줘요. 각자 많이 하고 잘하는 라인으로 맞춰요.',
+    '방장은 이름 옆(폰은 이름 아래) 라인 칸을 눌러 바꿀 수 있어요. 고른 라인이던 팀원과 서로 바꿔요. 구경하는 사람에게도 바로 보여요.',
+    '"팀 섞기" 옆 버튼으로 라인 정하기를 끄고 켤 수 있어요. 카톡용 복사에도 "탑 일윤, 정글 기종…"처럼 라인이 같이 들어가요.',
+    '라인을 정하고 기록한 판은 선수 카드의 "내전 라인"에 라인별 승패로 쌓이고, 다음 라인 추천(내전·롤 5인 큐)에도 같이 쓰여요. 롤 정보가 없는 사람도 내전 기록으로 추천받아요.',
+  ] },
   { v: '1.4.1', d: '2026-10-22', items: [
     '롤 정보: 예전 판을 모으다가 20판쯤에서 "다 모았다"고 잘못 멈추던 걸 고쳤어요. 멈췄던 사람도 다시 이어서 100판까지 모아요.',
   ] },
@@ -1797,6 +1874,7 @@ $('#notes').addEventListener('click', e => { if (e.target === e.currentTarget) e
 loadLocal();
 renderNotes();
 setMode(S.mode);
+renderLaneToggle();
 setBadge();
 showGate(!ME.nick);
 renderAll();

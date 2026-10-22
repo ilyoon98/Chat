@@ -190,6 +190,11 @@ function uniqueName(base, taken) {
   for (let n = 2; ; n++) { const tail = ` ${n}`, c = base.slice(0, 16 - tail.length).trimEnd() + tail; if (!taken(c)) return c; }
 }
 const cleanNames = (a, max) => (Array.isArray(a) ? [...new Set(a.map(cleanName).filter(Boolean))].slice(0, max) : null);
+// 내전 라인: { 이름: 'TOP' | 'JUNGLE' | 'MIDDLE' | 'BOTTOM' | 'UTILITY' } 중 그 판에 뛴 사람 것만. 없으면 undefined(라인 안 정한 판).
+const cleanLanes = (o, names) => {
+  const out = Object.fromEntries(Object.entries(o && typeof o === 'object' ? o : {}).filter(([n, L]) => names.includes(n) && RIOT_LANES.includes(L)));
+  return Object.keys(out).length ? out : undefined;
+};
 const bad = res => res.status(400).json({ error: 'bad_request' });
 const cleanId = v => (typeof v === 'string' && /^[a-z0-9]{6,32}$/.test(v) ? v : null); // 기기 id·방 id
 const parse = v => (typeof v === 'string' ? JSON.parse(v) : v);
@@ -412,7 +417,7 @@ export default async function handler(req, res) {
         const from = cleanName(b.from), to = cleanName(b.to);
         if (!from || !to || from === to) return bad(res);
         const swap = arr => [...new Set(arr.map(p => (p === from ? to : p)))];
-        const swapGame = g => ({ ...g, blue: swap(g.blue), red: swap(g.red) });
+        const swapGame = g => ({ ...g, blue: swap(g.blue), red: swap(g.red), ...(g.lanes && { lanes: Object.fromEntries(Object.entries(g.lanes).map(([n, L]) => [n === from ? to : n, L])) }) });
         const both = g => [...g.blue, ...g.red].includes(from) && [...g.blue, ...g.red].includes(to);
         const [matches, curs] = await Promise.all([readMatches(), Promise.all(rooms.map(r => redis.get(RK.cur(r.id))))]);
         // 같은 판에 둘 다 뛴 적이 있거나 어느 방 팀에 둘 다 있으면 서로 다른 사람이라 합칠 수 없어요.
@@ -474,7 +479,8 @@ export default async function handler(req, res) {
         if (prev) { id = prev.id; dup = true; break; }
         id = now.toString(36) + Math.random().toString(36).slice(2, 7);
         // room: 어느 방에서 한 판인지 남겨서, 화면의 '이 방 기록'은 그 방 판들만 따로 세요.
-        await redis.hset(K.matches, { [id]: { t: now, blue, red, win: m.win, room: room.id, ...(round && { round }) } });
+        const lanes = cleanLanes(m.lanes, [...blue, ...red]);
+        await redis.hset(K.matches, { [id]: { t: now, blue, red, win: m.win, room: room.id, ...(round && { round }), ...(lanes && { lanes }) } });
         await saveRoom({ ...room, lastActive: now });
         break;
       }
@@ -487,7 +493,8 @@ export default async function handler(req, res) {
         const c = b.current || {}, blue = cleanNames(c.blue, 10), red = cleanNames(c.red, 10);
         if (!blue || !red) return bad(res);
         const t = Number(c.t) || Date.now();
-        await redis.set(RK.cur(room.id), { blue, red, t, round: Number(c.round) || t });
+        const lanes = cleanLanes(c.lanes, [...blue, ...red]);
+        await redis.set(RK.cur(room.id), { blue, red, t, round: Number(c.round) || t, ...(lanes && { lanes }) });
         await saveRoom({ ...room, lastActive: Date.now() });
         break;
       }
