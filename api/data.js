@@ -6,7 +6,7 @@ const url = process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL;
 const token = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN;
 const redis = globalThis.__redis ?? (url && token ? new Redis({ url, token }) : null);
 
-const K = { players: 'lol:players', matches: 'lol:matches', ver: 'lol:ver', riot: 'lol:riot', riotLock: 'lol:riot:lock', riotRest: 'lol:riot:rest', riotGames: 'lol:riot:games', rooms: 'lol:rooms', hostSeen: 'lol:hostseen', nicks: 'lol:nicks' };
+const K = { players: 'lol:players', matches: 'lol:matches', ver: 'lol:ver', riot: 'lol:riot', riotLock: 'lol:riot:lock', riotRest: 'lol:riot:rest', riotGames: 'lol:riot:games', rooms: 'lol:rooms', hostSeen: 'lol:hostseen', nicks: 'lol:nicks', duels: 'lol:duels' };
 // 방마다 따로인 것: 오늘 할 사람(정렬 집합), 팀 배치, 지금 보고 있는 사람(정렬 집합, 점수 = 마지막 신호 시각)
 const RK = { sel: r => `lol:room:${r}:sel`, cur: r => `lol:room:${r}:cur`, seen: r => `lol:room:${r}:seen` };
 const MAX_MATCHES = 5000;
@@ -221,11 +221,17 @@ async function dropRoom(id) {
   await redis.hdel(K.rooms, id); await redis.hdel(K.hostSeen, id);
   await redis.del(RK.sel(id), RK.cur(id), RK.seen(id));
 }
+// 1:1 기록: { id, t, a, b(두 사람), w(이긴 사람 이름), rule('자유'·'퍼블'·'100CS'·'첫 타워') }. 내전 기록과 따로예요.
+const DUEL_RULES = ['자유', '퍼블', '100CS', '첫 타워'];
+async function readDuels() {
+  const hash = await redis.hgetall(K.duels);
+  return Object.entries(hash || {}).map(([id, d]) => ({ id, ...parse(d) })).sort((a, b) => a.t - b.t);
+}
 async function readState(room) {
-  const [players, matches, ver, riot, rooms] = await Promise.all([readPlayers(), readMatches(), redis.get(K.ver), readRiot(), readRooms()]);
+  const [players, matches, ver, riot, rooms, duels] = await Promise.all([readPlayers(), readMatches(), redis.get(K.ver), readRiot(), readRooms(), readDuels()]);
   const r = rooms.find(x => x.id === room);
   const roomState = r ? { id: r.id, selected: await readSelected(r.id), current: (await redis.get(RK.cur(r.id))) || null } : null;
-  return { players, matches, riot, rooms, room: roomState, ver: Number(ver) || 0, ably: ABLY_NS };
+  return { players, matches, duels, riot, rooms, room: roomState, ver: Number(ver) || 0, ably: ABLY_NS };
 }
 // 지금 보고 있다는 신호(15초마다). 멤버는 "기기id|닉네임"이고, 방장이면 방장 신호 시각도 남겨요.
 async function heartbeat(room, me, nick, claimsHost) {
@@ -329,7 +335,7 @@ export default async function handler(req, res) {
     const room = rooms.find(r => r.id === cleanId(b.room)), isHost = r => !!r && !!me && r.hostId === me;
     const notHost = () => res.status(423).json({ error: 'not_host' });
     // 명단·Riot ID·기록 삭제는 모든 방이 같이 쓰는 거라 어느 방이든 방장인 사람만 바꿀 수 있어요.
-    const rosterAction = ['addPlayers', 'removePlayer', 'renamePlayer', 'setRiot', 'deleteMatch'].includes(b.action);
+    const rosterAction = ['addPlayers', 'removePlayer', 'renamePlayer', 'setRiot', 'deleteMatch', 'addDuel', 'deleteDuel'].includes(b.action);
     if (rosterAction && !rooms.some(isHost)) return notHost();
     // 그 방의 오늘 할 사람·팀 배치·승패는 그 방 방장만
     if (['select', 'current', 'addMatch', 'giveHost', 'closeRoom'].includes(b.action)) {
@@ -421,7 +427,8 @@ export default async function handler(req, res) {
         const both = g => [...g.blue, ...g.red].includes(from) && [...g.blue, ...g.red].includes(to);
         const [matches, curs] = await Promise.all([readMatches(), Promise.all(rooms.map(r => redis.get(RK.cur(r.id))))]);
         // 같은 판에 둘 다 뛴 적이 있거나 어느 방 팀에 둘 다 있으면 서로 다른 사람이라 합칠 수 없어요.
-        if (matches.some(both) || curs.some(c => c?.blue && c?.red && both(c))) {
+        const dueled = (await readDuels()).some(d => [d.a, d.b].includes(from) && [d.a, d.b].includes(to)); // 1:1로 서로 붙은 사이도 다른 사람
+        if (matches.some(both) || curs.some(c => c?.blue && c?.red && both(c)) || dueled) {
           return res.status(422).json({ error: 'played_together' });
         }
         const players = await readPlayers();
@@ -431,6 +438,12 @@ export default async function handler(req, res) {
           if (m.blue.includes(from) || m.red.includes(from)) changed[mid] = swapGame(m);
         }
         if (Object.keys(changed).length) await redis.hset(K.matches, changed);
+        // 1:1 기록도 새 이름으로 (같은 1:1에 둘 다 있으면 위에서 이미 막혀요)
+        const duelsChanged = {};
+        for (const { id: did, ...d } of await readDuels()) {
+          if (d.a === from || d.b === from) duelsChanged[did] = { ...d, a: d.a === from ? to : d.a, b: d.b === from ? to : d.b, w: d.w === from ? to : d.w };
+        }
+        if (Object.keys(duelsChanged).length) await redis.hset(K.duels, duelsChanged);
         for (const [i, r] of rooms.entries()) {
           if (curs[i]?.blue && curs[i]?.red) await redis.set(RK.cur(r.id), swapGame(curs[i]));
           const score = await redis.zscore(RK.sel(r.id), from); // 오늘 할 사람에 있었으면 같은 자리에 새 이름으로
@@ -482,6 +495,23 @@ export default async function handler(req, res) {
         const lanes = cleanLanes(m.lanes, [...blue, ...red]);
         await redis.hset(K.matches, { [id]: { t: now, blue, red, win: m.win, room: room.id, ...(round && { round }), ...(lanes && { lanes }) } });
         await saveRoom({ ...room, lastActive: now });
+        break;
+      }
+      case 'addDuel': {
+        // 1:1 한 판: 두 사람과 이긴 사람. 같은 두 사람·같은 결과가 15초 안에 또 오면 두 번 누른 걸로 보고 한 번만 남겨요.
+        const [a, bb] = [cleanName(b.a), cleanName(b.b)], w = cleanName(b.win);
+        if (!a || !bb || a === bb || ![a, bb].includes(w)) return bad(res);
+        const rule = DUEL_RULES.includes(b.rule) ? b.rule : '자유', now = Date.now(), duels = await readDuels();
+        if (duels.length >= MAX_MATCHES) return res.status(409).json({ error: 'full' });
+        const prev = duels.find(d => now - d.t < 15e3 && d.w === w && [d.a, d.b].sort().join() === [a, bb].sort().join());
+        if (prev) { id = prev.id; dup = true; break; }
+        id = 'd' + now.toString(36) + Math.random().toString(36).slice(2, 6);
+        await redis.hset(K.duels, { [id]: { t: now, a, b: bb, w, rule } });
+        break;
+      }
+      case 'deleteDuel': {
+        if (typeof b.id !== 'string' || !b.id) return bad(res);
+        await redis.hdel(K.duels, b.id);
         break;
       }
       case 'deleteMatch': {

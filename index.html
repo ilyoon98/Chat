@@ -78,6 +78,19 @@ h1 em { font-style: normal; color: var(--gold); }
 .games button { font-family: var(--display); font-weight: 800; font-size: 18px; padding: 9px 18px; border-radius: 12px; border: 1.5px solid var(--line); background: var(--surface); color: var(--muted); cursor: pointer; }
 .games button[aria-selected=true] { background: var(--gold); color: var(--on-gold); border-color: transparent; }
 .game { display: flex; flex-direction: column; gap: 18px; }
+/* 1:1 */
+.duel-vs { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 10px; align-items: center; }
+.duel-slot { border-radius: 12px; padding: 14px 10px; text-align: center; color: #fff; min-height: 74px; display: grid; align-content: center; gap: 2px; }
+.duel-slot.a { background: var(--blue); } .duel-slot.b { background: var(--red); }
+.duel-slot.empty { background: var(--sunk); color: var(--muted); border: 1.5px dashed var(--line); }
+.duel-slot b { font-family: var(--display); font-weight: 800; font-size: clamp(18px, 5vw, 24px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.duel-slot small { font-size: 12px; opacity: .9; }
+.duel-vs .vs { font-family: var(--display); font-weight: 800; font-size: 20px; color: var(--gold); }
+.duel-h2h { grid-column: 1 / -1; text-align: center; color: var(--muted); font-size: 13.5px; margin: 0; }
+.duel-h2h b { color: var(--ink); }
+#duelPick .chip.a { border-color: var(--blue); background: color-mix(in srgb, var(--blue) 20%, var(--surface)); }
+#duelPick .chip.b { border-color: var(--red); background: color-mix(in srgb, var(--red) 20%, var(--surface)); }
+.log .rule { font-size: 11px; font-weight: 700; color: var(--gold); border: 1px solid color-mix(in srgb, var(--gold) 50%, var(--line)); border-radius: 4px; padding: 0 5px; margin-left: 6px; }
 /* 롤 5인 큐: 라인 추천 */
 .fiveplan { border: 1px solid var(--line); border-radius: 12px; background: var(--sunk); padding: 12px 14px; }
 .fiveplan + .fiveplan { margin-top: 10px; }
@@ -427,6 +440,7 @@ body.gated { overflow: hidden; }
 
   <nav class="tabs" role="tablist">
     <button role="tab" id="tab-play" aria-selected="true">내전</button>
+    <button role="tab" id="tab-duel" aria-selected="false">1:1</button>
     <button role="tab" id="tab-stats" aria-selected="false">전적</button>
     <button role="tab" id="tab-analysis" aria-selected="false">분석</button>
     <button role="tab" id="tab-log" aria-selected="false">기록</button>
@@ -476,6 +490,27 @@ body.gated { overflow: hidden; }
   </section>
 
   <!-- 전적 -->
+  <!-- 1:1: 두 사람이 붙어서 이긴 사람만 눌러요. 1:1 MMR·순위는 내전과 따로예요. -->
+  <section id="p-duel" role="tabpanel" hidden>
+    <div class="card">
+      <h2>1:1 붙기 <span class="r" id="duelMeta"></span></h2>
+      <div class="duel-vs" id="duelVs"></div>
+      <div class="row" style="margin-top:12px"><div class="seg" id="duelRule" role="group" aria-label="1:1 규칙"></div></div>
+      <div id="duelWin"></div>
+      <p class="pick-h" style="margin-top:14px">이름을 눌러 두 명을 골라요 (다시 누르면 빠져요)</p>
+      <div class="chips" id="duelPick"></div>
+    </div>
+    <div class="card">
+      <h2>1:1 순위 <span class="r" id="duelRankMeta"></span></h2>
+      <div id="duelRank"></div>
+      <p class="note">1:1 MMR은 내전 MMR과 따로예요. 1000점에서 시작해서, 높은 사람을 이기면 많이 오르고 낮은 사람에게 지면 많이 내려가요.</p>
+    </div>
+    <div class="card">
+      <h2>최근 1:1 <span class="r" id="duelLogMeta"></span></h2>
+      <ul class="log" id="duelLog"></ul>
+    </div>
+  </section>
+
   <section id="p-stats" role="tabpanel" hidden>
     <div class="card">
       <h2>선수별 전적 <span class="r"><span id="statsMeta"></span> · <label>기간 <select class="period"><option value="all">전체</option><option value="30">최근 30일</option><option value="7">최근 7일</option><option value="1">최근 24시간</option></select></label></span></h2>
@@ -545,7 +580,7 @@ async function copyText(text) {
 
 // ---------- 상태 ----------
 // current·selected는 지금 들어가 있는 방(room)의 팀 배치·오늘 할 사람이에요. presence = 이 방을 보고 있는 사람들.
-const S = { players: [], matches: [], current: null, selected: new Set(), riot: {}, rooms: [], room: null, presence: [], mode: 'random', editing: false, editTarget: null, period: 'all', capMethod: 'top', draft: null };
+const S = { players: [], matches: [], duels: [], current: null, selected: new Set(), riot: {}, rooms: [], room: null, presence: [], mode: 'random', editing: false, editTarget: null, period: 'all', capMethod: 'top', draft: null };
 const LS = 'lol-naejeon-v1';
 // 이 기기를 구분하는 id와 닉네임. 로그인 없이 방장을 가려요.
 const ME = (() => {
@@ -562,6 +597,7 @@ function loadLocal() {
     const s = JSON.parse(localStorage.getItem(LS) || 'null') || {};
     if (Array.isArray(s.players)) S.players = s.players.filter(p => typeof p === 'string');
     if (Array.isArray(s.matches)) S.matches = s.matches.filter(validMatch);
+    if (Array.isArray(s.duels)) S.duels = s.duels.filter(validDuel);
     if (s.riot && typeof s.riot === 'object') S.riot = s.riot;
     if (typeof s.room === 'string') S.room = s.room;
     if (['balance', 'draft'].includes(s.mode)) S.mode = s.mode;
@@ -571,7 +607,7 @@ function loadLocal() {
   if (q) S.room = q;
 }
 function saveLocal() {
-  try { localStorage.setItem(LS, JSON.stringify({ room: S.room, mode: S.mode, capMethod: S.capMethod, players: S.players, matches: S.matches, riot: S.riot })); } catch {}
+  try { localStorage.setItem(LS, JSON.stringify({ room: S.room, mode: S.mode, capMethod: S.capMethod, players: S.players, matches: S.matches, duels: S.duels, riot: S.riot })); } catch {}
 }
 // ---------- 방장 ----------
 const curRoom = () => S.rooms.find(r => r.id === S.room) || null;
@@ -592,6 +628,7 @@ function validMatch(m) {
   return m && typeof m.t === 'number' && Array.isArray(m.blue) && Array.isArray(m.red) && (m.win === 'blue' || m.win === 'red')
     && m.blue.every(x => typeof x === 'string') && m.red.every(x => typeof x === 'string');
 }
+const validDuel = d => d && typeof d.t === 'number' && typeof d.a === 'string' && typeof d.b === 'string' && (d.w === d.a || d.w === d.b);
 
 // ---------- 서버 저장 (/api/data) ----------
 let status = 'connecting', pin = '', ver = null, writes = 0;
@@ -638,6 +675,7 @@ function applyServer(d) {
   if (d.ver != null) ver = d.ver;
   if (Array.isArray(d.players)) S.players = d.players.filter(p => typeof p === 'string');
   if (Array.isArray(d.matches)) S.matches = d.matches.filter(validMatch);
+  if (Array.isArray(d.duels)) S.duels = d.duels.filter(validDuel);
   if (d.riot && typeof d.riot === 'object') S.riot = d.riot;
   if (d.ably) connectAbly(d.ably);
   if (Array.isArray(d.rooms)) {
@@ -877,6 +915,8 @@ function playerCard(p) {
   const r = S.riot[p], wl = (w, l) => `<span class="w">${w}승</span> <span class="l">${l}패</span>`;
   const rows = [['내전', s?.g ? `${wl(s.w, s.g - s.w)} · <b>${pct(s.w, s.g)}%</b> · MMR ${Math.round(s.mmr)}` : '아직 기록 없음']];
   if (x?.g) rows.push(['이 방', wl(x.w, x.g - x.w)]);
+  const du = duelStats(S.duels).P[p];
+  if (du?.g) rows.push(['1:1', `${wl(du.w, du.g - du.w)} · MMR ${Math.round(du.mmr)}`]);
   // 내전에서 라인을 정해 뛴 판: '탑 3승 1패 · 미드 1승 2패' (많이 한 라인부터)
   const nl = Object.entries(naeLanes()[p] || {}).sort((a, b) => b[1][0] - a[1][0]);
   if (nl.length) rows.push(['내전 라인', `<span class="lanes">${nl.map(([k, [g, w]]) => `<span>${laneIcon(k)}<b>${LANE[k]}</b> ${wl(w, g - w)}</span>`).join('')}</span>`]);
@@ -1626,7 +1666,7 @@ $('#backup').onclick = () => {
 };
 
 // ---------- 탭 ----------
-const TABS = ['play', 'stats', 'analysis', 'log'];
+const TABS = ['play', 'duel', 'stats', 'analysis', 'log'];
 function showTab(t) { for (const x of TABS) { $('#tab-' + x).setAttribute('aria-selected', x === t); $('#p-' + x).hidden = x !== t; } }
 TABS.forEach(t => $('#tab-' + t).addEventListener('click', () => showTab(t)));
 if (TABS.includes(location.hash.slice(1))) showTab(location.hash.slice(1));
@@ -1779,7 +1819,76 @@ function showGame(g) {
 GAMES.forEach(g => $('#game-' + g).addEventListener('click', () => showGame(g)));
 try { const g = localStorage.getItem(LS + ':game'); if (GAMES.includes(g)) showGame(g); } catch {}
 
-function renderAll() { syncPresence(); renderRoomBar(); renderRoster(); renderTeams(); renderSession(); renderStats(); renderAnalysis(); renderLog(); renderFive(); }
+// ---------- 1:1 ----------
+// 1:1 MMR은 내전과 따로 계산해요(1000점에서 시작, Elo K=32). P: 사람별, H: 'A\u0001B' → A가 B를 상대로 [판, 승]
+function duelStats(duels) {
+  const P = {}, H = {}, get = n => P[n] ??= { name: n, g: 0, w: 0, mmr: 1000, form: [] };
+  for (const d of [...duels].sort((x, y) => x.t - y.t)) {
+    const A = get(d.a), B = get(d.b), aw = d.w === d.a, ea = 1 / (1 + Math.pow(10, (B.mmr - A.mmr) / 400)), delta = 32 * ((aw ? 1 : 0) - ea);
+    A.mmr += delta; B.mmr -= delta;
+    for (const [X, won, o] of [[A, aw, d.b], [B, !aw, d.a]]) { X.g++; if (won) X.w++; X.form.push(won ? 1 : 0); const h = H[X.name + '\u0001' + o] ??= [0, 0]; h[0]++; if (won) h[1]++; }
+  }
+  return { P, H };
+}
+// 고른 두 사람·규칙은 이 기기에만 기억해요(방장이 기록하면 결과는 모두에게 보여요)
+let DUEL = { a: null, b: null, rule: '자유' }; try { DUEL = { ...DUEL, ...JSON.parse(localStorage.getItem(LS + ':duel') || '{}') }; } catch {}
+const saveDuel = () => { try { localStorage.setItem(LS + ':duel', JSON.stringify(DUEL)); } catch {} };
+const DUEL_RULES = ['자유', '퍼블', '100CS', '첫 타워'];
+function renderDuel() {
+  if (!S.players.includes(DUEL.a)) DUEL.a = null;
+  if (!S.players.includes(DUEL.b)) DUEL.b = null;
+  const { P, H } = duelStats(S.duels), can = canRoster(), { a, b } = DUEL;
+  const slot = (p, side) => p ? `<div class="duel-slot ${side}" data-card="${esc(p)}"><b>${esc(p)}</b><small>${P[p]?.g ? `1:1 ${P[p].w}승 ${P[p].g - P[p].w}패 · MMR ${Math.round(P[p].mmr)}` : '1:1 첫 판'}</small></div>`
+    : `<div class="duel-slot empty"><b>?</b><small>아래에서 골라요</small></div>`;
+  const h = a && b ? H[a + '\u0001' + b] : null;
+  $('#duelVs').innerHTML = slot(a, 'a') + '<span class="vs">VS</span>' + slot(b, 'b')
+    + (a && b ? `<p class="duel-h2h">${h ? `맞대결 <b>${esc(a)} ${h[1]}승</b> · <b>${esc(b)} ${h[0] - h[1]}승</b>` : '둘이 붙는 건 처음이에요'}</p>` : '');
+  $('#duelRule').innerHTML = DUEL_RULES.map(r => `<button data-rule="${r}" aria-pressed="${DUEL.rule === r}">${r}</button>`).join('');
+  $('#duelWin').innerHTML = !(a && b) ? '' : can
+    ? `<div class="result"><button class="win blue" data-duelwin="a">${esc(a)} 승리</button><button class="win red" data-duelwin="b">${esc(b)} 승리</button></div>`
+    : '<p class="note">1:1 결과는 방장(어느 방이든)만 기록할 수 있어요. 구경하는 사람은 순위와 기록을 볼 수 있어요.</p>';
+  $('#duelPick').innerHTML = S.players.map(p => `<button class="chip${p === a ? ' a' : p === b ? ' b' : ''}" data-duel="${esc(p)}" aria-pressed="${p === a || p === b}">${esc(p)}${quick(p)}</button>`).join('')
+    || '<span class="empty">명단이 비어 있어요. 내전 탭에서 이름을 넣어 주세요.</span>';
+  $('#duelMeta').textContent = `총 ${S.duels.length}판`;
+  // 순위: 1:1 MMR 높은 순(판이 있는 사람만)
+  const rows = Object.values(P).filter(x => x.g).sort((x, y) => y.mmr - x.mmr || y.w - x.w);
+  $('#duelRankMeta').textContent = rows.length ? `${rows.length}명` : '';
+  $('#duelRank').innerHTML = !rows.length ? '<p class="empty">아직 1:1 기록이 없어요. 위에서 두 명을 골라 붙여 보세요.</p>'
+    : `<div class="tbl-wrap"><table><thead><tr><th></th><th>선수</th><th class="num">판</th><th class="num">승-패</th><th>승률</th><th class="num">1:1 MMR</th><th>최근 5판</th></tr></thead><tbody>${
+      rows.map((x, i) => `<tr><td class="rank">${i + 1}</td><td><b data-card="${esc(x.name)}">${esc(x.name)}</b></td><td class="num">${x.g}</td><td class="num">${x.w}-${x.g - x.w}</td>
+        <td><div class="rate"><span style="width:38px;text-align:right">${pct(x.w, x.g)}%</span>${bar(x.w / x.g)}</div></td><td class="num">${Math.round(x.mmr)}</td>
+        <td><span class="form">${x.form.slice(-5).map(f => `<i class="${f ? 'w' : 'l'}">${f ? '승' : '패'}</i>`).join('')}</span>${streak(x.form)}</td></tr>`).join('')}</tbody></table></div>`;
+  // 최근 1:1 (30판까지)
+  const recent = [...S.duels].sort((x, y) => y.t - x.t).slice(0, 30), p2 = n => String(n).padStart(2, '0');
+  const when = t => { const d = new Date(t); return `${d.getMonth() + 1}/${d.getDate()} ${p2(d.getHours())}:${p2(d.getMinutes())}`; };
+  $('#duelLogMeta').textContent = S.duels.length > 30 ? '최근 30판' : '';
+  $('#duelLog').innerHTML = recent.map(d => { const l = d.w === d.a ? d.b : d.a;
+    return `<li><time>${when(d.t)}</time><div class="sides"><span class="won">👑 ${esc(d.w)} <span style="color:var(--muted);font-weight:500">이김 vs</span> ${esc(l)}${d.rule && d.rule !== '자유' ? `<span class="rule">${esc(d.rule)}</span>` : ''}</span></div>
+      ${can ? `<button class="btn ghost small" data-duel-del="${esc(d.id)}">삭제</button>` : '<span></span>'}</li>`; }).join('')
+    || '<li style="display:block"><p class="empty">아직 기록이 없어요.</p></li>';
+}
+$('#duelPick').addEventListener('click', e => {
+  const p = e.target.closest('[data-duel]')?.dataset.duel; if (!p) return;
+  if (DUEL.a === p) DUEL.a = null; else if (DUEL.b === p) DUEL.b = null;
+  else if (!DUEL.a) DUEL.a = p; else if (!DUEL.b) DUEL.b = p; else DUEL.b = p; // 둘 다 찼으면 오른쪽 사람을 바꿔요
+  saveDuel(); renderDuel();
+});
+$('#duelRule').addEventListener('click', e => { const r = e.target.closest('[data-rule]')?.dataset.rule; if (r) { DUEL.rule = r; saveDuel(); renderDuel(); } });
+$('#p-duel').addEventListener('click', async e => {
+  const w = e.target.closest('[data-duelwin]'), del = e.target.closest('[data-duel-del]');
+  if (w) {
+    if (!needRoster()) return;
+    const winner = DUEL[w.dataset.duelwin]; w.disabled = true;
+    try {
+      const d = await api('addDuel', { a: DUEL.a, b: DUEL.b, win: winner, rule: DUEL.rule });
+      toast(d.dup ? '방금 같은 결과가 이미 기록돼 있어서 한 번만 남겼어요.' : `${winner} 승리! 1:1로 기록했어요.`);
+    } catch {}
+    renderAll();
+  }
+  if (del && needRoster() && confirm('이 1:1 기록을 지울까요?')) { try { await api('deleteDuel', { id: del.dataset.duelDel }); toast('1:1 기록을 지웠어요.'); } catch {} renderAll(); }
+});
+
+function renderAll() { syncPresence(); renderRoomBar(); renderRoster(); renderTeams(); renderSession(); renderStats(); renderAnalysis(); renderLog(); renderFive(); renderDuel(); }
 
 // 닉네임이 없으면 입장 화면부터. 정하면 바로 방 신호를 보내서 '구경 중'에 이름이 떠요.
 function showGate(on) {
@@ -1797,6 +1906,13 @@ $('#gateForm').addEventListener('submit', async e => {
 // ---------- 버전 · 패치노트 ----------
 // 커밋해서 올릴 때마다 맨 위에 새 항목을 더해요(규칙은 CLAUDE.md). 오른쪽 위 버전은 맨 위 항목이에요.
 const NOTES = [
+  { v: '1.6.0', d: '2026-10-22', items: [
+    '롤 1:1: 롤 내전 탭 안에 "1:1" 탭이 생겼어요. 이름을 눌러 두 명을 고르고, 이긴 사람 버튼만 누르면 기록돼요.',
+    '규칙(자유·퍼블·100CS·첫 타워)을 골라 두면 기록에 같이 남아요.',
+    '1:1 순위: 내전과 따로 쓰는 1:1 MMR로 줄 세워요. 판·승패·승률·최근 5판·연승도 보여요.',
+    '두 명을 고르면 둘의 맞대결 전적이 바로 보이고, 선수 카드에도 1:1 승패와 MMR이 붙어요.',
+    '1:1 기록·삭제는 방장(어느 방이든)만 할 수 있어요. 같은 결과를 실수로 두 번 누르면 한 번만 남아요.',
+  ] },
   { v: '1.5.0', d: '2026-10-22', items: [
     '내전 라인 배정: 팀을 섞거나 옮기거나 팀장 뽑기가 끝나면, 팀마다 탑·정글·미드·원딜·서폿까지 정해 줘요. 각자 많이 하고 잘하는 라인으로 맞춰요.',
     '방장은 이름 옆(폰은 이름 아래) 라인 칸을 눌러 바꿀 수 있어요. 고른 라인이던 팀원과 서로 바꿔요. 구경하는 사람에게도 바로 보여요.',
