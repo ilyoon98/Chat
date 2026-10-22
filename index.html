@@ -70,6 +70,10 @@ h2 .r { letter-spacing: 0; text-transform: none; font-weight: 500; font-variant-
 .who { display: flex; align-items: center; gap: 6px; min-width: 0; }
 td .tier { margin-right: 6px; }
 .tiername { color: var(--muted); font-size: 13px; }
+.champ { width: 20px; height: 20px; border-radius: 5px; vertical-align: middle; flex: none; }
+.champs { display: inline-flex; gap: 3px; vertical-align: middle; }
+.riotinfo .champs { gap: 4px; align-items: center; } .riotinfo .champ { margin-left: 4px; }
+.lane { color: var(--muted); font-size: 12px; font-weight: 500; white-space: nowrap; }
 .team li .st { text-align: right; line-height: 1.35; margin-left: auto; }
 .team li .who { flex: 1 1 64px; }
 .team h3 { flex-wrap: wrap; white-space: nowrap; }
@@ -287,7 +291,7 @@ body.gated { overflow: hidden; }
         <button class="btn ghost small" id="selAll">전체 선택</button>
         <button class="btn ghost small" id="selNone">선택 해제</button>
         <button class="btn ghost small" id="editToggle" aria-pressed="false">명단 편집</button>
-        <button class="btn ghost small" id="riotRefresh" hidden>솔랭 티어 새로고침</button>
+        <button class="btn ghost small" id="riotRefresh" hidden>롤 정보 새로고침</button>
       </div>
       <p class="note" id="rosterNote"></p>
     </div>
@@ -319,7 +323,7 @@ body.gated { overflow: hidden; }
     <div class="card">
       <h2>선수별 전적 <span class="r"><span id="statsMeta"></span> · <label>기간 <select class="period"><option value="all">전체</option><option value="session">이번 세션</option><option value="30">최근 30일</option><option value="7">최근 7일</option><option value="1">최근 24시간</option></select></label></span></h2>
       <div id="statsBox"></div>
-      <p class="note">MMR은 1000점에서 시작해서, 강한 팀을 이기면 많이 오르고 약한 팀에 지면 많이 내려가요. 실력 밸런스 섞기에 이 점수를 써요.<br>내전 티어(엠블럼)는 전체 기간 MMR 순위가 우리 중 상위 몇 %인지를 실제 롤 티어 분포에 맞춘 거예요. 1판 이상 한 사람만 붙어요.<br>솔랭은 실제 솔로랭크 티어예요. 명단 편집에서 이름을 누르고 Riot ID를 넣으면 불러와요.</p>
+      <p class="note">MMR은 1000점에서 시작해서, 강한 팀을 이기면 많이 오르고 약한 팀에 지면 많이 내려가요. 실력 밸런스 섞기에 이 점수를 써요.<br>내전 티어(엠블럼)는 전체 기간 MMR 순위가 우리 중 상위 몇 %인지를 실제 롤 티어 분포에 맞춘 거예요. 1판 이상 한 사람만 붙어요.<br>솔랭은 실제 솔로랭크 티어예요. 주 라인·모스트는 최근 솔랭·자랭·일반 20판으로 세고(칼바람·다시하기 빼고), 숙련도는 챔피언 숙련도 점수 상위 3개예요. 명단 편집에서 이름을 누르고 Riot ID를 넣으면 불러와요. 아이콘에 마우스를 올리면 자세히 나와요.</p>
     </div>
   </section>
 
@@ -473,12 +477,17 @@ function applyServer(d) {
   if (Array.isArray(rs.selected) && !selPending) S.selected = new Set(rs.selected.filter(p => typeof p === 'string'));
 }
 // 5초마다 새 기록을 확인하고, 세 번에 한 번(15초)은 "이 방을 보고 있어요" 신호도 같이 보내요.
-let pulls = 0;
+// 화면을 한동안 안 만지면 확인 간격을 늘려서 무료 사용량(Upstash·Vercel)을 아껴요. 만지면 바로 확인하고 5초로 돌아와요.
+const POLL = [[5 * 6e4, 5e3], [30 * 6e4, 30e3], [Infinity, 5 * 6e4]]; // [안 만진 지 이만큼까지, 이 간격으로 확인]
+let pulls = 0, lastInput = Date.now();
+const pollGap = () => POLL.find(([idle]) => Date.now() - lastInput < idle)[1];
 async function pull(beat) {
   const w = writes, q = new URLSearchParams();
   if (ver != null) q.set('v', ver);
   if (S.room) q.set('room', S.room);
-  if (S.room && ME.nick && (beat || pulls++ % 3 === 0)) { q.set('hb', 1); q.set('me', ME.id); q.set('nick', ME.nick); if (isHost()) q.set('host', 1); }
+  // 느리게 확인하는 동안은 '자리 비움'이라 보고 있다는 신호를 안 보내요. 방장은 자리를 지키도록 매번 보내요(10분 끊기면 방장 자리가 비어요).
+  const idle = pollGap() > POLL[0][1];
+  if (S.room && ME.nick && (beat || (idle ? isHost() : pulls++ % 3 === 0))) { q.set('hb', 1); q.set('me', ME.id); q.set('nick', ME.nick); if (isHost()) q.set('host', 1); }
   try {
     const res = await fetch('/api/data?' + q, { cache: 'no-store' });
     if (res.status === 503) return setBadge('nodb');
@@ -514,9 +523,13 @@ async function saveCurrent() {
 async function addMatch(m) { const d = await api('addMatch', { match: m }); return { id: d.id, dup: d.dup }; }
 async function deleteMatch(id) { await api('deleteMatch', { id }); }
 function startSync() {
-  pull();
-  setInterval(() => { if (document.visibilityState === 'visible') pull(); }, 5000);
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') pull(); });
+  let timer;
+  const schedule = () => { clearTimeout(timer); timer = setTimeout(() => { if (document.visibilityState === 'visible') pull(); schedule(); }, pollGap()); };
+  // 느리게 확인하던 중에 다시 만지면 바로 확인해서, 그 사이 바뀐 걸 기다리지 않고 보여줘요.
+  const wake = () => { const was = pollGap(); lastInput = Date.now(); if (was > POLL[0][1]) { pull(true); schedule(); } };
+  for (const ev of ['pointerdown', 'pointermove', 'keydown', 'wheel', 'touchstart']) addEventListener(ev, wake, { passive: true });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { lastInput = Date.now(); pull(true); schedule(); } });
+  pull(); schedule();
 }
 
 // ---------- 통계 ----------
@@ -580,6 +593,7 @@ const RIOT_DIV = { I: 1, II: 2, III: 3, IV: 4 };
 const RIOT_ERR = {
   bad_riot_id: 'Riot ID는 이름#태그 모양으로 넣어 주세요. (예: Hide on bush#KR1)',
   riot_not_found: '그 Riot ID를 찾을 수 없어요. 이름과 #태그를 확인해 주세요.',
+  riot_not_found_kr1: '태그가 없어서 #KR1로 찾아봤는데 없어요. OP.GG 등에서 #뒤 태그를 확인해서 같이 넣어 주세요.',
   no_riot_key: '서버에 RIOT_API_KEY가 없어요. README의 5단계를 해 주세요.',
   riot_key: 'Riot API 키가 만료됐거나 틀렸어요. 새 키를 RIOT_API_KEY에 넣어 주세요.',
   riot_busy: 'Riot API를 너무 많이 불렀어요. 1~2분 뒤에 다시 해 주세요.',
@@ -592,23 +606,69 @@ function soloText(p, short) {
   const t = RIOT_TIER[s.tier] ?? s.tier;
   return s.tier in { MASTER: 1, GRANDMASTER: 1, CHALLENGER: 1 } ? `${t} ${s.lp}LP` : `${t} ${RIOT_DIV[s.rank] ?? s.rank}${short ? '' : ` · ${s.lp}LP`}`;
 }
+// 주 라인·모스트는 최근 협곡 20판(솔랭·자랭·일반)으로 서버가 세어 둬요: n(판 수), lanes, most [[챔피언, 판, 승]], q [솔랭, 자랭, 일반]
+const LANE = { TOP: '탑', JUNGLE: '정글', MIDDLE: '미드', BOTTOM: '원딜', UTILITY: '서폿' };
+// '미드 60% · 정글 25%' (두 번째 라인은 25% 이상일 때만). short면 '미드·정글'.
+function laneText(p, short) {
+  const r = S.riot[p]; if (!r?.n) return '';
+  const top = Object.entries(r.lanes || {}).sort((a, b) => b[1] - a[1]).filter(([, n], i) => i === 0 || (i === 1 && n / r.n >= .25));
+  return top.map(([k, n]) => short ? LANE[k] : `${LANE[k]} ${pct(n, r.n)}%`).join(short ? '·' : ' · ');
+}
+// 챔피언 이름·아이콘은 Data Dragon(라이엇 공식 CDN, 키 필요 없음)에서 받아요. 같은 버전이면 이 기기에 저장해 둔 걸 써요.
+const DD = 'https://ddragon.leagueoflegends.com';
+let CHAMP = null, champVer = '', champTried = 0; // 챔피언 번호 → [영문 id(아이콘 파일 이름), 한글 이름]
+async function loadChamps() {
+  if (CHAMP || Date.now() - champTried < 6e4) return;
+  champTried = Date.now();
+  try {
+    const v = (await (await fetch(`${DD}/api/versions.json`)).json())[0];
+    let c = null; try { c = JSON.parse(localStorage.getItem(LS + ':champs')); } catch {}
+    if (c?.v !== v) {
+      const d = (await (await fetch(`${DD}/cdn/${v}/data/ko_KR/champion.json`)).json()).data;
+      c = { v, m: Object.fromEntries(Object.values(d).map(x => [x.key, [x.id, x.name]])) };
+      try { localStorage.setItem(LS + ':champs', JSON.stringify(c)); } catch {}
+    }
+    CHAMP = c.m; champVer = v; renderAll();
+  } catch {}
+}
+const champName = id => CHAMP?.[id]?.[1] ?? '';
+function champIcon(id, tip) {
+  const c = CHAMP?.[id]; if (!c) { loadChamps(); return ''; }
+  return `<img class="champ" src="${DD}/cdn/${champVer}/img/champion/${c[0]}.png" alt="${esc(c[1])}" title="${esc(c[1] + (tip ? ' · ' + tip : ''))}" width="20" height="20" loading="lazy">`;
+}
+const man = n => n >= 1e4 ? `${+(n / 1e4).toFixed(1)}만` : String(n); // 123456 → '12.3만'
+const mostIcons = p => (S.riot[p]?.most || []).map(([c, g, w]) => champIcon(c, `최근 ${g}판 ${pct(w, g)}%`)).join('');
+const mastIcons = p => (S.riot[p]?.mast || []).map(([c, lv, pts]) => champIcon(c, `숙련도 ${lv}레벨 · ${man(pts)}점`)).join('');
+// 명단 편집에서 이름을 눌렀을 때 보이는 롤 정보
+function riotInfo(p) {
+  const r = S.riot[p], item = (c, text) => `<span class="champs">${champIcon(c)}${esc(champName(c))} ${text}</span>`;
+  const lines = [`솔랭 <b>${esc(soloText(p))}</b>${r.solo ? ` · ${r.solo.w}승 ${r.solo.l}패` : ''} · ${ago(r.at)} 불러옴`];
+  if (r.n) lines.push(`주 라인 <b>${esc(laneText(p))}</b> · 최근 ${r.n}판(솔랭 ${r.q[0]} · 자랭 ${r.q[1]} · 일반 ${r.q[2]})`);
+  else if (r.n === 0) lines.push('최근 솔랭·자랭·일반 판이 없어서 주 라인·모스트는 비워 둬요.');
+  if (r.most?.length) lines.push('모스트 ' + r.most.map(([c, g, w]) => item(c, `${g}판 ${pct(w, g)}%`)).join(' · '));
+  if (r.mast?.length) lines.push('숙련도 ' + r.mast.map(([c, , pts]) => item(c, `${man(pts)}점`)).join(' · '));
+  if (!r.gAt) lines.push('최근 판을 아직 다 못 불러왔어요. 2분쯤 뒤에 알아서 이어서 불러와요.');
+  return lines.join('<br>');
+}
 const ago = t => { const m = Math.round((Date.now() - t) / 6e4); return m < 1 ? '방금' : m < 60 ? `${m}분 전` : m < 1440 ? `${Math.round(m / 60)}시간 전` : `${Math.round(m / 1440)}일 전`; };
-// 6시간 넘은 티어가 있으면 서버에 새로 불러 달라고 해요. 한 화면에서 한 시간에 한 번만 물어봐요.
-const RIOT_STALE = 6 * 36e5;
-let riotTried = 0;
+// 6시간 넘었거나 최근 판을 다 못 불러온 사람이 있으면 서버에 불러 달라고 해요.
+// 한 화면에서 한 시간에 한 번만 묻고, 서버가 아직 남았다고(more) 하면 2분 반 뒤에 이어서 물어봐요(키 제한: 2분 100번).
+const RIOT_STALE = 6 * 36e5, RIOT_MORE = 150e3;
+let riotNext = 0;
+const riotAgain = d => { if (d?.more) riotNext = Date.now() + RIOT_MORE; };
 function autoRefreshRiot() {
-  if (status !== 'online' || Date.now() - riotTried < 36e5) return;
-  if (!Object.values(S.riot).some(r => Date.now() - (r.at || 0) >= RIOT_STALE)) return;
-  riotTried = Date.now();
-  api('refreshRiot', {}, true).then(renderAll, () => {});
+  if (status !== 'online' || Date.now() < riotNext) return;
+  if (!Object.values(S.riot).some(r => Date.now() - Math.min(r.at || 0, r.gAt || 0) >= RIOT_STALE)) return;
+  riotNext = Date.now() + 36e5;
+  api('refreshRiot', {}, true).then(d => { riotAgain(d); renderAll(); }, () => {});
 }
 async function linkRiot(name, riotId) {
-  if (riotId && !/^[^#]{1,16}#[^\s#]{1,5}$/u.test(riotId.replace(/\s*#\s*/, '#'))) return toast(RIOT_ERR.bad_riot_id);
+  if (riotId && !/^[^#]{1,16}(#[^\s#]{1,5})?$/u.test(riotId.replace(/\s*#\s*/, '#'))) return toast(RIOT_ERR.bad_riot_id); // 태그가 없으면 서버가 #KR1을 붙여요
   const btn = $('#riotBtn'); if (btn) { btn.disabled = true; btn.textContent = '불러오는 중…'; }
   try {
-    await api('setRiot', { name, riotId });
-    const r = S.riot[name];
-    toast(!riotId ? `${name}의 Riot ID 연결을 끊었어요.` : r ? `${name} = ${r.id} · 솔랭 ${soloText(name)}` : '연결했어요.');
+    riotAgain(await api('setRiot', { name, riotId }));
+    const r = S.riot[name], lane = laneText(name, true);
+    toast(!riotId ? `${name}의 Riot ID 연결을 끊었어요.` : r ? `${name} = ${r.id} · 솔랭 ${soloText(name)}${lane ? ` · 주 라인 ${lane}` : ''}` : '연결했어요.');
   } catch {}
   renderAll();
 }
@@ -639,14 +699,14 @@ function renderRoster() {
   $('#shuffle').disabled = n < 2;
   $('#editToggle').setAttribute('aria-pressed', S.editing); $('#editToggle').textContent = S.editing ? '편집 끝' : '명단 편집';
   $('#riotRefresh').hidden = !S.editing || !Object.keys(S.riot).length;
-  $('#rosterNote').textContent = S.editing ? '이름을 누르면 이름을 바꾸거나 명단에서 빼거나, Riot ID를 연결해서 솔랭 티어를 불러올 수 있어요. 이미 있는 이름으로 바꾸면 두 사람 전적이 합쳐져요.'
+  $('#rosterNote').textContent = S.editing ? '이름을 누르면 이름을 바꾸거나 명단에서 빼거나, Riot ID를 연결해서 솔랭 티어·주 라인·모스트·숙련도를 불러올 수 있어요. 이미 있는 이름으로 바꾸면 두 사람 전적이 합쳐져요.'
     : host ? '이름을 누르면 아래 \'오늘 할 사람\' 칸으로 내려가요. 거기서 다시 누르면 명단으로 돌아와요. 명단은 저장돼서 다음에도 그대로 있어요.'
     : '구경 중이에요. 오늘 할 사람과 팀은 이 방 방장이 정해요.';
   const t = S.editTarget, r = t && S.riot[t];
   $('#editBox').innerHTML = S.editing && t
     ? `<form class="add editform" id="renameForm"><input id="renameInput" type="text" maxlength="16" value="${esc(t)}" aria-label="새 이름"><button class="btn" type="submit">이름 바꾸기</button><button class="btn ghost" type="button" id="removeBtn">명단에서 빼기</button></form>
-      <form class="add editform" id="riotForm"><input id="riotInput" type="text" maxlength="30" value="${esc(r?.id ?? '')}" placeholder="Riot ID (이름#태그)" aria-label="${esc(t)}의 Riot ID" autocomplete="off"><button class="btn" type="submit" id="riotBtn">${r ? '다시 불러오기' : '솔랭 티어 불러오기'}</button>${r ? '<button class="btn ghost" type="button" id="riotUnlink">연결 끊기</button>' : ''}</form>
-      <p class="note riotinfo">${r ? `솔랭 <b>${esc(soloText(t))}</b>${r.solo ? ` · ${r.solo.w}승 ${r.solo.l}패` : ''} · ${ago(r.at)} 불러옴` : '롤 닉네임(이름#태그)을 넣으면 솔로랭크 티어를 불러와서 전적 표와 팀장 뽑기에 보여줘요.'}</p>` : '';
+      <form class="add editform" id="riotForm"><input id="riotInput" type="text" maxlength="30" value="${esc(r?.id ?? '')}" placeholder="Riot ID (이름#태그 · 태그 없으면 #KR1)" aria-label="${esc(t)}의 Riot ID" autocomplete="off"><button class="btn" type="submit" id="riotBtn">${r ? '다시 불러오기' : '롤 정보 불러오기'}</button>${r ? '<button class="btn ghost" type="button" id="riotUnlink">연결 끊기</button>' : ''}</form>
+      <p class="note riotinfo">${r ? riotInfo(t) : '롤 닉네임(이름#태그)을 넣으면 솔랭 티어, 주 라인·모스트(최근 솔랭·자랭·일반 20판), 숙련도를 불러와서 전적 표와 팀 칸에 보여줘요.'}</p>` : '';
 }
 $('#roster').addEventListener('click', async e => {
   const b = e.target.closest('button[data-i]'); if (!b) return;
@@ -705,7 +765,11 @@ $('#editBox').addEventListener('click', e => {
 });
 $('#riotRefresh').onclick = async () => {
   const btn = $('#riotRefresh'); btn.disabled = true;
-  try { const d = await api('refreshRiot', { force: true }); toast(d.refreshed ? `${d.refreshed}명의 솔랭 티어를 새로 불러왔어요.` : '방금 불러온 티어라서 그대로예요. 10분 뒤에 다시 눌러 주세요.'); } catch {}
+  try {
+    const d = await api('refreshRiot', { force: true }); riotAgain(d);
+    toast(d.refreshed ? `${d.refreshed}명의 롤 정보를 새로 불러왔어요.${d.more ? ' 나머지는 2분쯤 뒤에 이어서 불러와요.' : ''}`
+      : d.more ? '방금 많이 불러서 잠깐 쉬는 중이에요. 2분쯤 뒤에 알아서 이어서 불러와요.' : '방금 불러온 정보라서 그대로예요. 10분 뒤에 다시 눌러 주세요.');
+  } catch {}
   btn.disabled = false; renderAll();
 };
 $('#addForm').addEventListener('submit', e => {
@@ -760,7 +824,7 @@ function renderTeams(shuffling) {
   // 이름 칸은 끌어서 옮기는 손잡이, 옆 화살표 버튼은 눌러서 상대 팀으로 보내기예요. 둘 다 방장만.
   const swapBtn = (p, side) => rec || shuffling || !host ? ''
     : `<button class="swap" data-swap="${esc(p)}" data-side="${side}" title="상대 팀으로" aria-label="${esc(p)} ${side === 'blue' ? '2팀' : '1팀'}으로 보내기">${side === 'blue' ? '→' : '←'}</button>`;
-  const li = (p, side) => { const s = st.P[p], x = ss.P[p]; return `<li><div class="pl" data-p="${esc(p)}" data-side="${side}"><span class="who">${tierIcon(T[p])}<span class="nm">${esc(p)}</span></span><span class="st">${s?.g ? `${pct(s.w, s.g)}% · ${s.g}판` : '첫 판'}${x?.g ? `<br><span class="sess">이번 ${x.w}승 ${x.g - x.w}패</span>` : ''}</span></div>${swapBtn(p, side)}</li>`; };
+  const li = (p, side) => { const s = st.P[p], x = ss.P[p]; return `<li><div class="pl" data-p="${esc(p)}" data-side="${side}"><span class="who">${tierIcon(T[p])}<span class="nm">${esc(p)}</span><span class="lane">${laneText(p, true)}</span></span><span class="st">${s?.g ? `${pct(s.w, s.g)}% · ${s.g}판` : '첫 판'}${x?.g ? `<br><span class="sess">이번 ${x.w}승 ${x.g - x.w}패</span>` : ''}</span></div>${swapBtn(p, side)}</li>`; };
   const avg = t => t.reduce((s, p) => s + mmrOf(st, p), 0) / (t.length || 1);
   const eb = 1 / (1 + Math.pow(10, (avg(c.red) - avg(c.blue)) / 400)), both = c.blue.length && c.red.length;
   // 한쪽 팀을 다 비워도 빈 팀 칸은 남겨서 다시 옮겨 올 수 있게 해요.
@@ -976,7 +1040,7 @@ function renderDraft() {
   const d = S.draft, box = $('#teamsBox'), st = computeStats(S.players, S.matches), T = tierMap(st);
   const byMmr = [...d.names].sort((a, b) => mmrOf(st, b) - mmrOf(st, a));
   const rec = p => { const s = st.P[p]; return s?.g ? `${pct(s.w, s.g)}% · MMR ${Math.round(s.mmr)}` : '첫 판'; };
-  const info = (p, sep = ' · ') => { const solo = soloText(p, true); return esc(rec(p)) + (solo ? sep + esc(solo) : ''); };
+  const info = (p, sep = ' · ') => { const riot = [soloText(p, true), laneText(p, true)].filter(Boolean).join(' · '); return esc(rec(p)) + (riot ? sep + esc(riot) : ''); };
   const head = `<div class="row draft-bar"><b class="draft-title">팀장 뽑기</b><button class="btn ghost small" id="draftUndo"${d.first ? '' : ' hidden'}>↶ 되돌리기</button><button class="btn ghost small" id="draftCancel">그만하기</button></div>`;
   if (!d.first) {
     const sel = side => `<select data-cap="${side}" aria-label="${TEAM[side]} 팀장">${byMmr.map(p => `<option value="${esc(p)}"${p === d.cap[side] ? ' selected' : ''}>${esc(p)} (${info(p)})</option>`).join('')}</select>`;
@@ -1008,7 +1072,7 @@ function renderDraft() {
   const chip = p => {
     const side = d.picks.blue.includes(p) ? 'blue' : d.picks.red.includes(p) ? 'red' : null;
     return side ? `<span class="chip taken ${side}" aria-hidden="true">${tierIcon(T[p])}${esc(p)}<small>${side === 'blue' ? '1팀' : '2팀'}</small></span>`
-      : `<button class="chip" data-pick="${esc(p)}" aria-label="${esc(p)} 뽑기">${tierIcon(T[p])}${esc(p)}<small>${info(p, '<br>')}</small></button>`;
+      : `<button class="chip" data-pick="${esc(p)}" aria-label="${esc(p)} 뽑기">${tierIcon(T[p])}${esc(p)}<span class="champs">${mostIcons(p)}</span><small>${info(p, '<br>')}</small></button>`;
   };
   box.innerHTML = `<div class="draft">${head}
     <p class="draft-turn">${title}<small>${sub}</small></p>
@@ -1049,9 +1113,12 @@ function renderStats() {
   const key = { rate: p => p.g ? p.w / p.g + p.g * 1e-4 : -1, g: p => p.g, mmr: p => p.mmr, name: p => 0 }[sortKey];
   rows.sort((a, b) => sortKey === 'name' ? a.name.localeCompare(b.name, 'ko') : key(b) - key(a));
   const th = (k, label, cls = '') => `<th class="${cls}"><button data-sort="${k}" aria-pressed="${sortKey === k}">${label}</button></th>`;
-  const solo = Object.keys(S.riot).length > 0; // 아무도 Riot ID를 연결 안 했으면 솔랭 칸은 숨겨요
-  $('#statsBox').innerHTML = `<div class="tbl-wrap"><table><thead><tr><th></th>${th('name', '선수')}<th>내전 티어</th>${solo ? '<th>솔랭</th>' : ''}${th('g', '판', 'num')}<th class="num">승-패</th>${th('rate', '승률')}${th('mmr', 'MMR', 'num')}<th>최근 5판</th></tr></thead><tbody>${
-    rows.map((p, i) => `<tr><td class="rank">${p.g ? i + 1 : ''}</td><td>${tierIcon(T[p.name])}<b>${esc(p.name)}</b></td><td class="tiername">${T[p.name]?.name ?? '—'}</td>${solo ? `<td class="tiername"${S.riot[p.name] ? ` title="${esc(S.riot[p.name].id)}"` : ''}>${esc(soloText(p.name)) || '—'}</td>` : ''}<td class="num">${p.g}</td><td class="num">${p.w}-${p.g - p.w}</td>
+  // 아무도 Riot ID를 연결 안 했으면 솔랭 칸은 숨겨요. 주 라인·모스트·숙련도도 불러온 사람이 있을 때만.
+  const R = Object.values(S.riot), solo = R.length > 0, lane = R.some(r => r.n), most = R.some(r => r.most?.length), mast = R.some(r => r.mast?.length);
+  const riotCols = p => (solo ? `<td class="tiername"${S.riot[p] ? ` title="${esc(S.riot[p].id)}"` : ''}>${esc(soloText(p)) || '—'}</td>` : '')
+    + (lane ? `<td class="tiername">${esc(laneText(p)) || '—'}</td>` : '') + (most ? `<td><span class="champs">${mostIcons(p)}</span></td>` : '') + (mast ? `<td><span class="champs">${mastIcons(p)}</span></td>` : '');
+  $('#statsBox').innerHTML = `<div class="tbl-wrap"><table><thead><tr><th></th>${th('name', '선수')}<th>내전 티어</th>${solo ? '<th>솔랭</th>' : ''}${lane ? '<th>주 라인</th>' : ''}${most ? '<th>모스트</th>' : ''}${mast ? '<th>숙련도</th>' : ''}${th('g', '판', 'num')}<th class="num">승-패</th>${th('rate', '승률')}${th('mmr', 'MMR', 'num')}<th>최근 5판</th></tr></thead><tbody>${
+    rows.map((p, i) => `<tr><td class="rank">${p.g ? i + 1 : ''}</td><td>${tierIcon(T[p.name])}<b>${esc(p.name)}</b></td><td class="tiername">${T[p.name]?.name ?? '—'}</td>${riotCols(p.name)}<td class="num">${p.g}</td><td class="num">${p.w}-${p.g - p.w}</td>
       <td><div class="rate"><span style="width:38px;text-align:right">${p.g ? pct(p.w, p.g) + '%' : '—'}</span><span class="track"><i style="width:${pct(p.w, p.g)}%;background:${p.w / p.g >= .5 ? 'var(--good)' : 'var(--bad)'}"></i></span></div></td>
       <td class="num">${p.g ? Math.round(p.mmr) : '—'}</td><td><span class="form">${p.form.slice(-5).map(f => `<i class="${f ? 'w' : 'l'}">${f ? '승' : '패'}</i>`).join('')}</span>${streak(p.form)}</td></tr>`).join('')
   }</tbody></table></div>`;

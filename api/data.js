@@ -5,7 +5,7 @@ const url = process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL;
 const token = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN;
 const redis = globalThis.__redis ?? (url && token ? new Redis({ url, token }) : null);
 
-const K = { players: 'lol:players', matches: 'lol:matches', ver: 'lol:ver', riot: 'lol:riot', riotLock: 'lol:riot:lock', rooms: 'lol:rooms', hostSeen: 'lol:hostseen' };
+const K = { players: 'lol:players', matches: 'lol:matches', ver: 'lol:ver', riot: 'lol:riot', riotLock: 'lol:riot:lock', riotRest: 'lol:riot:rest', riotGames: 'lol:riot:games', rooms: 'lol:rooms', hostSeen: 'lol:hostseen' };
 // 방마다 따로인 것: 오늘 할 사람(정렬 집합), 팀 배치, 지금 보고 있는 사람(정렬 집합, 점수 = 마지막 신호 시각)
 const RK = { sel: r => `lol:room:${r}:sel`, cur: r => `lol:room:${r}:cur`, seen: r => `lol:room:${r}:seen` };
 const MAX_MATCHES = 5000;
@@ -15,68 +15,133 @@ const HOST_AWAY = 10 * 6e4;   // 방장 신호가 10분 끊기면 방장 자리�
 const VIEW_FRESH = 40e3;      // 화면은 15초마다 신호를 보내요. 40초 안에 신호가 있으면 '보고 있는 사람'
 const ROOM_IDLE = 12 * 36e5;  // 12시간 동안 아무 일 없는 방은 정리해요
 
-// ---------- Riot API (솔랭 티어) ----------
+// ---------- Riot API (솔랭 티어 · 주 라인 · 모스트 · 숙련도) ----------
 // RIOT_API_KEY 환경변수에 developer.riotgames.com에서 받은 키를 넣어요. 키는 서버에서만 써서 화면 코드에는 안 보여요.
 const RIOT_PLATFORM = 'kr', RIOT_REGION = 'asia';
-const RIOT_STALE = 6 * 36e5; // 이보다 오래된 티어는 누가 사이트를 열 때 새로 불러와요
-const RIOT_FORCE_GAP = 10 * 6e4; // 새로고침 버튼은 10분에 한 번까지 (개발 키는 2분에 100번 제한)
+const RIOT_STALE = 6 * 36e5; // 이보다 오래된 정보는 누가 사이트를 열 때 새로 불러와요
+const RIOT_FORCE_GAP = 10 * 6e4; // 새로고침 버튼은 10분에 한 번까지
+// 키 제한은 1초 20번, 2분 100번이에요. 한 번 새로고침에 80번까지만 부르고, 부른 만큼 쉬었다가 이어서 불러요.
+const RIOT_BUDGET = 80, RIOT_LINK_BUDGET = 40, RIOT_REST = 2 * 6e4;
+// 주 라인·모스트는 최근 협곡 20판(솔랭·자랭·일반)으로 세요. 칼바람·아레나 같은 건 라인이 없어서 안 불러요.
+const RIOT_GAMES = 20;
+const RIOT_QUERIES = ['type=ranked', 'queue=400', 'queue=480', 'queue=490']; // 솔랭·자랭 / 일반 드래프트 / 신속 대전 / 빠른 대전
+const RIOT_LANES = ['TOP', 'JUNGLE', 'MIDDLE', 'BOTTOM', 'UTILITY'];
 class RiotError extends Error { constructor(code, status) { super(code); this.code = code; this.status = status; } }
-async function riot(host, path) {
+// ctx = { left: 남은 횟수, used: 부른 횟수, stop: 막힌 이유 }. 한 번 막히면 그 요청에선 더 부르지 않아요.
+// 1초 20번 제한: 같은 서버에서 같이 부르는 요청끼리도 60ms씩 간격을 둬요.
+let riotSlot = 0;
+async function riot(host, path, ctx) {
+  if (ctx.stop) throw ctx.stop;
+  if (ctx.left-- <= 0) throw (ctx.stop = new RiotError('riot_busy'));
+  const now = Date.now(), at = Math.max(now, riotSlot);
+  riotSlot = at + 60; ctx.used = (ctx.used || 0) + 1;
+  if (at > now) await new Promise(r => setTimeout(r, at - now));
   const r = await fetch(`https://${host}.api.riotgames.com${path}`, { headers: { 'X-Riot-Token': process.env.RIOT_API_KEY } });
   if (r.status === 404) return null;
   if (!r.ok) throw new RiotError(r.status === 429 ? 'riot_busy' : r.status === 401 || r.status === 403 ? 'riot_key' : 'riot_down', r.status);
   return r.json();
 }
-async function riotAccount(id) {
+// 숙련도·최근 판은 막혀도(횟수를 다 썼거나 Riot이 바쁨) 그때까지 불러온 걸 남기고, 다음 새로고침에서 이어서 불러요.
+const soft = (ctx, p) => p.catch(err => {
+  if (!(err instanceof RiotError) || err.code === 'riot_key') throw err;
+  ctx.stop ??= err;
+});
+async function riotAccount(id, ctx) {
   const [name, tag] = id.split('#');
-  const a = await riot(RIOT_REGION, `/riot/account/v1/accounts/by-riot-id/${encodeURIComponent(name)}/${encodeURIComponent(tag)}`);
+  const a = await riot(RIOT_REGION, `/riot/account/v1/accounts/by-riot-id/${encodeURIComponent(name)}/${encodeURIComponent(tag)}`, ctx);
   return a && { id: `${a.gameName}#${a.tagLine}`, puuid: a.puuid };
 }
-async function riotSolo(puuid) {
-  const s = (await riot(RIOT_PLATFORM, `/lol/league/v4/entries/by-puuid/${encodeURIComponent(puuid)}`))?.find(e => e.queueType === 'RANKED_SOLO_5x5');
+async function riotSolo(puuid, ctx) {
+  const s = (await riot(RIOT_PLATFORM, `/lol/league/v4/entries/by-puuid/${encodeURIComponent(puuid)}`, ctx))?.find(e => e.queueType === 'RANKED_SOLO_5x5');
   return s ? { tier: s.tier, rank: s.rank, lp: s.leaguePoints, w: s.wins, l: s.losses } : null; // null = 이번 시즌 솔랭 배치 전(언랭)
 }
+// 숙련도 높은 챔피언 3개: [[챔피언 번호, 레벨, 점수], …]
+async function riotMastery(puuid, ctx) {
+  const m = await riot(RIOT_PLATFORM, `/lol/champion-mastery/v4/champion-masteries/by-puuid/${encodeURIComponent(puuid)}/top?count=3`, ctx);
+  return (m || []).map(c => [c.championId, c.championLevel, c.championPoints]);
+}
+// 최근 협곡 판을 세서 주 라인·모스트를 만들어요. 한 판씩 불러온 결과는 K.riotGames에 PUUID별로 남겨서, 다음엔 새 판만 불러요.
+// 남기는 모양: [매치 id, 챔피언 번호, 라인, 이김 1/0, 큐 번호]. 다시하기(조기 항복)는 라인을 ''로 남겨서 세지 않아요.
+async function riotGames(puuid, ctx) {
+  const P = encodeURIComponent(puuid), num = id => Number(String(id).split('_')[1]) || 0;
+  const lists = await Promise.all(RIOT_QUERIES.map(q => riot(RIOT_REGION, `/lol/match/v5/matches/by-puuid/${P}/ids?${q}&count=${RIOT_GAMES}`, ctx)));
+  const ids = [...new Set(lists.flat().filter(Boolean))].sort((a, b) => num(b) - num(a)).slice(0, RIOT_GAMES);
+  const have = new Map((parse(await redis.hget(K.riotGames, puuid))?.g || []).map(x => [x[0], x]));
+  await Promise.all(ids.filter(id => !have.has(id)).map(id => soft(ctx, riot(RIOT_REGION, `/lol/match/v5/matches/${id}`, ctx).then(m => {
+    const p = m?.info?.participants?.find(x => x.puuid === puuid);
+    have.set(id, p ? [id, p.championId, p.gameEndedInEarlySurrender ? '' : p.teamPosition || '', p.win ? 1 : 0, m.info.queueId] : [id, 0, '', 0, 0]);
+  }))));
+  const g = ids.map(id => have.get(id)).filter(Boolean); // 못 불러온 판은 빼고 저장해서 다음에 다시 불러요
+  await redis.hset(K.riotGames, { [puuid]: { g } });
+  const ok = g.filter(x => RIOT_LANES.includes(x[2])), lanes = {}, champs = {}, q = [0, 0, 0];
+  for (const [, c, lane, w, queue] of ok) {
+    lanes[lane] = (lanes[lane] || 0) + 1;
+    (champs[c] ??= [c, 0, 0])[1]++; champs[c][2] += w;
+    q[queue === 420 ? 0 : queue === 440 ? 1 : 2]++;
+  }
+  // n = 센 판 수, lanes = 라인별 판 수, most = 많이 한 챔피언 3개 [번호, 판, 승], q = [솔랭, 자랭, 일반] 판 수
+  return { n: ok.length, lanes, most: Object.values(champs).sort((a, b) => b[1] - a[1] || b[2] - a[2]).slice(0, 3), q, done: g.length === ids.length };
+}
 // 계정을 못 찾으면 null. PUUID는 API 키(앱)마다 달라서, 키를 바꾸면 예전 PUUID가 400으로 거절돼요. 그땐 Riot ID로 다시 찾아요.
-async function riotLookup(e) {
-  let acc = e.puuid ? e : await riotAccount(e.id);
+// 돌려주는 모양: { id, puuid, solo, at(티어 시각), mast, n, lanes, most, q, gAt(최근 판까지 다 불러온 시각) }
+async function riotLookup(e, ctx) {
+  let acc = e.puuid ? e : await riotAccount(e.id, ctx);
   if (!acc) return null;
   let solo;
-  try { solo = await riotSolo(acc.puuid); } catch (err) {
+  try { solo = await riotSolo(acc.puuid, ctx); } catch (err) {
     if (err.status !== 400 || !e.puuid) throw err;
-    if (!(acc = await riotAccount(e.id))) return null;
-    solo = await riotSolo(acc.puuid);
+    if (!(acc = await riotAccount(e.id, ctx))) return null;
+    solo = await riotSolo(acc.puuid, ctx);
   }
-  return { id: acc.id, puuid: acc.puuid, solo, at: Date.now() };
+  const out = { ...e, id: acc.id, puuid: acc.puuid, solo, at: Date.now() };
+  const mast = await soft(ctx, riotMastery(acc.puuid, ctx));
+  if (mast) out.mast = mast;
+  const games = await soft(ctx, riotGames(acc.puuid, ctx));
+  if (games) { const { done, ...stats } = games; Object.assign(out, stats); if (done && mast) out.gAt = Date.now(); }
+  return out;
 }
-// "Hide on bush #KR1" → "Hide on bush#KR1"
-const cleanRiotId = v => { const m = typeof v === 'string' && v.trim().match(/^([^#]{1,16}?)\s*#\s*([^\s#]{1,5})$/u); return m ? `${m[1].trim()}#${m[2]}` : null; };
-// 이름 → { id: 'Riot ID', puuid, solo, at }. 한 사람씩 따로 저장하는 해시라서 동시에 고쳐도 서로 안 덮어써요.
+const riotStaleAt = e => Math.min(e.at || 0, e.gAt || 0);
+// "Hide on bush #KR1" → "Hide on bush#KR1". 태그 없이 이름만 넣으면 한국 계정에 가장 흔한 #KR1을 붙여요.
+// (Riot API엔 이름 검색이 없어서 이름#태그가 정확해야 찾을 수 있어요)
+const RIOT_DEFAULT_TAG = 'KR1';
+const cleanRiotId = v => {
+  const m = typeof v === 'string' && v.trim().match(/^([^#]{1,16}?)\s*(?:#\s*([^\s#]{1,5}))?$/u);
+  return m ? `${m[1].trim()}#${m[2] ?? RIOT_DEFAULT_TAG}` : null;
+};
+// 이름 → 위 riotLookup 모양. 한 사람씩 따로 저장하는 해시라서 동시에 고쳐도 서로 안 덮어써요.
 async function readRiot() {
   const hash = await redis.hgetall(K.riot);
   return Object.fromEntries(Object.entries(hash || {}).map(([n, e]) => [n, typeof e === 'string' ? JSON.parse(e) : e]));
 }
-// 오래된 사람부터 10명씩, 0.6초에 10번 넘지 않게 불러와요(개발 키 제한: 1초 20번). 몇 명 새로 불러왔는지 돌려줘요.
+// 연결을 끊거나 명단에서 빼면 남겨 둔 최근 판도 지워요 (같은 계정을 쓰는 다른 이름이 있으면 둬요)
+async function dropRiot(name) {
+  const e = parse(await redis.hget(K.riot, name));
+  await redis.hdel(K.riot, name);
+  if (e?.puuid && !Object.values(await readRiot()).some(x => x.puuid === e.puuid)) await redis.hdel(K.riotGames, e.puuid);
+}
+// 오래된 사람부터 불러와요. { n: 새로 불러온 사람 수, more: 아직 남은 사람이 있으면 true(쉬었다가 이어서) }
 async function refreshRiot(gap) {
   const now = Date.now();
-  if (now - (Number(await redis.get(K.riotLock)) || 0) < 60e3) return 0; // 여러 명이 동시에 열어도 한 번만
-  const stale = Object.entries(await readRiot()).filter(([, e]) => now - (e.at || 0) >= gap).sort((a, b) => (a[1].at || 0) - (b[1].at || 0));
-  if (!stale.length) return 0;
+  const stale = Object.entries(await readRiot()).filter(([, e]) => now - riotStaleAt(e) >= gap).sort((a, b) => riotStaleAt(a[1]) - riotStaleAt(b[1]));
+  if (!stale.length) return { n: 0, more: false };
+  // 여러 명이 동시에 열어도 한 번만, 많이 부른 뒤엔 쉬는 시간이 끝날 때까지 기다려요
+  if (now - (Number(await redis.get(K.riotLock)) || 0) < 60e3 || now < (Number(await redis.get(K.riotRest)) || 0)) return { n: 0, more: true };
   await redis.set(K.riotLock, now);
-  const done = {};
+  const done = {}, ctx = { left: RIOT_BUDGET };
   try {
-    for (let i = 0; i < stale.length; i += 10) {
-      const chunk = stale.slice(i, i + 10);
-      const got = await Promise.all([...chunk.map(([, e]) => riotLookup(e)), new Promise(r => setTimeout(r, 600))]);
-      // 계정을 못 찾으면(이름을 바꿨거나 키가 바뀜) 예전 티어를 두고 시각만 바꿔서 계속 다시 묻지 않게 해요.
-      chunk.forEach(([n, e], j) => { done[n] = got[j] ?? { ...e, at: now }; });
+    for (const [n, e] of stale) {
+      // 계정을 못 찾으면(이름을 바꿨거나 키가 바뀜) 예전 정보를 두고 시각만 바꿔서 계속 다시 묻지 않게 해요.
+      done[n] = (await riotLookup(e, ctx)) ?? { ...e, at: now, gAt: now };
+      if (ctx.stop) break;
     }
   } catch (err) {
     if (!(err instanceof RiotError) || !Object.keys(done).length) throw err; // 중간에 막히면 거기까지만 저장
   } finally {
     await redis.set(K.riotLock, 0);
+    if (ctx.used) await redis.set(K.riotRest, Date.now() + Math.round(RIOT_REST * ctx.used / 100));
   }
-  await redis.hset(K.riot, done);
-  return Object.keys(done).length;
+  if (Object.keys(done).length) await redis.hset(K.riot, done);
+  return { n: Object.keys(done).length, more: stale.some(([n]) => !(done[n]?.gAt >= now)) };
 }
 
 const cleanName = v => (typeof v === 'string' && v.trim() ? v.trim().slice(0, 16) : null);
@@ -174,7 +239,7 @@ export default async function handler(req, res) {
       if (!room) return res.status(404).json({ error: 'no_room' });
       if (!isHost(room)) return notHost();
     }
-    let id, dup = false, refreshed, roomId = room?.id;
+    let id, dup = false, refreshed, more, roomId = room?.id;
     switch (b.action) {
       case 'createRoom': {
         // 새 방을 만든 사람이 방장이에요. 오래 조용했던 방은 이때 같이 지워요.
@@ -224,7 +289,7 @@ export default async function handler(req, res) {
         if (!name) return bad(res);
         await redis.set(K.players, (await readPlayers()).filter(p => p !== name));
         for (const r of rooms) await redis.zrem(RK.sel(r.id), name);
-        await redis.hdel(K.riot, name);
+        await dropRiot(name);
         break;
       }
       case 'select': {
@@ -265,22 +330,29 @@ export default async function handler(req, res) {
         break;
       }
       case 'setRiot': {
-        // 명단의 한 사람에 Riot ID를 연결하고 솔랭 티어를 바로 불러와요. riotId를 비우면 연결을 끊어요.
+        // 명단의 한 사람에 Riot ID를 연결하고 솔랭 티어·숙련도·최근 판을 바로 불러와요. riotId를 비우면 연결을 끊어요.
         const name = cleanName(b.name);
         if (!name || !(await readPlayers()).includes(name)) return bad(res);
-        if (!String(b.riotId ?? '').trim()) { await redis.hdel(K.riot, name); break; }
+        if (!String(b.riotId ?? '').trim()) { await dropRiot(name); break; }
         const riotId = cleanRiotId(b.riotId);
         if (!riotId) return res.status(424).json({ error: 'bad_riot_id' });
         if (!process.env.RIOT_API_KEY) return res.status(424).json({ error: 'no_riot_key' });
-        const e = await riotLookup({ id: riotId });
-        if (!e) return res.status(424).json({ error: 'riot_not_found' });
+        // 티어는 꼭 불러오고, 최근 판을 다 못 부르면 나머지는 새로고침이 이어서 불러요.
+        const ctx = { left: RIOT_LINK_BUDGET };
+        let e;
+        try { e = await riotLookup({ id: riotId }, ctx); } finally {
+          if (ctx.used) await redis.set(K.riotRest, Date.now() + Math.round(RIOT_REST * ctx.used / 100));
+        }
+        if (!e) return res.status(424).json({ error: String(b.riotId).includes('#') ? 'riot_not_found' : 'riot_not_found_kr1' });
+        if (parse(await redis.hget(K.riot, name))?.puuid !== e.puuid) await dropRiot(name); // 다른 계정으로 바꿨으면 예전 판은 지워요
         await redis.hset(K.riot, { [name]: e });
+        more = !e.gAt;
         break;
       }
       case 'refreshRiot': {
-        // 화면이 열릴 때 오래된 티어가 있으면 부르고(6시간), 새로고침 버튼은 10분 지난 것만 다시 불러요.
+        // 화면이 열릴 때 6시간 넘은 사람이 있으면 부르고, 새로고침 버튼은 10분 지난 것만 다시 불러요.
         if (!process.env.RIOT_API_KEY) return res.status(424).json({ error: 'no_riot_key' });
-        refreshed = await refreshRiot(b.force ? RIOT_FORCE_GAP : RIOT_STALE);
+        ({ n: refreshed, more } = await refreshRiot(b.force ? RIOT_FORCE_GAP : RIOT_STALE));
         if (!refreshed) dup = true; // 바뀐 게 없으면 다른 화면도 다시 받을 필요 없어요
         break;
       }
@@ -316,7 +388,7 @@ export default async function handler(req, res) {
         return bad(res);
     }
     if (!dup) await redis.incr(K.ver);
-    return res.status(200).json({ id, dup, refreshed, ...(await readState(roomId)) });
+    return res.status(200).json({ id, dup, refreshed, more, ...(await readState(roomId)) });
   } catch (e) {
     if (e instanceof RiotError) return res.status(424).json({ error: e.code });
     console.error(e);
