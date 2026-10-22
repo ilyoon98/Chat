@@ -276,6 +276,10 @@ select { font: inherit; color: var(--ink); background: var(--sunk); border: 1px 
 .pen-res .landed { display: inline-block; animation: pop .5s cubic-bezier(.2, .9, .3, 1.5) both; }
 .pen-edit { display: grid; gap: 8px; }
 .log-mvp .mvp { --side: var(--gold); margin-top: 10px; }
+.log-pen { margin: 8px 0 0; font-size: 14px; color: var(--muted); } .log-pen b { color: var(--bad); }
+.sess-pen { margin-top: 12px; padding: 10px 14px; border-radius: 12px; border: 1px dashed var(--bad); }
+.sess-pen ul { margin: 6px 0 0; padding-left: 18px; display: grid; gap: 2px; } .sess-pen b.k { color: var(--bad); }
+.shot-body { display: grid; gap: 12px; padding-top: 14px; } .shot-body img { width: 100%; border-radius: 10px; border: 1px solid var(--line); }
 .pen-edit textarea { width: 100%; font: inherit; color: var(--ink); background: var(--sunk); border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; resize: vertical; }
 
 .tbl-wrap { overflow-x: auto; }
@@ -456,6 +460,13 @@ body.gated { overflow: hidden; }
   <dialog class="notes" id="notes" aria-labelledby="notesTitle">
     <div class="notes-head"><b id="notesTitle">패치노트</b><button class="xbtn" id="notesClose" aria-label="닫기">✕</button></div>
     <div class="notes-body" id="notesBody"></div>
+  </dialog>
+
+  <dialog class="notes" id="shotDlg" aria-labelledby="shotTitle">
+    <div class="notes-head"><b id="shotTitle">결과 이미지</b><button class="xbtn" id="shotClose" aria-label="닫기">✕</button></div>
+    <div class="notes-body shot-body"><img id="shotImg" alt="경기 결과 이미지">
+      <div class="row"><button class="btn" id="shotShare">공유하기</button><button class="btn ghost" id="shotSave">저장</button></div>
+      <p class="note" style="margin:0">그림을 꾹 눌러서 저장하거나 복사해도 돼요.</p></div>
   </dialog>
 
   <!-- 게임 탭: 지금은 롤 내전 하나. 다른 게임이 생기면 버튼과 section.game을 하나씩 더 붙이면 돼요. -->
@@ -1719,7 +1730,13 @@ function renderSession() {
     rows.map((p, i) => `<tr><td class="rank">${i < 3 ? `<span class="medal m${i}">${i + 1}</span>` : i + 1}</td><td data-card="${esc(p.name)}">${tierIcon(T[p.name])}<b>${esc(p.name)}</b>${mv[p.name] ? ` <span class="mvptag" title="이 방 MVP ${mv[p.name]}번">⭐${mv[p.name]}</span>` : ''}</td><td class="num wl"><span class="w">${p.w}</span>-<span class="l">${p.g - p.w}</span></td>
       <td><div class="rate"><span style="width:38px;text-align:right">${pct(p.w, p.g)}%</span>${bar(p.w / p.g)}</div></td>
       <td><span class="form">${p.form.slice(-8).map(f => `<i class="${f ? 'w' : 'l'}">${f ? '승' : '패'}</i>`).join('')}</span>${streak(p.form)}</td></tr>`).join('')
-  }</tbody></table></div>`;
+  }</tbody></table></div>${sessionPens(ms)}`;
+}
+// 벌칙 장부: 판마다 남은 벌칙 룰렛 결과. 기록 탭 판 아래 한 줄, 이 방 기록 아래 목록(카톡용 복사에도 들어가요).
+const penLine = m => m.penalty ? `<p class="log-pen">🎡 벌칙 · <b>${esc(m.penalty.who)}</b> → ${esc(m.penalty.what)}</p>` : '';
+function sessionPens(ms) {
+  const ps = ms.filter(m => m.penalty);
+  return ps.length ? `<div class="sess-pen"><b class="k">🎡 이 방 벌칙 ${ps.length}개</b><ul>${ps.map(m => `<li><b>${esc(m.penalty.who)}</b> → ${esc(m.penalty.what)}</li>`).join('')}</ul></div>` : '';
 }
 // 이 방 기록을 단톡방용 글자로: '[일윤의 방] 내전 5판' 다음 줄부터 표와 같은 순서로 승-패·승률·MVP
 $('#copySession').onclick = () => {
@@ -1727,7 +1744,8 @@ $('#copySession').onclick = () => {
   const st = computeStats([], ms), mv = mvpCounts(ms), medal = ['🥇', '🥈', '🥉'];
   const rows = Object.values(st.P).sort((a, b) => b.w - a.w || (a.g - a.w) - (b.g - b.w) || a.name.localeCompare(b.name, 'ko'));
   copyText([`[${curRoom()?.name || '내전'}] 내전 ${ms.length}판`,
-    ...rows.map((p, i) => `${medal[i] || `${i + 1}.`} ${p.name} ${p.w}승 ${p.g - p.w}패 (${pct(p.w, p.g)}%)${mv[p.name] ? ` ⭐${mv[p.name]}` : ''}`)].join('\n'));
+    ...rows.map((p, i) => `${medal[i] || `${i + 1}.`} ${p.name} ${p.w}승 ${p.g - p.w}패 (${pct(p.w, p.g)}%)${mv[p.name] ? ` ⭐${mv[p.name]}` : ''}`),
+    ...ms.filter(m => m.penalty).map(m => `🎡 벌칙: ${m.penalty.who} → ${m.penalty.what}`)].join('\n'));
 };
 const emptyStats = () => `<p class="empty">아직 기록된 경기가 없어요. 내전 탭에서 팀을 섞고 이긴 팀을 누르면 여기에 쌓여요.</p>`;
 
@@ -1801,7 +1819,7 @@ function renderLog() {
     return `${head}<li class="match"><div class="mhead"><time>${p2(t.getHours())}:${p2(t.getMinutes())}</time>${room ? `<span>· ${esc(room.name)}</span>` : ''}
       <button class="btn ghost small" data-shot="match" data-id="${esc(m.id)}">이미지</button>
       ${!canRoster() ? '' : `<button class="btn ghost small" data-del="${esc(m.id)}" style="${confirmId === m.id ? 'color:var(--bad);border-color:var(--bad)' : ''}">${confirmId === m.id ? '정말 삭제' : '삭제'}</button>`}</div>
-      <div class="mteams">${team(m, 'blue')}${team(m, 'red')}</div>${Date.now() - m.t < MVP_OPEN ? `<div class="log-mvp" data-mid="${esc(m.id)}">${mvpBox(m)}</div>` : ''}</li>`;
+      <div class="mteams">${team(m, 'blue')}${team(m, 'red')}</div>${penLine(m)}${Date.now() - m.t < MVP_OPEN ? `<div class="log-mvp" data-mid="${esc(m.id)}">${mvpBox(m)}</div>` : ''}</li>`;
   }).join('') : '<li><p class="empty">아직 기록이 없어요.</p></li>';
 }
 $('#logBox').addEventListener('click', async e => {
@@ -2223,11 +2241,23 @@ function shareShot(cvP, name) {
   }).catch(fail);
   const phone = matchMedia('(pointer: coarse)').matches && navigator.canShare?.({ files: [new File([''], file, { type: 'image/png' })] });
   if (phone) return blobP.then(b => navigator.share({ files: [new File([b], file, { type: 'image/png' })] }))
-    .then(() => toast('결과 이미지를 보냈어요.'), e => e?.name === 'AbortError' ? toast('공유를 취소했어요.') : save());
+    .then(() => toast('결과 이미지를 보냈어요.'), e => e?.name === 'AbortError' ? toast('공유를 취소했어요.') : blobP.then(b => shotDialog(b, file), fail));
   if (navigator.clipboard?.write && window.ClipboardItem) return navigator.clipboard.write([new ClipboardItem({ 'image/png': blobP })])
     .then(() => toast('결과 이미지를 복사했어요. 단톡방에 붙여넣으세요.'), () => save());
   save();
 }
+// 그림을 그리는 사이에 폰(특히 아이폰)이 공유 창을 막으면, 그림을 띄워 두고 "공유하기"를 한 번 더 누르게 해요(이번엔 누른 순간에 바로 공유).
+function shotDialog(b, file) {
+  const dlg = $('#shotDlg'), url = URL.createObjectURL(b), f = new File([b], file, { type: 'image/png' });
+  $('#shotImg').src = url;
+  $('#shotShare').hidden = !navigator.canShare?.({ files: [f] });
+  $('#shotShare').onclick = () => navigator.share({ files: [f] }).then(() => { dlg.close(); toast('결과 이미지를 보냈어요.'); }, e => { if (e?.name !== 'AbortError') toast('공유가 안 돼요. 저장을 누르거나 그림을 꾹 눌러 저장해 주세요.'); });
+  $('#shotSave').onclick = () => { const a = document.createElement('a'); a.href = url; a.download = file; a.click(); toast('결과 이미지를 PNG로 저장했어요.'); };
+  dlg.onclose = () => setTimeout(() => URL.revokeObjectURL(url), 1000);
+  dlg.showModal();
+}
+$('#shotClose').onclick = () => $('#shotDlg').close();
+$('#shotDlg').addEventListener('click', e => { if (e.target === e.currentTarget) e.currentTarget.close(); });
 // 버튼을 먼저 받아서(capture) 방장 확인 같은 다른 클릭 처리로 넘어가지 않게 해요. 구경하는 사람도 만들 수 있어요.
 document.addEventListener('click', e => {
   const b = e.target.closest('[data-shot]'); if (!b) return;
@@ -2241,6 +2271,10 @@ document.addEventListener('click', e => {
 // ---------- 버전 · 패치노트 ----------
 // 커밋해서 올릴 때마다 맨 위에 새 항목을 더해요(규칙은 CLAUDE.md). 오른쪽 위 버전은 맨 위 항목이에요.
 const NOTES = [
+  { v: '1.10.0', d: '2026-10-22', items: [
+    '벌칙 장부: 벌칙 룰렛 결과가 그 판 기록에 남아요. 방장이 다음 판으로 넘어가도 기록 탭의 그 판 아래와 "이 방 기록" 아래에서 누가 무슨 벌칙인지 볼 수 있어요. 이 방 기록 "카톡용 복사"에도 같이 들어가요.',
+    '결과 이미지: 폰에서 공유 창이 바로 안 뜨면 그림을 띄워 주고 "공유하기"를 한 번 더 누르면 돼요(아이폰). 그림을 꾹 눌러 저장해도 돼요.',
+  ] },
   { v: '1.9.0', d: '2026-10-22', items: [
     'MVP 투표: 결과를 기록하면 그 판에 뛴 사람 이름이 나와요. 보고 있는 사람 누구나 한 표씩 눌러요(다시 누르면 취소). 하루 동안은 방장이 다음 판으로 넘어가도 기록 탭의 그 판 아래에서 투표할 수 있어요. MVP는 기록 탭 ⭐, 전적 표, 이 방 기록, 선수 카드, 분석에 쌓여요.',
     '진 팀 벌칙 룰렛: 결과를 기록한 뒤 방장이 "🎡 진 팀 벌칙 룰렛"을 누르면 진 팀에서 한 명(또는 진 팀 전체)과 벌칙이 정해져요. 구경하는 화면에서도 같이 돌아요. 벌칙 목록은 방장이 고칠 수 있어요.',

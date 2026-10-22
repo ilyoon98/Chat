@@ -514,7 +514,8 @@ export default async function handler(req, res) {
           const x = { t, blue, red, win: m.win }, mid = okId(m.id) || newId(t);
           if (seenId.has(mid) || seenKey.has(mKey(x)) || matches.length + imported.matches >= MAX_MATCHES) continue;
           const lanes = cleanLanes(m.lanes, [...blue, ...red]), round = Number(m.round) || 0, rid = cleanId(m.room);
-          addM[mid] = { ...x, ...(rid && { room: rid }), ...(round && { round }), ...(lanes && { lanes }) };
+          const pen = cleanPenalty(m.penalty, m.win === 'blue' ? red : blue); // 백업에 있던 벌칙도 같이
+          addM[mid] = { ...x, ...(rid && { room: rid }), ...(round && { round }), ...(lanes && { lanes }), ...(pen && { penalty: { who: pen.who, what: pen.what, t: pen.t } }) };
           seenId.add(mid); seenKey.add(mKey(x)); imported.matches++;
         }
         if (imported.matches) await redis.hset(K.matches, addM);
@@ -627,6 +628,8 @@ export default async function handler(req, res) {
         const done = c.penalty && (await readMatches()).find(m => m.round === round);
         const penalty = done && cleanPenalty(c.penalty, done.win === 'blue' ? done.red : done.blue);
         if (penalty && (await redis.get(RK.cur(room.id)))?.penalty?.t !== penalty.t) notify = `🎡 벌칙 당첨 · ${room.name}\n**${penalty.who}** → ${penalty.what}`;
+        // 벌칙은 그 판 기록에도 남겨요. 방장이 다음 판으로 넘어가도 기록 탭·이 방 기록에서 누가 무슨 벌칙인지 볼 수 있어요.
+        if (penalty && done.penalty?.t !== penalty.t) { const { id: mid, ...rest } = done; await redis.hset(K.matches, { [mid]: { ...rest, penalty: { who: penalty.who, what: penalty.what, t: penalty.t } } }); }
         await redis.set(RK.cur(room.id), { blue, red, t, round, ...(lanes && { lanes }), ...(penalty && { penalty: { ...penalty, round } }) });
         await saveRoom({ ...room, lastActive: Date.now() });
         break;
