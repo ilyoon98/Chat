@@ -86,6 +86,8 @@ h1 em { font-style: normal; color: var(--gold); }
 .duel-slot b { font-family: var(--display); font-weight: 800; font-size: clamp(18px, 5vw, 24px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .duel-slot small { font-size: 12px; opacity: .9; }
 .duel-vs .vs { font-family: var(--display); font-weight: 800; font-size: 20px; color: var(--gold); }
+.duel-vs button.vs { display: grid; justify-items: center; gap: 2px; background: none; border: 1px solid var(--line); border-radius: 10px; padding: 6px 8px; cursor: pointer; }
+.duel-vs button.vs small { font-family: var(--body); font-size: 11px; font-weight: 700; color: var(--muted); white-space: nowrap; }
 .duel-h2h { grid-column: 1 / -1; text-align: center; color: var(--muted); font-size: 13.5px; margin: 0; }
 .duel-h2h b { color: var(--ink); }
 #duelPick .chip.a { border-color: var(--blue); background: color-mix(in srgb, var(--blue) 20%, var(--surface)); }
@@ -1206,7 +1208,7 @@ function renderTeams(shuffling) {
   const bp = Math.round(eb * 100), canRec = c.blue.length && c.red.length;
   // 카톡용 복사는 팀 바로 위에 둬요. 섞는 동안에도 자리를 지켜서 화면이 들썩이지 않게 해요.
   box.innerHTML = `
-    <div class="row" style="margin-top:16px"><button class="btn ghost small" id="copyTeams"${shuffling ? ' disabled' : ''}>카톡용 복사</button>${!host ? `<span class="note" style="margin:0">구경 중 · ${esc(hostNick)}님이 팀과 결과를 정해요.</span>` : rec ? '' : '<span class="note" style="margin:0">화살표를 누르면 상대 팀으로 가요. 이름을 끌어서 다른 사람 위에 놓으면 둘이 자리를 바꿔요(폰은 꾹 눌렀다 끌기).</span>'}</div>
+    <div class="row" style="margin-top:16px"><button class="btn ghost small" id="copyTeams"${shuffling ? ' disabled' : ''}>카톡용 복사</button>${host && !rec && !shuffling && both ? '<button class="btn ghost small" id="swapSides" title="두 팀이 진영을 통째로 맞바꿔요">⇄ 블루·레드 바꾸기</button>' : ''}${!host ? `<span class="note" style="margin:0">구경 중 · ${esc(hostNick)}님이 팀과 결과를 정해요.</span>` : rec ? '' : '<span class="note" style="margin:0">화살표를 누르면 상대 팀으로 가요. 이름을 끌어서 다른 사람 위에 놓으면 둘이 자리를 바꿔요(폰은 꾹 눌렀다 끌기).</span>'}</div>
     <div class="teams${shuffling ? ' shuffling' : ''}${reveal ? ' reveal' : ''}">
       <div class="${teamCls('blue')}"><h3><span>${crown('blue')}${TEAM.blue}</span> <small>${mmr('blue')}</small></h3>${ul('blue')}</div>
       <div class="${teamCls('red')}"><h3><span>${crown('red')}${TEAM.red}</span> <small>${mmr('red')}</small></h3>${ul('red')}</div>
@@ -1277,6 +1279,8 @@ $('#teamsBox').addEventListener('click', async e => {
   }
   if (!e.target.closest('button') || !needHost()) return; // 복사 말고는 방장만
   if (S.draft) return draftClick(e);
+  // 진영 바꾸기: 두 팀이 블루·레드를 통째로 맞바꿔요. 같은 판이라 round는 그대로, 다른 화면이 받아 가게 t만 올려요.
+  if (e.target.closest('#swapSides') && c && !rec) { [c.blue, c.red] = [c.red, c.blue]; c.t = Date.now(); renderTeams(); saveCurrent(); return toast('블루·레드를 바꿨어요.'); }
   const mv = e.target.closest('button[data-swap]');
   if (mv && !rec) {
     const p = mv.dataset.swap, from = mv.dataset.side, to = from === 'blue' ? 'red' : 'blue';
@@ -1852,7 +1856,7 @@ function renderDuel() {
   const slot = (p, side) => p ? `<div class="duel-slot ${side}" data-card="${esc(p)}"><b>${esc(p)}</b><small>${P[p]?.g ? `1:1 ${P[p].w}승 ${P[p].g - P[p].w}패 · MMR ${Math.round(P[p].mmr)}` : '1:1 첫 판'}</small></div>`
     : `<div class="duel-slot empty"><b>?</b><small>아래에서 골라요</small></div>`;
   const h = a && b ? H[a + '\u0001' + b] : null;
-  $('#duelVs').innerHTML = slot(a, 'a') + '<span class="vs">VS</span>' + slot(b, 'b')
+  $('#duelVs').innerHTML = slot(a, 'a') + (a && b ? '<button class="vs" id="duelSwap" title="파랑·빨강 자리 바꾸기">VS<small>⇄ 바꾸기</small></button>' : '<span class="vs">VS</span>') + slot(b, 'b')
     + (a && b ? `<p class="duel-h2h">${h ? `맞대결 <b>${esc(a)} ${h[1]}승</b> · <b>${esc(b)} ${h[0] - h[1]}승</b>` : '둘이 붙는 건 처음이에요'}</p>` : '');
   $('#duelRule').innerHTML = DUEL_RULES.map(r => `<button data-rule="${r}" aria-pressed="${DUEL.rule === r}">${r}</button>`).join('');
   $('#duelWin').innerHTML = !(a && b) ? '' : can
@@ -1884,6 +1888,8 @@ $('#duelPick').addEventListener('click', e => {
   else if (!DUEL.a) DUEL.a = p; else if (!DUEL.b) DUEL.b = p; else DUEL.b = p; // 둘 다 찼으면 오른쪽 사람을 바꿔요
   saveDuel(); renderDuel();
 });
+// 1:1 좌우(파랑·빨강) 바꾸기: 고른 두 사람 자리만 바꿔요(이 기기 화면에서만)
+$('#duelVs').addEventListener('click', e => { if (e.target.closest('#duelSwap')) { [DUEL.a, DUEL.b] = [DUEL.b, DUEL.a]; saveDuel(); renderDuel(); } });
 $('#duelRule').addEventListener('click', e => { const r = e.target.closest('[data-rule]')?.dataset.rule; if (r) { DUEL.rule = r; saveDuel(); renderDuel(); } });
 $('#g-duel').addEventListener('click', async e => {
   const w = e.target.closest('[data-duelwin]'), del = e.target.closest('[data-duel-del]');
@@ -1917,6 +1923,10 @@ $('#gateForm').addEventListener('submit', async e => {
 // ---------- 버전 · 패치노트 ----------
 // 커밋해서 올릴 때마다 맨 위에 새 항목을 더해요(규칙은 CLAUDE.md). 오른쪽 위 버전은 맨 위 항목이에요.
 const NOTES = [
+  { v: '1.8.0', d: '2026-10-22', items: [
+    '블루·레드 바꾸기: 롤 내전에서 팀을 짠 뒤 "⇄ 블루·레드 바꾸기"를 누르면 두 팀이 진영을 통째로 맞바꿔요(방장, 결과 기록 전). 정해 둔 라인은 그대로예요.',
+    '롤 1:1에서도 두 명을 고르면 가운데 "VS ⇄ 바꾸기"를 눌러 파랑·빨강 자리를 바꿀 수 있어요.',
+  ] },
   { v: '1.7.1', d: '2026-10-22', items: [
     '1:1을 롤 내전 탭 안에서 꺼내 바깥 게임 탭 "롤 1:1"로 옮겼어요. 이제 위쪽에 롤 내전 · 롤 1:1 · 롤 5인 큐 · 선수 명단이 나란히 있어요.',
   ] },
