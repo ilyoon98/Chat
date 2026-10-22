@@ -258,6 +258,22 @@ select { font: inherit; color: var(--ink); background: var(--sunk); border: 1px 
 .big { font-family: var(--display); font-weight: 800; font-size: clamp(16px, 4.4vw, 19px); border-radius: 12px; padding: 14px 8px; cursor: pointer; color: var(--ink); background: var(--surface); border: 1px solid var(--line); }
 .big.primary { background: var(--gold); color: var(--on-gold); border-color: transparent; }
 .empty { color: var(--muted); padding: 14px 0; }
+/* 기록된 판 아래: MVP 투표 · 진 팀 벌칙 룰렛 */
+.mvp, .penalty { display: grid; gap: 8px; padding-top: 12px; border-top: 1px dashed color-mix(in srgb, var(--side) 40%, var(--line)); }
+.mvp-h { margin: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; } .mvp-h small { color: var(--muted); font-size: 12.5px; }
+.mvp-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip.mvpc.blue { border-color: color-mix(in srgb, var(--blue) 50%, var(--line)); } .chip.mvpc.red { border-color: color-mix(in srgb, var(--red) 50%, var(--line)); }
+.chip.mvpc.on { border-color: var(--gold); background: color-mix(in srgb, var(--gold) 24%, var(--surface)); }
+.chip.mvpc b { min-width: 20px; padding: 0 6px; border-radius: 999px; background: var(--gold); color: var(--on-gold); font-size: 12px; text-align: center; }
+.chip.mvpc:disabled { cursor: default; }
+.mvptag { color: var(--gold); font-weight: 700; }
+.pen-res { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 12px; padding: 10px 14px; border-radius: 12px; background: var(--surface); border: 1.5px solid var(--bad); }
+.pen-res .k { font-size: 13px; font-weight: 700; color: var(--bad); }
+.pen-res b { font-family: var(--display); font-weight: 800; font-size: clamp(20px, 5.5vw, 26px); }
+.pen-res .what { font-weight: 700; font-size: 17px; }
+.pen-res .landed { display: inline-block; animation: pop .5s cubic-bezier(.2, .9, .3, 1.5) both; }
+.pen-edit { display: grid; gap: 8px; }
+.pen-edit textarea { width: 100%; font: inherit; color: var(--ink); background: var(--sunk); border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; resize: vertical; }
 
 .tbl-wrap { overflow-x: auto; }
 table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
@@ -516,7 +532,7 @@ body.gated { overflow: hidden; }
   <!-- 기록 -->
   <section id="p-log" role="tabpanel" hidden>
     <div class="card">
-      <h2>경기 기록 <span class="r"><span id="logMeta"></span> <button class="btn ghost small" id="backup">백업 받기</button></span></h2>
+      <h2>경기 기록 <span class="r"><span id="logMeta"></span> <button class="btn ghost small" id="backup">백업 받기</button> <button class="btn ghost small" id="restore" hidden>백업 불러오기</button><input type="file" id="restoreFile" accept=".json,application/json" hidden></span></h2>
       <ul class="log" id="logBox"></ul>
     </div>
   </section>
@@ -591,7 +607,7 @@ async function copyText(text) {
 
 // ---------- 상태 ----------
 // current·selected는 지금 들어가 있는 방(room)의 팀 배치·오늘 할 사람이에요. presence = 이 방을 보고 있는 사람들.
-const S = { players: [], matches: [], duels: [], current: null, selected: new Set(), riot: {}, rooms: [], room: null, presence: [], mode: 'random', editing: false, editTarget: null, period: 'all', capMethod: 'top', draft: null };
+const S = { players: [], matches: [], duels: [], mvp: {}, current: null, selected: new Set(), riot: {}, rooms: [], room: null, presence: [], mode: 'random', editing: false, editTarget: null, period: 'all', capMethod: 'top', draft: null };
 const LS = 'lol-naejeon-v1';
 // 이 기기를 구분하는 id와 닉네임. 로그인 없이 방장을 가려요.
 const ME = (() => {
@@ -609,6 +625,7 @@ function loadLocal() {
     if (Array.isArray(s.players)) S.players = s.players.filter(p => typeof p === 'string');
     if (Array.isArray(s.matches)) S.matches = s.matches.filter(validMatch);
     if (Array.isArray(s.duels)) S.duels = s.duels.filter(validDuel);
+    if (s.mvp && typeof s.mvp === 'object') S.mvp = s.mvp;
     if (s.riot && typeof s.riot === 'object') S.riot = s.riot;
     if (typeof s.room === 'string') S.room = s.room;
     if (['balance', 'draft'].includes(s.mode)) S.mode = s.mode;
@@ -618,7 +635,7 @@ function loadLocal() {
   if (q) S.room = q;
 }
 function saveLocal() {
-  try { localStorage.setItem(LS, JSON.stringify({ room: S.room, mode: S.mode, capMethod: S.capMethod, players: S.players, matches: S.matches, duels: S.duels, riot: S.riot })); } catch {}
+  try { localStorage.setItem(LS, JSON.stringify({ room: S.room, mode: S.mode, capMethod: S.capMethod, players: S.players, matches: S.matches, duels: S.duels, mvp: S.mvp, riot: S.riot })); } catch {}
 }
 // ---------- 방장 ----------
 const curRoom = () => S.rooms.find(r => r.id === S.room) || null;
@@ -671,7 +688,8 @@ async function api(action, body, quiet) {
     if ([404, 409, 423].includes(res.status)) {
       const e = (await res.json().catch(() => ({}))).error;
       if (!quiet) toast({ full: '기록이 너무 많아요. 오래된 기록을 지워 주세요.', rooms_full: '방은 10개까지 만들 수 있어요. 안 쓰는 방을 닫아 주세요.',
-        host_busy: '지금 방장이 있어요. 방장이 넘겨줘야 해요.', not_host: '방장만 바꿀 수 있어요.', no_room: '그 방이 없어요. 닫혔을 수 있어요.' }[e] || '저장에 실패했어요.');
+        host_busy: '지금 방장이 있어요. 방장이 넘겨줘야 해요.', not_host: '방장만 바꿀 수 있어요.', no_room: '그 방이 없어요. 닫혔을 수 있어요.',
+        no_match: '그 판 기록이 없어요. 지워졌을 수 있어요.', mvp_closed: 'MVP 투표는 기록하고 하루 안에만 할 수 있어요.' }[e] || '저장에 실패했어요.');
       throw new Error(e || String(res.status));
     }
     if (res.status === 424) { const e = (await res.json().catch(() => ({}))).error; if (!quiet) toast(RIOT_ERR[e] || RIOT_ERR.riot_down); throw new Error(e); }
@@ -687,6 +705,7 @@ function applyServer(d) {
   if (Array.isArray(d.players)) S.players = d.players.filter(p => typeof p === 'string');
   if (Array.isArray(d.matches)) S.matches = d.matches.filter(validMatch);
   if (Array.isArray(d.duels)) S.duels = d.duels.filter(validDuel);
+  if (d.mvp && typeof d.mvp === 'object') S.mvp = d.mvp;
   if (d.riot && typeof d.riot === 'object') S.riot = d.riot;
   if (d.ably) connectAbly(d.ably);
   if (Array.isArray(d.rooms)) {
@@ -929,6 +948,8 @@ function playerCard(p) {
   const du = duelStats(S.duels).P[p];
   if (du?.g) rows.push(['1:1', `${wl(du.w, du.g - du.w)} · MMR ${Math.round(du.mmr)}`]);
   // 내전에서 라인을 정해 뛴 판: '탑 3승 1패 · 미드 1승 2패' (많이 한 라인부터)
+  const mv = mvpCounts(S.matches)[p];
+  if (mv) rows.push(['MVP', `⭐ ${mv}번`]);
   const nl = Object.entries(naeLanes()[p] || {}).sort((a, b) => b[1][0] - a[1][0]);
   if (nl.length) rows.push(['내전 라인', `<span class="lanes">${nl.map(([k, [g, w]]) => `<span>${laneIcon(k)}<b>${LANE[k]}</b> ${wl(w, g - w)}</span>`).join('')}</span>`]);
   if (r) {
@@ -1173,7 +1194,8 @@ function burst(el, side, big) {
 // 승리는 새 기록이 생기면(내가 눌렀든 다른 화면에서 왔든) 한 번 축하해요. 처음 열었을 때 이미 있던 기록은 축하하지 않아요.
 let fxRec;
 function renderTeams(shuffling) {
-  if (drag?.on || coinBusy || capSpin) return; // 끌거나 동전·룰렛이 도는 동안엔 다시 그리지 않아요. 끝나면 새로 그려요.
+  if (drag?.on || coinBusy || capSpin || penSpin) return; // 끌거나 동전·룰렛이 도는 동안엔 다시 그리지 않아요. 끝나면 새로 그려요.
+  if (document.activeElement?.id === 'penInput') return; // 벌칙 목록을 적는 중이면 칸이 날아가지 않게 그대로 둬요
   if (S.draft) return renderDraft();
   const box = $('#teamsBox'), c = S.current, st = computeStats(S.players, S.matches);
   if (!c || !c.blue.length && !c.red.length) { box.innerHTML = '<p class="empty">사람을 고르고 팀 섞기를 누르면 1팀(블루)과 2팀(레드)이 여기에 나와요.</p>'; return; }
@@ -1206,6 +1228,10 @@ function renderTeams(shuffling) {
   const ul = side => `<ul>${byLane(c[side]).map((p, i) => li(p, side, i + (side === 'red' ? c.blue.length : 0))).join('') || `<li class="empty-team">비었어요. ${side === 'blue' ? '←' : '→'} 버튼이나 끌어서 옮겨 오세요.</li>`}</ul>`;
   const mmr = side => !c[side].length ? '' : rec ? `MMR ${Math.round(avg(c[side], before))} → ${Math.round(avg(c[side]))}` : `MMR ${Math.round(avg(c[side]))}`;
   const bp = Math.round(eb * 100), canRec = c.blue.length && c.red.length;
+  // 벌칙 룰렛: 이 판 결과일 때만. 새 결과가 오면(내가 돌렸든 방장이 돌렸든) 한 번 돌아가요. 처음 열었을 때 이미 있던 결과는 그냥 보여줘요.
+  const pen = rec && c.penalty?.round === roundOf(c) ? c.penalty : null;
+  const spinPen = !shuffling && !!pen && penSeen !== undefined && pen.t !== penSeen && !reduceMotion;
+  if (!shuffling) penSeen = pen?.t ?? null;
   // 카톡용 복사는 팀 바로 위에 둬요. 섞는 동안에도 자리를 지켜서 화면이 들썩이지 않게 해요.
   box.innerHTML = `
     <div class="row" style="margin-top:16px"><button class="btn ghost small" id="copyTeams"${shuffling ? ' disabled' : ''}>카톡용 복사</button>${host && !rec && !shuffling && both ? '<button class="btn ghost small" id="swapSides" title="두 팀이 진영을 통째로 맞바꿔요">⇄ 블루·레드 바꾸기</button>' : ''}${!host ? `<span class="note" style="margin:0">구경 중 · ${esc(hostNick)}님이 팀과 결과를 정해요.</span>` : rec ? '' : '<span class="note" style="margin:0">화살표를 누르면 상대 팀으로 가요. 이름을 끌어서 다른 사람 위에 놓으면 둘이 자리를 바꿔요(폰은 꾹 눌렀다 끌기).</span>'}</div>
@@ -1217,11 +1243,77 @@ function renderTeams(shuffling) {
       <div class="lbl"><span>1팀 예상 승률 ${bp}%</span><span>2팀 ${100 - bp}%</span></div></div>` : ''}    ${shuffling ? '' : rec ? `
       <div class="recorded ${rec.win}${celebrate ? ' celebrate' : ''}">
         <div class="rec-head"><span class="k">기록됨</span><b>${TEAM[rec.win]} 승리</b>${host ? '<button class="btn ghost small" id="undo">↶ 되돌리기</button>' : ''}</div>
-        ${host ? '<div class="rec-actions"><button class="big primary" id="reshuffle">새로 섞기</button><button class="big" id="again">같은 팀으로 한 판 더</button></div>' : ''}</div>` : !host ? '' : `
+        ${host ? '<div class="rec-actions"><button class="big primary" id="reshuffle">새로 섞기</button><button class="big" id="again">같은 팀으로 한 판 더</button></div>' : ''}
+        ${mvpBox(rec)}${penBox(pen, spinPen, host)}</div>` : !host ? '' : `
       <div class="result"><button class="win blue" data-win="blue" ${canRec ? '' : 'disabled'}>${TEAM.blue} 승리</button><button class="win red" data-win="red" ${canRec ? '' : 'disabled'}>${TEAM.red} 승리</button></div>`}`;
   if (celebrate) burst(box.querySelector('.team.' + rec.win), rec.win, true);
+  if (spinPen) runPenSpin(pen, rec);
 }
 const TEAM = { blue: '1팀 블루', red: '2팀 레드' };
+// ---------- MVP 투표 ----------
+// 기록된 판마다 보고 있는 사람 누구나(구경 포함) 한 표씩, 그 판에 뛴 사람 중에 MVP를 뽑아요. 다시 누르면 취소, 다른 사람을 누르면 옮겨요.
+// 서버는 판마다 표 수만 알려 줘서, 내가 누구를 뽑았는지는 이 기기에 기억해요. 가장 많이 받은 사람이 MVP(같으면 같이).
+const MVP_OPEN = 24 * 36e5;
+let MY_MVP = {}; try { MY_MVP = JSON.parse(localStorage.getItem(LS + ':mvp') || '{}') || {}; } catch {}
+const saveMyMvp = () => { try { localStorage.setItem(LS + ':mvp', JSON.stringify(MY_MVP)); } catch {} };
+const mvpTop = id => { const v = S.mvp[id] || {}, max = Math.max(0, ...Object.values(v)); return max ? Object.keys(v).filter(n => v[n] === max) : []; };
+// 판 목록에서 MVP가 된 횟수: { 이름: 횟수 }
+function mvpCounts(matches) { const c = {}; for (const m of matches) for (const n of mvpTop(m.id)) c[n] = (c[n] || 0) + 1; return c; }
+function mvpBox(rec) {
+  const v = S.mvp[rec.id] || {}, mine = MY_MVP[rec.id], open = Date.now() - rec.t < MVP_OPEN, top = mvpTop(rec.id);
+  const total = Object.values(v).reduce((s, n) => s + n, 0), lose = rec.win === 'blue' ? 'red' : 'blue';
+  const chip = (p, side) => `<button class="chip mvpc ${side}${mine === p ? ' on' : ''}" data-mvp="${esc(p)}" aria-pressed="${mine === p}"${open ? '' : ' disabled'}>${top.includes(p) ? '⭐ ' : ''}${esc(p)}${v[p] ? `<b>${v[p]}</b>` : ''}</button>`;
+  return `<div class="mvp"><p class="mvp-h"><b>⭐ MVP 투표</b><small>${!open ? '투표가 끝났어요' : mine ? `내 표: ${esc(mine)} · 다시 누르면 취소` : '누구나 한 표 · 이긴 팀 진 팀 상관없이'} · ${total}표</small></p>
+    <div class="mvp-chips">${rec[rec.win].map(p => chip(p, rec.win)).join('')}</div><div class="mvp-chips">${rec[lose].map(p => chip(p, lose)).join('')}</div></div>`;
+}
+async function voteMvp(id, name) {
+  const prev = MY_MVP[id] ?? null, next = prev === name ? null : name, v = S.mvp[id] = { ...S.mvp[id] };
+  if (prev && v[prev] && !--v[prev]) delete v[prev]; // 화면은 바로 바꾸고, 서버 답이 오면 진짜 표 수로 맞춰요
+  if (next) v[next] = (v[next] || 0) + 1;
+  if (next) MY_MVP[id] = next; else delete MY_MVP[id];
+  saveMyMvp(); renderTeams();
+  try { await api('voteMvp', { id, name: next }); if (next) toast(`${next}에게 MVP 한 표!`); }
+  catch { if (prev) MY_MVP[id] = prev; else delete MY_MVP[id]; saveMyMvp(); ver = null; await pull(); }
+  renderAll();
+}
+// ---------- 진 팀 벌칙 룰렛 ----------
+// 결과를 기록한 뒤 방장이 돌리면, 진 팀에서 한 명(또는 진 팀 전체)과 벌칙 하나가 정해져요. 결과는 팀 배치에 같이 저장돼서 구경하는 화면에서도 같이 돌아가요.
+// 벌칙 목록은 방장 기기에 저장해요(한 줄에 하나). 구경하는 화면은 도는 동안 자기 목록을 보여주다가 방장이 뽑은 결과에서 멈춰요.
+const PEN_ALL = '진 팀 전체';
+const PEN_DEFAULT = ['음료수 한 잔 쏘기', '다음 판 서폿 고정', '다음 판 챔피언은 이긴 팀이 골라 주기', '단톡방에 반성문 세 줄', '팔굽혀펴기 10개', '다음 판 정글 금지', '이긴 팀 한 명씩 칭찬하기', '다음 판 와드 15개 이상 박기', '노래 한 소절 부르기', '다음 판 원딜 고정'];
+let PENS = [...PEN_DEFAULT];
+try { const x = JSON.parse(localStorage.getItem(LS + ':pens') || 'null'); if (Array.isArray(x) && x.some(s => typeof s === 'string' && s.trim())) PENS = x.filter(s => typeof s === 'string' && s.trim()); } catch {}
+let penSeen, penSpin = null, penEdit = false;
+const penWho = rec => { const l = rec.win === 'blue' ? rec.red : rec.blue; return l.length > 1 ? [...l, PEN_ALL] : l; };
+function penBox(pen, spinning, host) {
+  if (!pen && !host) return '';
+  const res = pen ? `<div class="pen-res"><span class="k">🎡 벌칙 당첨</span><b id="penWho">${esc(spinning ? '?' : pen.who)}</b><span class="what" id="penWhat">${esc(spinning ? '?' : pen.what)}</span></div>` : '';
+  const edit = penEdit ? `<div class="pen-edit"><textarea id="penInput" rows="6" aria-label="벌칙 목록 (한 줄에 하나)">${esc(PENS.join('\n'))}</textarea>
+    <div class="row"><button class="btn small" id="penSave">저장</button><button class="btn ghost small" id="penReset">처음 목록으로</button><span class="note" style="margin:0">한 줄에 하나씩 · 이 기기에만 저장돼요</span></div></div>` : '';
+  return `<div class="penalty">${res}${host ? `<div class="row"><button class="btn ghost" id="penSpin">${pen ? '🎡 다시 돌리기' : '🎡 진 팀 벌칙 룰렛'}</button><button class="linkbtn" id="penEditBtn">벌칙 목록 ${penEdit ? '닫기' : `고치기 (${PENS.length}개)`}</button></div>${edit}` : ''}</div>`;
+}
+function spinPenalty() {
+  const c = S.current, rec = recordedMatch(); if (!c || !rec || penSpin) return;
+  const who = penWho(rec);
+  c.penalty = { who: who[rnd(who.length)], what: PENS[rnd(PENS.length)], t: Date.now(), round: roundOf(c) };
+  c.t = Date.now(); // 같은 판이라 round는 그대로, 다른 화면이 새로 받아 가게 t만
+  renderTeams(); saveCurrent();
+}
+// 사람 칸이 먼저(1.5초쯤), 벌칙 칸이 조금 뒤에 멈춰요. 도는 동안엔 팀 칸을 다시 그리지 않아요.
+function runPenSpin(pen, rec) {
+  const a = $('#penWho'), b = $('#penWhat'), who = penWho(rec), what = PENS.length > 1 ? PENS : PEN_DEFAULT;
+  if (!a || !b) return;
+  penSpin = pen; let k = 0;
+  const step = () => {
+    if (penSpin !== pen) return;
+    k++;
+    if (k < 14) a.textContent = who[rnd(who.length)]; else if (k === 14) { a.textContent = pen.who; a.classList.add('landed'); }
+    if (k < 22) b.textContent = what[rnd(what.length)]; else { b.textContent = pen.what; b.classList.add('landed'); burst(b, 'gold'); }
+    if (k >= 22) { setTimeout(() => { if (penSpin === pen) { penSpin = null; renderTeams(); } }, 1200); return; }
+    setTimeout(step, 45 + k * k * 0.9);
+  };
+  step();
+}
 // 판(round): 팀을 섞거나 옮기거나 '한 판 더'를 누를 때마다 새로 생겨요. 예전 팀 배치에는 round가 없어서 t를 대신 써요.
 const roundOf = c => c.round ?? c.t;
 const newRound = c => { c.t = c.round = Date.now(); };
@@ -1277,8 +1369,18 @@ $('#teamsBox').addEventListener('click', async e => {
     const L = c.lanes || {}, order = p => L[p] ? LANES.indexOf(L[p]) : 9;
     return copyText(['blue', 'red'].map(side => `[${TEAM[side]}] ${[...c[side]].sort((a, b) => order(a) - order(b)).map(p => L[p] ? `${LANE[L[p]]} ${p}` : p).join(', ')}`).join('\n'));
   }
-  if (!e.target.closest('button') || !needHost()) return; // 복사 말고는 방장만
+  const vote = e.target.closest('[data-mvp]'); // MVP 투표는 구경하는 사람도 해요
+  if (vote) { if (rec && !vote.disabled) voteMvp(rec.id, vote.dataset.mvp); return; }
+  if (!e.target.closest('button') || !needHost()) return; // 복사·MVP 말고는 방장만
   if (S.draft) return draftClick(e);
+  if (e.target.id === 'penSpin' && rec) return spinPenalty();
+  if (e.target.id === 'penEditBtn') { penEdit = !penEdit; return renderTeams(); }
+  if (e.target.id === 'penSave' || e.target.id === 'penReset') {
+    const list = e.target.id === 'penReset' ? [...PEN_DEFAULT] : $('#penInput').value.split('\n').map(s => s.trim().slice(0, 40)).filter(Boolean);
+    if (!list.length) return toast('벌칙을 한 줄에 하나씩 적어 주세요.');
+    PENS = list; try { localStorage.setItem(LS + ':pens', JSON.stringify(PENS)); } catch {}
+    penEdit = false; document.activeElement?.blur?.(); renderTeams(); return toast(e.target.id === 'penReset' ? '처음 벌칙 목록으로 돌렸어요.' : `벌칙 ${list.length}개를 저장했어요.`);
+  }
   // 진영 바꾸기: 두 팀이 블루·레드를 통째로 맞바꿔요. 같은 판이라 round는 그대로, 다른 화면이 받아 가게 t만 올려요.
   if (e.target.closest('#swapSides') && c && !rec) { [c.blue, c.red] = [c.red, c.blue]; c.t = Date.now(); renderTeams(); saveCurrent(); return toast('블루·레드를 바꿨어요.'); }
   const mv = e.target.closest('button[data-swap]');
@@ -1299,7 +1401,11 @@ $('#teamsBox').addEventListener('click', async e => {
     renderAll(); return;
   }
   if (e.target.id === 'undo' && rec) {
-    try { await deleteMatch(rec.id); toast('방금 기록을 지웠어요.'); renderAll(); } catch {}
+    try {
+      await deleteMatch(rec.id); toast('방금 기록을 지웠어요.');
+      if (c.penalty) { delete c.penalty; c.t = Date.now(); saveCurrent(); } // 결과를 지우면 그 판 벌칙도 같이 지워요
+      renderAll();
+    } catch {}
   }
   if (e.target.id === 'again') { newRound(c); renderTeams(); saveCurrent(); } // 새 판이라 같은 결과도 따로 기록돼요
   if (e.target.id === 'reshuffle') $('#shuffle').click();
@@ -1563,12 +1669,13 @@ function renderStats() {
   const th = (k, label, cls = '') => `<th class="${cls}"><button data-sort="${k}" aria-pressed="${sortKey === k}">${label}</button></th>`;
   // 아무도 Riot ID를 연결 안 했으면 솔랭 칸은 숨겨요. 주 라인·모스트·숙련도도 불러온 사람이 있을 때만.
   const R = Object.values(S.riot), solo = R.length > 0, lane = R.some(r => r.n), most = R.some(r => r.most?.length), mast = R.some(r => r.mast?.length);
+  const mv = mvpCounts(matches), hasMvp = Object.keys(mv).length > 0; // MVP 칸은 투표로 MVP가 나온 판이 있을 때만
   const riotCols = p => (solo ? `<td class="tiername"${S.riot[p] ? ` title="${esc(S.riot[p].id)}"` : ''}>${esc(soloText(p)) || '—'}</td>` : '')
     + (lane ? `<td class="tiername">${esc(laneText(p)) || '—'}</td>` : '') + (most ? `<td><span class="champs">${mostIcons(p)}</span></td>` : '') + (mast ? `<td><span class="champs">${mastIcons(p)}</span></td>` : '');
-  $('#statsBox').innerHTML = `<div class="tbl-wrap"><table><thead><tr><th></th>${th('name', '선수')}<th>내전 티어</th>${solo ? '<th>솔랭</th>' : ''}${lane ? '<th>주 라인</th>' : ''}${most ? '<th>모스트</th>' : ''}${mast ? '<th>숙련도</th>' : ''}${th('g', '판', 'num')}<th class="num">승-패</th>${th('rate', '승률')}${th('mmr', 'MMR', 'num')}<th>최근 5판</th></tr></thead><tbody>${
+  $('#statsBox').innerHTML = `<div class="tbl-wrap"><table><thead><tr><th></th>${th('name', '선수')}<th>내전 티어</th>${solo ? '<th>솔랭</th>' : ''}${lane ? '<th>주 라인</th>' : ''}${most ? '<th>모스트</th>' : ''}${mast ? '<th>숙련도</th>' : ''}${th('g', '판', 'num')}<th class="num">승-패</th>${th('rate', '승률')}${th('mmr', 'MMR', 'num')}${hasMvp ? '<th class="num">MVP</th>' : ''}<th>최근 5판</th></tr></thead><tbody>${
     rows.map((p, i) => `<tr><td class="rank">${p.g ? (i < 3 ? `<span class="medal m${i}">${i + 1}</span>` : i + 1) : ''}</td><td data-card="${esc(p.name)}">${tierIcon(T[p.name])}<b>${esc(p.name)}</b></td><td class="tiername">${T[p.name]?.name ?? '—'}</td>${riotCols(p.name)}<td class="num">${p.g}</td><td class="num wl"><span class="w">${p.w}</span>-<span class="l">${p.g - p.w}</span></td>
       <td><div class="rate"><span style="width:38px;text-align:right">${p.g ? pct(p.w, p.g) + '%' : '—'}</span><span class="track"><i style="width:${pct(p.w, p.g)}%;background:${p.w / p.g >= .5 ? 'var(--good)' : 'var(--bad)'}"></i></span></div></td>
-      <td class="num">${p.g ? Math.round(p.mmr) : '—'}</td><td><span class="form">${p.form.slice(-5).map(f => `<i class="${f ? 'w' : 'l'}">${f ? '승' : '패'}</i>`).join('')}</span>${streak(p.form)}</td></tr>`).join('')
+      <td class="num">${p.g ? Math.round(p.mmr) : '—'}</td>${hasMvp ? `<td class="num">${mv[p.name] ? `<span class="mvptag">⭐${mv[p.name]}</span>` : '—'}</td>` : ''}<td><span class="form">${p.form.slice(-5).map(f => `<i class="${f ? 'w' : 'l'}">${f ? '승' : '패'}</i>`).join('')}</span>${streak(p.form)}</td></tr>`).join('')
   }</tbody></table></div>`;
 }
 $('#statsBox').addEventListener('click', e => { const b = e.target.closest('button[data-sort]'); if (b) { sortKey = b.dataset.sort; renderStats(); } });
@@ -1577,12 +1684,12 @@ $('#statsBox').addEventListener('click', e => { const b = e.target.closest('butt
 function renderSession() {
   const ms = roomMatches(), card = $('#sessionCard');
   card.hidden = !ms.length; if (!ms.length) return;
-  const st = computeStats([], ms), T = tierMap(computeStats(S.players, S.matches));
+  const st = computeStats([], ms), T = tierMap(computeStats(S.players, S.matches)), mv = mvpCounts(ms);
   const rows = Object.values(st.P).sort((a, b) => b.w - a.w || (a.g - a.w) - (b.g - b.w) || a.name.localeCompare(b.name, 'ko'));
   const d = new Date(Math.min(...ms.map(m => m.t))), p2 = n => String(n).padStart(2, '0');
   $('#sessionMeta').textContent = `${ms.length}판 · ${d.getMonth() + 1}/${d.getDate()} ${p2(d.getHours())}:${p2(d.getMinutes())}부터`;
   $('#sessionBox').innerHTML = `<div class="tbl-wrap"><table><thead><tr><th></th><th>선수</th><th class="num">승-패</th><th>승률</th><th>흐름</th></tr></thead><tbody>${
-    rows.map((p, i) => `<tr><td class="rank">${i < 3 ? `<span class="medal m${i}">${i + 1}</span>` : i + 1}</td><td data-card="${esc(p.name)}">${tierIcon(T[p.name])}<b>${esc(p.name)}</b></td><td class="num wl"><span class="w">${p.w}</span>-<span class="l">${p.g - p.w}</span></td>
+    rows.map((p, i) => `<tr><td class="rank">${i < 3 ? `<span class="medal m${i}">${i + 1}</span>` : i + 1}</td><td data-card="${esc(p.name)}">${tierIcon(T[p.name])}<b>${esc(p.name)}</b>${mv[p.name] ? ` <span class="mvptag" title="이 방 MVP ${mv[p.name]}번">⭐${mv[p.name]}</span>` : ''}</td><td class="num wl"><span class="w">${p.w}</span>-<span class="l">${p.g - p.w}</span></td>
       <td><div class="rate"><span style="width:38px;text-align:right">${pct(p.w, p.g)}%</span>${bar(p.w / p.g)}</div></td>
       <td><span class="form">${p.form.slice(-8).map(f => `<i class="${f ? 'w' : 'l'}">${f ? '승' : '패'}</i>`).join('')}</span>${streak(p.form)}</td></tr>`).join('')
   }</tbody></table></div>`;
@@ -1600,11 +1707,13 @@ function renderAnalysis() {
   const duos = allPairs(st.duo, x => x.a < x.b).sort((x, y) => y.r - x.r || y.g - x.g);
   const rivals = allPairs(st.vs, () => true).sort((x, y) => y.r - x.r || y.g - x.g);
   const top = [...active].filter(p => p.g >= minG).sort((a, b) => b.w / b.g - a.w / a.g)[0];
+  const mvAll = Object.entries(mvpCounts(matches)).sort((a, b) => b[1] - a[1]), mvTop = mvAll.filter(x => x[1] === mvAll[0]?.[1]);
   const hl = (k, v, d) => `<div class="hl"><div class="k">${k}</div><div class="v">${v}</div><div class="d">${d}</div></div>`;
   $('#hlBox').innerHTML = `<div class="highlights">
     ${top ? hl('승률 1위', esc(top.name), `${top.g}판 ${top.w}승 · ${pct(top.w, top.g)}%`) : ''}
     ${duos[0] ? hl('최강 듀오', `${esc(duos[0].a)} + ${esc(duos[0].b)}`, `같은 팀 ${duos[0].g}판 ${duos[0].w}승 · ${pct(duos[0].w, duos[0].g)}%`) : ''}
     ${rivals[0] ? hl('가장 일방적인 상대', `${esc(rivals[0].a)} ▸ ${esc(rivals[0].b)}`, `맞대결 ${rivals[0].g}판 ${rivals[0].w}승 ${rivals[0].g - rivals[0].w}패`) : ''}
+    ${mvTop.length ? hl('MVP 최다', mvTop.map(([n]) => esc(n)).join(', '), `⭐ MVP ${mvTop[0][1]}번`) : ''}
     ${duos.length > 1 ? hl('최악의 듀오', `${esc(duos.at(-1).a)} + ${esc(duos.at(-1).b)}`, `같은 팀 ${duos.at(-1).g}판 ${duos.at(-1).w}승 · ${pct(duos.at(-1).w, duos.at(-1).g)}%`) : ''}
   </div>${!duos.length && !rivals.length ? `<p class="note">최소 ${minG}판을 채운 조합이 아직 없어요. 최소 판수를 낮춰 보세요.</p>` : ''}`;
 
@@ -1643,12 +1752,13 @@ let confirmId = null;
 function renderLog() {
   const ms = [...S.matches].sort((a, b) => b.t - a.t), T = tierMap(computeStats(S.players, S.matches));
   $('#logMeta').textContent = `총 ${ms.length}판`;
+  $('#restore').hidden = !canRoster();
   const p2 = n => String(n).padStart(2, '0'), day = t => { const d = new Date(t); return `${d.getMonth() + 1}월 ${d.getDate()}일 ${'일월화수목금토'[d.getDay()]}요일`; };
   const counts = {}; for (const m of ms) counts[day(m.t)] = (counts[day(m.t)] || 0) + 1;
   // 팀 카드: 이긴 팀은 왕관 + '승리', 진 팀은 흐리게 '패배'. 이름에 마우스를 올리면 선수 카드가 떠요.
-  const team = (m, side) => { const won = m.win === side;
+  const team = (m, side) => { const won = m.win === side, mvp = mvpTop(m.id);
     return `<div class="mteam ${side} ${won ? 'won' : 'lost'}"><div class="mt-h">${won ? '<span class="crown" aria-hidden="true">👑</span>' : ''}${TEAM[side]}<small>${won ? '승리' : '패배'}</small></div>
-      <ul>${m[side].map(p => `<li data-card="${esc(p)}">${tierIcon(T[p])}${esc(p)}</li>`).join('')}</ul></div>`; };
+      <ul>${m[side].map(p => `<li data-card="${esc(p)}">${tierIcon(T[p])}${esc(p)}${mvp.includes(p) ? ' <span class="mvptag" title="MVP">⭐</span>' : ''}</li>`).join('')}</ul></div>`; };
   let last = '';
   $('#logBox').innerHTML = ms.length ? ms.map(m => {
     const d = day(m.t), head = d !== last ? `<li class="mday">${d} · ${counts[d]}판</li>` : ''; last = d;
@@ -1674,10 +1784,27 @@ document.addEventListener('change', e => {
   renderStats(); renderAnalysis();
 });
 $('#backup').onclick = () => {
-  const blob = new Blob([JSON.stringify({ exportedAt: new Date().toISOString(), players: S.players, matches: S.matches, riot: S.riot }, null, 2)], { type: 'application/json' });
+  const blob = new Blob([JSON.stringify({ exportedAt: new Date().toISOString(), players: S.players, matches: S.matches, duels: S.duels, mvp: S.mvp, riot: S.riot }, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob); a.download = `lol-naejeon-backup-${new Date().toISOString().slice(0, 10)}.json`; a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+};
+// 백업 불러오기: '백업 받기'로 받은 파일에서 지금 기록에 없는 선수·내전·1:1만 더해요. 있는 기록은 지우거나 덮어쓰지 않아요(방장만).
+// MVP 표는 기기마다 한 표라서 되살리지 않아요.
+$('#restore').onclick = () => { if (needRoster()) $('#restoreFile').click(); };
+$('#restoreFile').onchange = async e => {
+  const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+  let d = null; try { d = JSON.parse(await f.text()); } catch {}
+  const ps = Array.isArray(d?.players) ? d.players.filter(p => typeof p === 'string') : [];
+  const ms = Array.isArray(d?.matches) ? d.matches.filter(validMatch) : [], ds = Array.isArray(d?.duels) ? d.duels.filter(validDuel) : [];
+  if (!ps.length && !ms.length && !ds.length) return toast('불러올 기록이 없는 파일이에요. 기록 탭 "백업 받기"로 받은 .json 파일을 골라 주세요.');
+  const when = d.exportedAt && !isNaN(new Date(d.exportedAt)) ? ` (${new Date(d.exportedAt).toLocaleString('ko-KR')} 백업)` : '';
+  if (!confirm(`백업 파일${when}\n선수 ${ps.length}명 · 내전 ${ms.length}판 · 1:1 ${ds.length}판\n\n지금 기록에 없는 것만 더해요. 지금 있는 기록은 지우거나 덮어쓰지 않아요. 불러올까요?`)) return;
+  try {
+    const r = await api('importBackup', { players: ps, matches: ms, duels: ds, riot: d.riot }), x = r.imported || {};
+    toast(r.dup ? '이미 다 들어 있는 기록이라 더할 게 없었어요.' : `불러왔어요: 선수 ${x.players}명 · 내전 ${x.matches}판 · 1:1 ${x.duels}판${x.riot ? ` · Riot ID ${x.riot}명` : ''}`);
+  } catch {}
+  renderAll();
 };
 
 // ---------- 탭 ----------

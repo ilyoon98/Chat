@@ -6,7 +6,7 @@ const url = process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL;
 const token = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN;
 const redis = globalThis.__redis ?? (url && token ? new Redis({ url, token }) : null);
 
-const K = { players: 'lol:players', matches: 'lol:matches', ver: 'lol:ver', riot: 'lol:riot', riotLock: 'lol:riot:lock', riotRest: 'lol:riot:rest', riotGames: 'lol:riot:games', rooms: 'lol:rooms', hostSeen: 'lol:hostseen', nicks: 'lol:nicks', duels: 'lol:duels' };
+const K = { players: 'lol:players', matches: 'lol:matches', ver: 'lol:ver', riot: 'lol:riot', riotLock: 'lol:riot:lock', riotRest: 'lol:riot:rest', riotGames: 'lol:riot:games', rooms: 'lol:rooms', hostSeen: 'lol:hostseen', nicks: 'lol:nicks', duels: 'lol:duels', mvp: 'lol:mvp' };
 // 방마다 따로인 것: 오늘 할 사람(정렬 집합), 팀 배치, 지금 보고 있는 사람(정렬 집합, 점수 = 마지막 신호 시각)
 const RK = { sel: r => `lol:room:${r}:sel`, cur: r => `lol:room:${r}:cur`, seen: r => `lol:room:${r}:seen` };
 const MAX_MATCHES = 5000;
@@ -227,11 +227,29 @@ async function readDuels() {
   const hash = await redis.hgetall(K.duels);
   return Object.entries(hash || {}).map(([id, d]) => ({ id, ...parse(d) })).sort((a, b) => a.t - b.t);
 }
+// MVP 투표: 해시 필드 '판id|기기id' → { n: 뽑은 이름, t }. 기기마다 한 판에 한 표(다시 고르면 바뀌어요).
+// 화면에는 판마다 { 이름: 표 수 }만 줘요. 누가 누구를 뽑았는지는 안 보여요.
+const MVP_OPEN = 24 * 36e5; // 기록하고 하루 안에만 투표할 수 있어요
+async function readMvp() {
+  const out = {};
+  for (const [k, v] of Object.entries((await redis.hgetall(K.mvp)) || {})) {
+    const mid = k.split('|')[0], n = parse(v)?.n;
+    if (typeof n === 'string') (out[mid] ??= {})[n] = (out[mid][n] || 0) + 1;
+  }
+  return out;
+}
+async function dropMvp(mid) {
+  for (const k of Object.keys((await redis.hgetall(K.mvp)) || {})) if (k.startsWith(mid + '|')) await redis.hdel(K.mvp, k);
+}
+// 진 팀 벌칙 룰렛 결과: 방 팀 배치(current)에 같이 저장해서 구경하는 화면에도 같은 결과가 돌아가요.
+const PEN_ALL = '진 팀 전체';
+const cleanPenalty = (p, losers) => (p && typeof p === 'object' && typeof p.what === 'string' && p.what.trim() && (losers.includes(p.who) || p.who === PEN_ALL)
+  ? { who: p.who, what: p.what.trim().slice(0, 40), t: Number(p.t) || Date.now(), round: Number(p.round) || 0 } : undefined);
 async function readState(room) {
-  const [players, matches, ver, riot, rooms, duels] = await Promise.all([readPlayers(), readMatches(), redis.get(K.ver), readRiot(), readRooms(), readDuels()]);
+  const [players, matches, ver, riot, rooms, duels, mvp] = await Promise.all([readPlayers(), readMatches(), redis.get(K.ver), readRiot(), readRooms(), readDuels(), readMvp()]);
   const r = rooms.find(x => x.id === room);
   const roomState = r ? { id: r.id, selected: await readSelected(r.id), current: (await redis.get(RK.cur(r.id))) || null } : null;
-  return { players, matches, duels, riot, rooms, room: roomState, ver: Number(ver) || 0, ably: ABLY_NS };
+  return { players, matches, duels, mvp, riot, rooms, room: roomState, ver: Number(ver) || 0, ably: ABLY_NS };
 }
 // 지금 보고 있다는 신호(15초마다). 멤버는 "기기id|닉네임"이고, 방장이면 방장 신호 시각도 남겨요.
 async function heartbeat(room, me, nick, claimsHost) {
@@ -277,6 +295,25 @@ function ablyTokenRequest(clientId) {
   const tr = { keyName, ttl: 36e5, capability, clientId, timestamp: Date.now(), nonce: randomBytes(8).toString('hex') };
   tr.mac = createHmac('sha256', secret).update([tr.keyName, tr.ttl, tr.capability, tr.clientId, tr.timestamp, tr.nonce, ''].join('\n')).digest('base64');
   return tr;
+}
+
+// ---------- 디스코드 알림 ----------
+// DISCORD_WEBHOOK_URL 환경변수에 디스코드 채널 웹후크 주소를 넣으면, 내전·1:1 결과와 벌칙 당첨을 그 채널에 올려요. 안 넣으면 아무것도 안 해요.
+const DISCORD = process.env.DISCORD_WEBHOOK_URL;
+const LANE_KO = { TOP: '탑', JUNGLE: '정글', MIDDLE: '미드', BOTTOM: '원딜', UTILITY: '서폿' };
+const TEAM_KO = { blue: '1팀 블루', red: '2팀 레드' };
+async function discord(content) {
+  if (!DISCORD) return;
+  try {
+    // allowed_mentions를 비워서 이름에 @everyone 같은 게 있어도 아무도 안 불려요
+    const r = await fetch(DISCORD, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ content: content.slice(0, 1900), allowed_mentions: { parse: [] } }) });
+    if (!r.ok) console.error('discord', r.status, await r.text());
+  } catch (e) { console.error('discord', e); } // 알림이 실패해도 기록은 저장됐어요
+}
+function matchText(m, roomName) {
+  const order = p => (m.lanes?.[p] ? Object.keys(LANE_KO).indexOf(m.lanes[p]) : 9);
+  const team = side => [...m[side]].sort((a, b) => order(a) - order(b)).map(p => (m.lanes?.[p] ? `${LANE_KO[m.lanes[p]]} ${p}` : p)).join(', ');
+  return `🏆 **${TEAM_KO[m.win]} 승리**${roomName ? ` · ${roomName}` : ''}\n🔵 ${TEAM_KO.blue}: ${team('blue')}\n🔴 ${TEAM_KO.red}: ${team('red')}`;
 }
 
 // RECORD_PIN 환경변수를 넣으면 기록·수정할 때 비밀번호가 필요해요. 안 넣으면 누구나 기록 가능.
@@ -328,21 +365,21 @@ export default async function handler(req, res) {
     }
     if (req.method !== 'POST') return res.status(405).json({ error: 'method_not_allowed' });
     const b = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body || {};
-    // 솔랭 새로고침·닉네임 정하기는 기록을 바꾸지 않아서 비밀번호 없이도 돼요.
-    if (!['refreshRiot', 'claimNick'].includes(b.action) && !pinOk(req)) return res.status(401).json({ error: 'pin_required' });
+    // 솔랭 새로고침·닉네임 정하기는 기록을 바꾸지 않아서 비밀번호 없이도 돼요. MVP 투표도 구경하는 사람 누구나 해요.
+    if (!['refreshRiot', 'claimNick', 'voteMvp'].includes(b.action) && !pinOk(req)) return res.status(401).json({ error: 'pin_required' });
     // 방장 확인: 기기마다 화면이 만든 id(x-device)로 구분해요. 친구끼리 쓰는 거라 로그인 없이 이 정도로 막아요.
     const me = cleanId(req.headers['x-device']), rooms = await readRooms();
     const room = rooms.find(r => r.id === cleanId(b.room)), isHost = r => !!r && !!me && r.hostId === me;
     const notHost = () => res.status(423).json({ error: 'not_host' });
     // 명단·Riot ID·기록 삭제는 모든 방이 같이 쓰는 거라 어느 방이든 방장인 사람만 바꿀 수 있어요.
-    const rosterAction = ['addPlayers', 'removePlayer', 'renamePlayer', 'setRiot', 'deleteMatch', 'addDuel', 'deleteDuel'].includes(b.action);
+    const rosterAction = ['addPlayers', 'removePlayer', 'renamePlayer', 'setRiot', 'deleteMatch', 'addDuel', 'deleteDuel', 'importBackup'].includes(b.action);
     if (rosterAction && !rooms.some(isHost)) return notHost();
     // 그 방의 오늘 할 사람·팀 배치·승패는 그 방 방장만
     if (['select', 'current', 'addMatch', 'giveHost', 'closeRoom'].includes(b.action)) {
       if (!room) return res.status(404).json({ error: 'no_room' });
       if (!isHost(room)) return notHost();
     }
-    let id, dup = false, refreshed, more, nick, roomId = room?.id;
+    let id, dup = false, refreshed, more, nick, roomId = room?.id, notify, imported;
     switch (b.action) {
       case 'claimNick': {
         // 닉네임은 기기마다 하나예요. 다른 기기가 쓰고 있는 닉네임이면 뒤에 번호를 붙여서 돌려줘요('일윤' → '일윤 2').
@@ -423,7 +460,7 @@ export default async function handler(req, res) {
         const from = cleanName(b.from), to = cleanName(b.to);
         if (!from || !to || from === to) return bad(res);
         const swap = arr => [...new Set(arr.map(p => (p === from ? to : p)))];
-        const swapGame = g => ({ ...g, blue: swap(g.blue), red: swap(g.red), ...(g.lanes && { lanes: Object.fromEntries(Object.entries(g.lanes).map(([n, L]) => [n === from ? to : n, L])) }) });
+        const swapGame = g => ({ ...g, blue: swap(g.blue), red: swap(g.red), ...(g.lanes && { lanes: Object.fromEntries(Object.entries(g.lanes).map(([n, L]) => [n === from ? to : n, L])) }), ...(g.penalty?.who === from && { penalty: { ...g.penalty, who: to } }) });
         const both = g => [...g.blue, ...g.red].includes(from) && [...g.blue, ...g.red].includes(to);
         const [matches, curs] = await Promise.all([readMatches(), Promise.all(rooms.map(r => redis.get(RK.cur(r.id))))]);
         // 같은 판에 둘 다 뛴 적이 있거나 어느 방 팀에 둘 다 있으면 서로 다른 사람이라 합칠 수 없어요.
@@ -451,6 +488,63 @@ export default async function handler(req, res) {
         }
         const riotIds = await readRiot(); // 연결된 Riot ID도 새 이름으로 (합칠 땐 원래 있던 쪽을 둬요)
         if (riotIds[from]) { if (!riotIds[to]) await redis.hset(K.riot, { [to]: riotIds[from] }); await redis.hdel(K.riot, from); }
+        const votes = {}; // MVP 표도 새 이름으로
+        for (const [k, v] of Object.entries((await redis.hgetall(K.mvp)) || {})) if (parse(v)?.n === from) votes[k] = { ...parse(v), n: to };
+        if (Object.keys(votes).length) await redis.hset(K.mvp, votes);
+        break;
+      }
+      case 'importBackup': {
+        // 백업 파일(기록 탭 '백업 받기')을 다시 넣어요. 지금 기록에 없는 것만 더하고, 있는 건 지우거나 덮어쓰지 않아요.
+        // 같은 판인지는 판 id, 또는 시각·팀·결과가 모두 같은지로 봐요. Riot ID는 명단에 있고 아직 연결 안 된 사람만 되살려요.
+        const [players, matches, duels, riotNow] = await Promise.all([readPlayers(), readMatches(), readDuels(), readRiot()]);
+        const team = a => [...a].sort().join('\u0001');
+        const mKey = m => `${m.t}|${m.win}|${team(m.blue)}|${team(m.red)}`, dKey = d => `${d.t}|${d.w}|${team([d.a, d.b])}`;
+        const okId = v => (typeof v === 'string' && /^[a-z0-9]{4,40}$/.test(v) ? v : null);
+        const newId = (t, pre = '') => pre + t.toString(36) + Math.random().toString(36).slice(2, 7);
+        imported = { players: 0, matches: 0, duels: 0, riot: 0 };
+        const addP = [];
+        for (const n of cleanNames(b.players, MAX_PLAYERS) || []) if (!players.includes(n) && players.length + addP.length < MAX_PLAYERS) addP.push(n);
+        if (addP.length) { await redis.set(K.players, [...players, ...addP]); imported.players = addP.length; }
+        const seenId = new Set(matches.map(m => m.id)), seenKey = new Set(matches.map(mKey)), addM = {};
+        for (const m of Array.isArray(b.matches) ? b.matches : []) {
+          const blue = cleanNames(m?.blue, 10), red = cleanNames(m?.red, 10), t = Number(m?.t);
+          if (!blue?.length || !red?.length || blue.some(p => red.includes(p)) || !['blue', 'red'].includes(m.win) || !(t > 0)) continue;
+          const x = { t, blue, red, win: m.win }, mid = okId(m.id) || newId(t);
+          if (seenId.has(mid) || seenKey.has(mKey(x)) || matches.length + imported.matches >= MAX_MATCHES) continue;
+          const lanes = cleanLanes(m.lanes, [...blue, ...red]), round = Number(m.round) || 0, rid = cleanId(m.room);
+          addM[mid] = { ...x, ...(rid && { room: rid }), ...(round && { round }), ...(lanes && { lanes }) };
+          seenId.add(mid); seenKey.add(mKey(x)); imported.matches++;
+        }
+        if (imported.matches) await redis.hset(K.matches, addM);
+        const seenD = new Set(duels.map(d => d.id)), seenDK = new Set(duels.map(dKey)), addD = {};
+        for (const d of Array.isArray(b.duels) ? b.duels : []) {
+          const a = cleanName(d?.a), bb = cleanName(d?.b), w = cleanName(d?.w), t = Number(d?.t);
+          if (!a || !bb || a === bb || ![a, bb].includes(w) || !(t > 0)) continue;
+          const x = { t, a, b: bb, w, rule: DUEL_RULES.includes(d.rule) ? d.rule : '자유' }, did = okId(d.id) || newId(t, 'd');
+          if (seenD.has(did) || seenDK.has(dKey(x)) || duels.length + imported.duels >= MAX_MATCHES) continue;
+          addD[did] = x; seenD.add(did); seenDK.add(dKey(x)); imported.duels++;
+        }
+        if (imported.duels) await redis.hset(K.duels, addD);
+        const roster = [...players, ...addP], addR = {};
+        for (const [n, e] of Object.entries(b.riot && typeof b.riot === 'object' ? b.riot : {})) {
+          const rid = e && cleanRiotId(e.id);
+          if (rid && roster.includes(n) && !riotNow[n]) { addR[n] = { id: rid, ...(typeof e.puuid === 'string' && { puuid: e.puuid }), at: 0, gAt: 0 }; imported.riot++; } // 시각을 0으로 둬서 곧 새로 불러와요
+        }
+        if (imported.riot) await redis.hset(K.riot, addR);
+        if (!Object.values(imported).some(Boolean)) dup = true;
+        break;
+      }
+      case 'voteMvp': {
+        // MVP 투표: 그 판에 뛴 사람 중 한 명. name을 비우면 내 표를 거둬요.
+        const mid = typeof b.id === 'string' ? b.id : '', name = b.name == null || b.name === '' ? null : cleanName(b.name);
+        if (!me || !mid) return bad(res);
+        const m = parse(await redis.hget(K.matches, mid));
+        if (!m) return res.status(404).json({ error: 'no_match' });
+        if (Date.now() - m.t > MVP_OPEN) return res.status(409).json({ error: 'mvp_closed' });
+        if (name && ![...m.blue, ...m.red].includes(name)) return bad(res);
+        const field = `${mid}|${me}`, prev = parse(await redis.hget(K.mvp, field))?.n ?? null;
+        if (prev === name) { dup = true; break; }
+        if (name) await redis.hset(K.mvp, { [field]: { n: name, t: Date.now() } }); else await redis.hdel(K.mvp, field);
         break;
       }
       case 'setRiot': {
@@ -495,6 +589,7 @@ export default async function handler(req, res) {
         const lanes = cleanLanes(m.lanes, [...blue, ...red]);
         await redis.hset(K.matches, { [id]: { t: now, blue, red, win: m.win, room: room.id, ...(round && { round }), ...(lanes && { lanes }) } });
         await saveRoom({ ...room, lastActive: now });
+        notify = matchText({ blue, red, win: m.win, lanes }, room.name);
         break;
       }
       case 'addDuel': {
@@ -507,6 +602,7 @@ export default async function handler(req, res) {
         if (prev) { id = prev.id; dup = true; break; }
         id = 'd' + now.toString(36) + Math.random().toString(36).slice(2, 6);
         await redis.hset(K.duels, { [id]: { t: now, a, b: bb, w, rule } });
+        notify = `⚔️ 1:1 **${w}** 승리 vs ${w === a ? bb : a}${rule !== '자유' ? ` (${rule})` : ''}`;
         break;
       }
       case 'deleteDuel': {
@@ -517,14 +613,19 @@ export default async function handler(req, res) {
       case 'deleteMatch': {
         if (typeof b.id !== 'string' || !b.id) return bad(res);
         await redis.hdel(K.matches, b.id);
+        await dropMvp(b.id); // 그 판의 MVP 표도 같이 지워요
         break;
       }
       case 'current': {
         const c = b.current || {}, blue = cleanNames(c.blue, 10), red = cleanNames(c.red, 10);
         if (!blue || !red) return bad(res);
         const t = Number(c.t) || Date.now();
-        const lanes = cleanLanes(c.lanes, [...blue, ...red]);
-        await redis.set(RK.cur(room.id), { blue, red, t, round: Number(c.round) || t, ...(lanes && { lanes }) });
+        const lanes = cleanLanes(c.lanes, [...blue, ...red]), round = Number(c.round) || t;
+        // 벌칙 룰렛 결과는 기록된 판의 진 팀 사람(또는 진 팀 전체)일 때만 남겨요. 새로 돌렸으면 디스코드에도 올려요.
+        const done = c.penalty && (await readMatches()).find(m => m.round === round);
+        const penalty = done && cleanPenalty(c.penalty, done.win === 'blue' ? done.red : done.blue);
+        if (penalty && (await redis.get(RK.cur(room.id)))?.penalty?.t !== penalty.t) notify = `🎡 벌칙 당첨 · ${room.name}\n**${penalty.who}** → ${penalty.what}`;
+        await redis.set(RK.cur(room.id), { blue, red, t, round, ...(lanes && { lanes }), ...(penalty && { penalty: { ...penalty, round } }) });
         await saveRoom({ ...room, lastActive: Date.now() });
         break;
       }
@@ -533,8 +634,8 @@ export default async function handler(req, res) {
     }
     // 바뀌었으면 버전을 올리고 Ably로 '바뀜' 신호를 쏴요(새 상태를 읽는 동안 같이).
     const newVer = dup ? null : await redis.incr(K.ver);
-    const [state] = await Promise.all([readState(roomId), newVer != null && ablyPublish(newVer)]);
-    return res.status(200).json({ id, dup, refreshed, more, nick, ...state });
+    const [state] = await Promise.all([readState(roomId), newVer != null && ablyPublish(newVer), notify && discord(notify)]);
+    return res.status(200).json({ id, dup, refreshed, more, nick, imported, ...state });
   } catch (e) {
     if (e instanceof RiotError) return res.status(424).json({ error: e.code });
     console.error(e);
