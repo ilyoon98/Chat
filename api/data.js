@@ -79,20 +79,25 @@ async function riotGames(puuid, ctx) {
   const ids = [...new Set(lists.flat().filter(Boolean))].sort((a, b) => num(b) - num(a)).slice(0, RIOT_GAMES);
   // 시각이 없는 예전 모양 판(최근 20판)도 다시 받아서 시각을 채워요. 그래야 거슬러 올라갈 기준이 생겨요.
   await fetchGames(ids.filter(id => !have.get(id)?.[5]));
-  let full = !!saved.full;
+  // 예전 판은 큐마다 "목록 몇 번째부터"(start)로 받아요. cur[i] = 그 큐에서 이미 지나온 개수.
+  // (endTime으로 시각을 주면 Riot이 무시하고 최신 판을 다시 줘서, 더 받을 게 없다고 잘못 끝난 적이 있어요. v2부터 start 방식)
+  // 처음엔 0부터: 큐마다 최신 20판 중 위에서 안 받은 판(다른 큐 판에 밀려서)이 있을 수 있어서, 이미 가진 판은 건너뛰며 내려가요.
+  const v2 = saved.pv === 2, cur = v2 && Array.isArray(saved.cur) ? [...saved.cur] : RIOT_QUERIES.map(() => 0);
+  let full = v2 && !!saved.full;
   const kept = () => [...have.values()].filter(x => x[5]).sort((a, b) => b[5] - a[5]);
-  if (!full && !ctx.stop && kept().length && kept().length < RIOT_HISTORY) {
-    const end = kept().at(-1)[5] - 1; // 지금 가진 가장 예전 판보다 더 예전
-    const older = await soft(ctx, Promise.all(RIOT_QUERIES.map(q => riot(RIOT_REGION, `/lol/match/v5/matches/by-puuid/${P}/ids?${q}&endTime=${end}&count=${RIOT_GAMES}`, ctx))));
+  if (!full && !ctx.stop && kept().length < RIOT_HISTORY) {
+    const older = await soft(ctx, Promise.all(RIOT_QUERIES.map((q, i) => riot(RIOT_REGION, `/lol/match/v5/matches/by-puuid/${P}/ids?${q}&start=${cur[i]}&count=${RIOT_GAMES}`, ctx))));
     if (older) {
+      if (older.every(l => !l?.length)) full = true; // 네 큐 모두 더 예전 판이 없어요
       const more = [...new Set(older.flat().filter(Boolean))].filter(id => !have.has(id)).sort((a, b) => num(b) - num(a)).slice(0, RIOT_GAMES);
-      if (!more.length) full = true;
       await fetchGames(more);
+      // 큐마다 앞에서부터 받아 둔 만큼만 지나가요. 이번에 20판에 못 들어 남은 예전 판은 다음에 다시 받아요.
+      older.forEach((l, i) => { let k = 0; while (k < (l?.length || 0) && have.has(l[k])) k++; cur[i] += k; });
     }
   }
   // 최신 순으로 100판까지 남겨요. 못 불러온 판은 빠져서 다음에 다시 불러요.
   const all = kept().slice(0, RIOT_HISTORY);
-  await redis.hset(K.riotGames, { [puuid]: { g: all, full } });
+  await redis.hset(K.riotGames, { [puuid]: { g: all, full, cur, pv: 2 } });
   const recent = ids.map(id => have.get(id)).filter(Boolean);
   const ok = recent.filter(x => RIOT_LANES.includes(x[2])), lanes = {}, champs = {}, q = [0, 0, 0];
   for (const [, c, lane, w, queue] of ok) {
@@ -112,7 +117,7 @@ async function riotGames(puuid, ctx) {
   // hn = 모아 둔 판 수(라인 추천 기준), ls = 라인별 기록, hFull = 더 모을 판이 없음(100판이거나 예전 판이 끝남)
   const hFull = full || all.length >= RIOT_HISTORY;
   return { n: ok.length, lanes, most: Object.values(champs).sort((a, b) => b[1] - a[1] || b[2] - a[2]).slice(0, 3), q,
-    hn: all.filter(x => RIOT_LANES.includes(x[2])).length, ls, hFull, done: recent.length === ids.length };
+    hn: all.filter(x => RIOT_LANES.includes(x[2])).length, ls, hFull, hv: 2, done: recent.length === ids.length };
 }
 // 계정을 못 찾으면 null. PUUID는 API 키(앱)마다 달라서, 키를 바꾸면 예전 PUUID가 400으로 거절돼요. 그땐 Riot ID로 다시 찾아요.
 // 돌려주는 모양: { id, puuid, solo, at(티어 시각), mast, n, lanes, most, q, gAt(최근 판까지 다 불러온 시각) }
@@ -133,7 +138,8 @@ async function riotLookup(e, ctx) {
   return out;
 }
 // 100판을 다 모으기 전(hFull === false)이면 곧바로 다시 부를 차례예요. 그래서 화면이 열려 있는 동안 계속 거슬러 올라가요.
-const riotStaleAt = e => (e.puuid && !e.hFull ? 0 : Math.min(e.at || 0, e.gAt || 0));
+// hv = 모으는 방식 버전. v1.4.0(hv 없음)에선 잘못 "다 모음"으로 끝난 사람이 있어서, hv가 2가 아니면 다시 모아요.
+const riotStaleAt = e => (e.puuid && (!e.hFull || e.hv !== 2) ? 0 : Math.min(e.at || 0, e.gAt || 0));
 // "Hide on bush #KR1" → "Hide on bush#KR1". 태그 없이 이름만 넣으면 한국 계정에 가장 흔한 #KR1을 붙여요.
 // (Riot API엔 이름 검색이 없어서 이름#태그가 정확해야 찾을 수 있어요)
 const RIOT_DEFAULT_TAG = 'KR1';
@@ -164,7 +170,7 @@ async function refreshRiot(gap) {
   try {
     for (const [n, e] of stale) {
       // 계정을 못 찾으면(이름을 바꿨거나 키가 바뀜) 예전 정보를 두고 시각만 바꿔서 계속 다시 묻지 않게 해요.
-      done[n] = (await riotLookup(e, ctx)) ?? { ...e, at: now, gAt: now, hFull: true };
+      done[n] = (await riotLookup(e, ctx)) ?? { ...e, at: now, gAt: now, hFull: true, hv: 2 };
       if (ctx.stop) break;
     }
   } catch (err) {

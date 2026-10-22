@@ -914,7 +914,7 @@ const riotAgain = d => { if (d?.more) riotNext = Date.now() + RIOT_MORE; };
 function autoRefreshRiot() {
   if (status !== 'online' || Date.now() < riotNext) return;
   // 라인 추천용 100판을 아직 다 못 모은 사람(hFull이 아님)이 있어도 이어서 불러요.
-  if (!Object.values(S.riot).some(r => (r.puuid && !r.hFull) || Date.now() - Math.min(r.at || 0, r.gAt || 0) >= RIOT_STALE)) return;
+  if (!Object.values(S.riot).some(r => (r.puuid && (!r.hFull || r.hv !== 2)) || Date.now() - Math.min(r.at || 0, r.gAt || 0) >= RIOT_STALE)) return;
   riotNext = Date.now() + 36e5;
   api('refreshRiot', {}, true).then(d => { riotAgain(d); renderAll(); }, () => {});
 }
@@ -1726,6 +1726,9 @@ $('#gateForm').addEventListener('submit', async e => {
 // ---------- 버전 · 패치노트 ----------
 // 커밋해서 올릴 때마다 맨 위에 새 항목을 더해요(규칙은 CLAUDE.md). 오른쪽 위 버전은 맨 위 항목이에요.
 const NOTES = [
+  { v: '1.4.1', d: '2026-10-22', items: [
+    '롤 정보: 예전 판을 모으다가 20판쯤에서 "다 모았다"고 잘못 멈추던 걸 고쳤어요. 멈췄던 사람도 다시 이어서 100판까지 모아요.',
+  ] },
   { v: '1.4.0', d: '2026-10-22', items: [
     '새 게임 탭 "롤 5인 큐": 친구 다섯이 같이 랭크·일반을 돌릴 때, 5명을 고르면 가장 잘 맞는 라인 배치를 1~3순위로 추천해요.',
     '라인 추천은 각자 최근 판의 라인별 판 수·승률·그 라인에서 한 챔피언을 보고 계산해요. 1순위엔 사람마다 "최근 60판 중 탑 30판 · 승률 57%"처럼 이유와 챔피언이 붙어요.',
