@@ -4,6 +4,20 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>똥겜사랑단 놀이터</title>
+<!-- 탭 아이콘 · 링크 붙였을 때 미리보기(카톡·디스코드는 이미지 주소가 https://로 시작해야 보여요) -->
+<meta name="description" content="우리끼리 하는 게임 기록을 모아 두는 곳이에요.">
+<meta name="theme-color" content="#0c1120">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="똥겜사랑단 놀이터">
+<meta property="og:title" content="똥겜사랑단 놀이터">
+<meta property="og:description" content="우리끼리 하는 게임 기록을 모아 두는 곳이에요.">
+<meta property="og:url" content="https://ddonggamechat.vercel.app/">
+<meta property="og:image" content="https://ddonggamechat.vercel.app/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&display=swap">
@@ -1609,6 +1623,10 @@ $('#gateForm').addEventListener('submit', async e => {
 // ---------- 버전 · 패치노트 ----------
 // 커밋해서 올릴 때마다 맨 위에 새 항목을 더해요(규칙은 CLAUDE.md). 오른쪽 위 버전은 맨 위 항목이에요.
 const NOTES = [
+  { v: '1.3.0', d: '2026-10-22', items: [
+    '사이트 아이콘: 브라우저 탭과 휴대폰 홈 화면에 게임패드 든 황금똥이 보여요.',
+    '링크 미리보기: 단톡방이나 디스코드에 주소를 붙이면 사이트 이름과 황금똥 그림이 카드로 떠요.',
+  ] },
   { v: '1.2.1', d: '2026-10-22', items: [
     '팀장 룰렛: 팀장 뽑기를 시작하거나 팀장 정하는 방법을 누르면, 팀장 칸 이름이 차르르륵 돌다가 점점 느려지며 멈춰요. 1팀이 먼저, 2팀이 조금 뒤에 멈춰요.',
   ] },

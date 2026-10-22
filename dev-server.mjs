@@ -53,6 +53,9 @@ http.createServer(async (req, res) => {
     res.json = obj => { res.setHeader('content-type', 'application/json'); res.end(JSON.stringify(obj)); };
     return handler(req, res);
   }
+  // 아이콘·미리보기 이미지
+  const image = { '/favicon.svg': 'image/svg+xml', '/apple-touch-icon.png': 'image/png', '/og.png': 'image/png' }[req.url];
+  if (image) { res.setHeader('content-type', image); return res.end(await readFile(new URL('.' + req.url, import.meta.url))); }
   res.setHeader('content-type', 'text/html; charset=utf-8');
   res.end(await readFile(new URL('./index.html', import.meta.url)));
 }).listen(port, () => console.log(`http://localhost:${port}`));
