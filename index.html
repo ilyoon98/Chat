@@ -545,6 +545,10 @@ body.gated { overflow: hidden; }
       <div id="hlBox"></div>
     </div>
     <div class="card">
+      <h2>명예의 전당 <span class="r">위에서 고른 시즌·기간 판 기준</span></h2>
+      <div id="hofBox"></div>
+    </div>
+    <div class="card">
       <h2>선수 상세</h2>
       <div class="chips" id="pickPlayer"></div>
       <div id="playerBox"></div>
@@ -856,7 +860,7 @@ function computeStats(players, matches) {
     const bw = m.win === 'blue';
     const eb = 1 / (1 + Math.pow(10, (avg(m.red) - avg(m.blue)) / 400)), K = 24, delta = K * ((bw ? 1 : 0) - eb);
     for (const [team, won, d] of [[m.blue, bw, delta], [m.red, !bw, -delta]]) {
-      for (const p of team) { const s = get(p); s.g++; if (won) s.w++; s.form.push(won ? 1 : 0); s.mmr += d; }
+      for (const p of team) { const s = get(p); s.g++; if (won) s.w++; s.form.push(won ? 1 : 0); s.mmr += d; if (s.mmr > (s.peak ?? 1000)) s.peak = s.mmr; } // peak: 그동안 찍은 가장 높은 MMR
       for (let i = 0; i < team.length; i++) for (let j = 0; j < team.length; j++) if (i !== j) inc(duo, team[i], team[j], won);
     }
     for (const x of m.blue) for (const y of m.red) { inc(vs, x, y, bw); inc(vs, y, x, !bw); }
@@ -1747,6 +1751,31 @@ function renderDraft() {
 // '이 방' = 지금 들어가 있는 방에서 지금 시즌에 기록한 판들이에요(판마다 방 id가 남아요). 전적·분석·기록 탭은 모든 방을 합친 전체 기준이에요.
 const roomMatches = () => S.room ? seasonMatches().filter(m => m.room === S.room) : [];
 // 전적·분석: 고른 시즌 안에서 고른 기간(최근 며칠)만
+// 명예의 전당: 고른 시즌·기간 판에서 나온 기록들(최장 연승, 최고 MMR, 하루 최다승, 최다 출전, 최다 듀오, 벌칙왕, 최장 연패).
+// 같은 기록이면 같이 보여줘요(3명까지, 나머지는 '외 n명').
+function hallOfFame(matches, st) {
+  const ps = Object.values(st.P).filter(p => p.g);
+  const run = (f, v) => { let best = 0, cur = 0; for (const x of f) { cur = x === v ? cur + 1 : 0; best = Math.max(best, cur); } return best; };
+  const top = (list, val) => { const max = Math.max(0, ...list.map(val)); return max ? { max, who: list.filter(x => val(x) === max) } : null; };
+  const names = who => { const ns = [...new Set(who.map(x => x.name))]; return ns.slice(0, 3).map(esc).join(', ') + (ns.length > 3 ? ` 외 ${ns.length - 3}명` : ''); };
+  const card = (k, r, d) => r ? `<div class="hl"><div class="k">${k}</div><div class="v">${names(r.who)}</div><div class="d">${d(r.max)}</div></div>` : '';
+  const day = {}; // '날짜|이름' → 그날 이긴 판
+  for (const m of matches) { const k = new Date(m.t).toDateString(); for (const p of m[m.win]) day[k + '|' + p] = (day[k + '|' + p] || 0) + 1; }
+  const days = Object.entries(day).map(([k, n]) => ({ name: k.split('|')[1], n }));
+  const duos = Object.entries(st.duo).map(([k, v]) => { const [a, b] = k.split('\u0001'); return { name: `${a} + ${b}`, a, b, g: v.g }; }).filter(x => x.a < x.b);
+  const pens = {}; // 벌칙 당첨 횟수('진 팀 전체'면 진 팀 모두 한 번씩)
+  for (const m of matches) if (m.penalty) for (const p of m.penalty.who === PEN_ALL ? m[m.win === 'blue' ? 'red' : 'blue'] : [m.penalty.who]) pens[p] = (pens[p] || 0) + 1;
+  const html = [
+    card('🔥 최장 연승', top(ps, p => run(p.form, 1)), n => `${n}연승`),
+    card('📈 최고 MMR', top(ps, p => Math.round(p.peak ?? 0)), n => `MMR ${n}까지 찍었어요`),
+    card('👑 하루 최다승', top(days, x => x.n), n => `하루에 ${n}승`),
+    card('🎮 최다 출전', top(ps, p => p.g), n => `${n}판`),
+    card('🤝 최다 출전 듀오', top(duos, x => x.g), n => `같은 팀으로 ${n}판`),
+    card('🎡 벌칙왕', top(Object.entries(pens).map(([name, n]) => ({ name, n })), x => x.n), n => `벌칙 ${n}번 당첨`),
+    card('🧊 최장 연패', top(ps, p => run(p.form, 0)), n => `${n}연패`),
+  ].join('');
+  return `<div class="highlights">${html}</div>`;
+}
 function periodMatches() {
   const from = S.period === 'all' ? 0 : Date.now() - Number(S.period) * 864e5;
   return viewMatches().filter(m => m.t >= from);
@@ -1827,6 +1856,7 @@ let focus = null;
 const bar = r => `<span class="track"><i style="width:${Math.round(r * 100)}%;background:${r >= .5 ? 'var(--good)' : 'var(--bad)'}"></i></span>`;
 function renderAnalysis() {
   const { players } = S, matches = periodMatches(), st = computeStats(players, matches), minG = +$('#minG').value;
+  $('#hofBox').innerHTML = matches.length ? hallOfFame(matches, st) : '<p class="empty">기록이 쌓이면 여기에 나와요.</p>';
   if (!matches.length) { $('#hlBox').innerHTML = noMatches(); $('#pickPlayer').innerHTML = ''; $('#playerBox').innerHTML = ''; $('#matrixBox').innerHTML = ''; return; }
   const active = Object.values(st.P).filter(p => p.g).sort((a, b) => b.g - a.g);
   const allPairs = (o, filt) => Object.entries(o).map(([k, v]) => { const [a, b] = k.split('\u0001'); return { a, b, ...v, r: v.w / v.g }; }).filter(x => x.g >= minG && filt(x));
@@ -2413,6 +2443,9 @@ document.addEventListener('click', e => {
 // ---------- 버전 · 패치노트 ----------
 // 커밋해서 올릴 때마다 맨 위에 새 항목을 더해요(규칙은 CLAUDE.md). 오른쪽 위 버전은 맨 위 항목이에요.
 const NOTES = [
+  { v: '1.15.0', d: '2026-10-22', items: [
+    '명예의 전당: 분석 탭에 최장 연승, 최고 MMR, 하루 최다승, 최다 출전, 최다 출전 듀오, 벌칙왕, 최장 연패가 생겼어요. 위에서 고른 시즌·기간 판으로 세요.',
+  ] },
   { v: '1.14.0', d: '2026-10-22', items: [
     '11명 이상이면 10명만 뛰어요: 오늘 할 사람이 10명보다 많으면 팀 섞기(팀장 뽑기도)에서 10명만 고르고 나머지는 "💤 이번 판 쉬어요"에 나와요. 지난 판에 쉰 사람이 먼저, 그다음엔 오늘 덜 뛴 사람부터 뛰어서 공평하게 돌아가요. 카톡용 복사에도 쉬는 사람이 들어가요.',
     '팀 섞기를 다시 눌렀을 때 바로 전 판과 똑같은 팀이 나오지 않게 했어요(다른 조합이 있을 때). "같은 팀으로 한 판 더"는 그대로예요.',
