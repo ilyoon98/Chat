@@ -465,7 +465,7 @@ export default async function handler(req, res) {
         const from = cleanName(b.from), to = cleanName(b.to);
         if (!from || !to || from === to) return bad(res);
         const swap = arr => [...new Set(arr.map(p => (p === from ? to : p)))];
-        const swapGame = g => ({ ...g, blue: swap(g.blue), red: swap(g.red), ...(g.lanes && { lanes: Object.fromEntries(Object.entries(g.lanes).map(([n, L]) => [n === from ? to : n, L])) }), ...(g.penalty?.who === from && { penalty: { ...g.penalty, who: to } }) });
+        const swapGame = g => ({ ...g, blue: swap(g.blue), red: swap(g.red), ...(g.lanes && { lanes: Object.fromEntries(Object.entries(g.lanes).map(([n, L]) => [n === from ? to : n, L])) }), ...(g.penalty?.who === from && { penalty: { ...g.penalty, who: to } }), ...(g.bench && { bench: swap(g.bench) }) });
         const both = g => [...g.blue, ...g.red].includes(from) && [...g.blue, ...g.red].includes(to);
         const [matches, curs] = await Promise.all([readMatches(), Promise.all(rooms.map(r => redis.get(RK.cur(r.id))))]);
         // 같은 판에 둘 다 뛴 적이 있거나 어느 방 팀에 둘 다 있으면 서로 다른 사람이라 합칠 수 없어요.
@@ -641,13 +641,15 @@ export default async function handler(req, res) {
         if (!blue || !red) return bad(res);
         const t = Number(c.t) || Date.now();
         const lanes = cleanLanes(c.lanes, [...blue, ...red]), round = Number(c.round) || t;
+        // 11명 이상일 때 이번 판에 쉬는 사람(팀에 없는 사람만). 구경하는 화면에도 보여요.
+        const bench = (cleanNames(c.bench, MAX_PLAYERS) || []).filter(p => !blue.includes(p) && !red.includes(p));
         // 벌칙 룰렛 결과는 기록된 판의 진 팀 사람(또는 진 팀 전체)일 때만 남겨요. 새로 돌렸으면 디스코드에도 올려요.
         const done = c.penalty && (await readMatches()).find(m => m.round === round);
         const penalty = done && cleanPenalty(c.penalty, done.win === 'blue' ? done.red : done.blue);
         if (penalty && (await redis.get(RK.cur(room.id)))?.penalty?.t !== penalty.t) notify = `🎡 벌칙 당첨 · ${room.name}\n**${penalty.who}** → ${penalty.what}`;
         // 벌칙은 그 판 기록에도 남겨요. 방장이 다음 판으로 넘어가도 기록 탭·이 방 기록에서 누가 무슨 벌칙인지 볼 수 있어요.
         if (penalty && done.penalty?.t !== penalty.t) { const { id: mid, ...rest } = done; await redis.hset(K.matches, { [mid]: { ...rest, penalty: { who: penalty.who, what: penalty.what, t: penalty.t } } }); }
-        await redis.set(RK.cur(room.id), { blue, red, t, round, ...(lanes && { lanes }), ...(penalty && { penalty: { ...penalty, round } }) });
+        await redis.set(RK.cur(room.id), { blue, red, t, round, ...(lanes && { lanes }), ...(bench.length && { bench }), ...(penalty && { penalty: { ...penalty, round } }) });
         await saveRoom({ ...room, lastActive: Date.now() });
         break;
       }

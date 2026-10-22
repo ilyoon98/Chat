@@ -241,6 +241,8 @@ select { font: inherit; color: var(--ink); background: var(--sunk); border: 1px 
 .team li .st { color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .shuffling .team ul { opacity: .45; }
 .odds { margin-top: 12px; }
+.bench { margin: 10px 0 0; padding: 8px 12px; border-radius: 10px; background: var(--sunk); border: 1px dashed var(--line); font-size: 14px; }
+.bench b { font-weight: 700; } .bench small { color: var(--muted); margin-left: 6px; }
 .odds .bar { display: flex; height: 8px; border-radius: 99px; overflow: hidden; background: var(--line); }
 .odds .bar i { display: block; } .odds .bar .b { background: var(--blue); } .odds .bar .r { background: var(--red); }
 .odds .lbl { display: flex; justify-content: space-between; font-size: 13px; color: var(--muted); margin-top: 4px; font-variant-numeric: tabular-nums; }
@@ -1221,15 +1223,35 @@ $('#mRandom').onclick = () => setMode('random');
 $('#mBalance').onclick = () => setMode('balance');
 $('#mDraft').onclick = () => setMode('draft');
 
+// ---------- 이번 판 뛸 사람 ----------
+// 롤 내전은 5대5라 오늘 할 사람이 10명보다 많으면 10명만 뛰고 나머지는 이번 판에 쉬어요.
+// 공평하게 정해요: 지난 판에 쉰 사람(새로 온 사람 포함)이 먼저, 그다음엔 오늘 이 방에서 덜 뛴 사람부터, 같으면 무작위.
+const TEAM_MAX = 10;
+function pickPlayers(names) {
+  if (names.length <= TEAM_MAX) return { play: names, bench: [] };
+  const ms = roomMatches().filter(m => Date.now() - m.t < 12 * 36e5), last = ms.at(-1); // 오늘(12시간 안) 판만 봐요
+  const lastPlayed = new Set(last ? [...last.blue, ...last.red] : []), games = {};
+  for (const m of ms) for (const p of [...m.blue, ...m.red]) games[p] = (games[p] || 0) + 1;
+  const sat = p => (last && !lastPlayed.has(p) ? 0 : 1);
+  const order = shuffle(names).sort((a, b) => sat(a) - sat(b) || (games[a] || 0) - (games[b] || 0)); // 정렬은 같은 점수끼리 섞인 순서를 지켜요
+  return { play: order.slice(0, TEAM_MAX), bench: order.slice(TEAM_MAX) };
+}
+// 두 팀 나눔이 같은지 보는 열쇠(블루·레드가 뒤바뀐 것도 같은 나눔이에요). 바로 전 판과 똑같이 나오지 않게 써요.
+const splitKey = (a, b) => [a, b].map(t => [...t].sort().join('\u0001')).sort().join('|');
 function combos(n, k) { const out = [], cur = []; (function go(s) { if (cur.length === k) { out.push([...cur]); return; } for (let i = s; i < n; i++) { cur.push(i); go(i + 1); cur.pop(); } })(0); return out; }
-function makeTeams(names, mode, st) {
+function makeTeams(names, mode, st, avoid) {
   const half = Math.ceil(names.length / 2);
-  if (mode === 'random') { const s = shuffle(names); return { blue: s.slice(0, half), red: s.slice(half) }; }
+  if (mode === 'random') {
+    let s, tries = 0;
+    do { s = shuffle(names); } while (avoid && splitKey(s.slice(0, half), s.slice(half)) === avoid && ++tries < 30);
+    return { blue: s.slice(0, half), red: s.slice(half) };
+  }
   const r = names.map(n => mmrOf(st, n)), avg = idx => idx.reduce((s, i) => s + r[i], 0) / idx.length;
   let cands;
   if (names.length <= 14) cands = combos(names.length, half);
   else cands = Array.from({ length: 4000 }, () => shuffle(names.map((_, i) => i)).slice(0, half));
-  const scored = cands.map(c => { const set = new Set(c), rest = names.map((_, i) => i).filter(i => !set.has(i)); return { c, rest, d: Math.abs(avg(c) - avg(rest)) }; }).sort((a, b) => a.d - b.d);
+  let scored = cands.map(c => { const set = new Set(c), rest = names.map((_, i) => i).filter(i => !set.has(i)); return { c, rest, d: Math.abs(avg(c) - avg(rest)) }; }).sort((a, b) => a.d - b.d);
+  if (avoid) { const fresh = scored.filter(x => splitKey(x.c.map(i => names[i]), x.rest.map(i => names[i])) !== avoid); if (fresh.length) scored = fresh; } // 바로 전 판과 같은 나눔은 빼요
   const pool = scored.filter(x => x.d <= scored[0].d + 8).slice(0, 12);
   const pick = pool[rnd(pool.length)];
   const A = pick.c.map(i => names[i]), B = pick.rest.map(i => names[i]);
@@ -1296,7 +1318,8 @@ function renderTeams(shuffling) {
       <div class="${teamCls('red')}"><h3><span>${crown('red')}${TEAM.red}</span> <small>${mmr('red')}</small></h3>${ul('red')}</div>
     </div>
     ${both ? `<div class="odds"><div class="bar"><i class="b" style="width:${bp}%"></i><i class="r" style="width:${100 - bp}%"></i></div>
-      <div class="lbl"><span>1팀 예상 승률 ${bp}%</span><span>2팀 ${100 - bp}%</span></div></div>` : ''}    ${shuffling ? '' : rec ? `
+      <div class="lbl"><span>1팀 예상 승률 ${bp}%</span><span>2팀 ${100 - bp}%</span></div></div>` : ''}
+    ${!shuffling && c.bench?.length ? `<p class="bench">💤 이번 판 쉬어요: <b>${c.bench.map(esc).join(', ')}</b><small>다음 판 섞을 때 먼저 뛰어요</small></p>` : ''}    ${shuffling ? '' : rec ? `
       <div class="recorded ${rec.win}${celebrate ? ' celebrate' : ''}">
         <div class="rec-head"><span class="k">기록됨</span><b>${TEAM[rec.win]} 승리</b><button class="btn ghost small" data-shot="match" data-id="${esc(rec.id)}">결과 이미지</button>${host ? '<button class="btn ghost small" id="undo">↶ 되돌리기</button>' : ''}</div>${streakNote(rec, st)}
         ${host ? '<div class="rec-actions"><button class="big primary" id="reshuffle">새로 섞기</button><button class="big" id="again">같은 팀으로 한 판 더</button></div>' : ''}
@@ -1417,15 +1440,19 @@ $('#teamsBox').addEventListener('change', e => {
 const recordedMatch = () => { const c = S.current, r = c && roundOf(c); return r ? S.matches.find(m => m.round === r) : null; };
 $('#shuffle').onclick = () => {
   if (!needHost()) return;
-  const names = S.players.filter(p => S.selected.has(p)); if (names.length < 2) return;
-  if (S.mode === 'draft') return startDraft(names);
+  const sel = S.players.filter(p => S.selected.has(p)); if (sel.length < 2) return;
+  const { play: names, bench } = pickPlayers(sel);
+  if (bench.length) toast(`${sel.length}명이라 ${bench.length}명은 이번 판 쉬어요: ${bench.join(', ')}. 다음 판엔 먼저 뛰어요.`);
+  if (S.mode === 'draft') return startDraft(names, bench);
   S.draft = null;
+  const prev = S.current?.blue?.length && S.current?.red?.length ? splitKey(S.current.blue, S.current.red) : null;
   const st = computeStats(S.players, seasonMatches()), btn = $('#shuffle'); btn.disabled = true;
   let k = 0; const frames = reduceMotion ? 0 : 12, d = S;
   const tick = () => {
-    d.current = makeTeams(names, k < frames ? 'random' : S.mode, st);
+    d.current = makeTeams(names, k < frames ? 'random' : S.mode, st, prev);
     if (k++ < frames) { renderTeams(true); sfx('tick'); setTimeout(tick, 40 + k * 12); return; }
     sfx('done');
+    if (bench.length) d.current.bench = bench;
     newRound(d.current); assignLanes(d.current); S.fx = 'reveal'; renderTeams(); btn.disabled = false; saveCurrent();
   };
   tick();
@@ -1435,7 +1462,8 @@ $('#teamsBox').addEventListener('click', async e => {
   const c = S.current, rec = recordedMatch();
   if (e.target.id === 'copyTeams' && c) { // 라인을 정했으면 '[1팀 블루] 탑 일윤, 정글 기종, …'
     const L = c.lanes || {}, order = p => L[p] ? LANES.indexOf(L[p]) : 9;
-    return copyText(['blue', 'red'].map(side => `[${TEAM[side]}] ${[...c[side]].sort((a, b) => order(a) - order(b)).map(p => L[p] ? `${LANE[L[p]]} ${p}` : p).join(', ')}`).join('\n'));
+    return copyText([...['blue', 'red'].map(side => `[${TEAM[side]}] ${[...c[side]].sort((a, b) => order(a) - order(b)).map(p => L[p] ? `${LANE[L[p]]} ${p}` : p).join(', ')}`),
+      ...(c.bench?.length ? [`[쉬는 사람] ${c.bench.join(', ')}`] : [])].join('\n'));
   }
   const vote = e.target.closest('[data-mvp]'); // MVP 투표는 구경하는 사람도 해요
   if (vote) { if (rec && !vote.disabled) voteMvp(rec.id, vote.dataset.mvp); return; }
@@ -1585,8 +1613,8 @@ function pickCaps(d) {
   const [a, b] = rnd(2) ? two : [two[1], two[0]];
   d.cap = { blue: a, red: b };
 }
-function startDraft(names) {
-  S.draft = { names, method: S.capMethod, picks: { blue: [], red: [] }, history: [], first: null, coin: null, turn: null };
+function startDraft(names, bench = []) {
+  S.draft = { names, bench, method: S.capMethod, picks: { blue: [], red: [] }, history: [], first: null, coin: null, turn: null };
   pickCaps(S.draft);
   return spinCaps(S.draft);
   renderTeams(); // 화면은 그대로 두고(아래로 끌어내리지 않아요), 팀 칸 자리에 뽑기 화면이 나와요
@@ -1610,7 +1638,7 @@ function draftPick(p, side) {
   renderTeams();
 }
 function finishDraft() {
-  const d = S.draft, cur = { blue: [d.cap.blue, ...d.picks.blue], red: [d.cap.red, ...d.picks.red] };
+  const d = S.draft, cur = { blue: [d.cap.blue, ...d.picks.blue], red: [d.cap.red, ...d.picks.red], ...(d.bench?.length && { bench: d.bench }) };
   S.draft = null; S.current = cur; newRound(cur); assignLanes(cur); S.fx = 'reveal';
   renderTeams(); saveCurrent(); sfx('done'); toast('팀이 다 짜였어요. 끝나면 이긴 팀을 눌러 주세요.');
 }
@@ -2385,6 +2413,10 @@ document.addEventListener('click', e => {
 // ---------- 버전 · 패치노트 ----------
 // 커밋해서 올릴 때마다 맨 위에 새 항목을 더해요(규칙은 CLAUDE.md). 오른쪽 위 버전은 맨 위 항목이에요.
 const NOTES = [
+  { v: '1.14.0', d: '2026-10-22', items: [
+    '11명 이상이면 10명만 뛰어요: 오늘 할 사람이 10명보다 많으면 팀 섞기(팀장 뽑기도)에서 10명만 고르고 나머지는 "💤 이번 판 쉬어요"에 나와요. 지난 판에 쉰 사람이 먼저, 그다음엔 오늘 덜 뛴 사람부터 뛰어서 공평하게 돌아가요. 카톡용 복사에도 쉬는 사람이 들어가요.',
+    '팀 섞기를 다시 눌렀을 때 바로 전 판과 똑같은 팀이 나오지 않게 했어요(다른 조합이 있을 때). "같은 팀으로 한 판 더"는 그대로예요.',
+  ] },
   { v: '1.13.0', d: '2026-10-22', items: [
     '결산 이미지: 내전 탭 "이 방 기록"의 "결산 이미지"를 누르면 오늘 이 방 순위(승-패·승률·⭐MVP)와 벌칙 목록을 그림 한 장으로 만들어요. 단톡방에 바로 올리세요.',
   ] },
