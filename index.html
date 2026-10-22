@@ -72,7 +72,6 @@ td .tier { margin-right: 6px; }
 .tiername { color: var(--muted); font-size: 13px; }
 .champ { width: 20px; height: 20px; border-radius: 5px; vertical-align: middle; flex: none; }
 .champs { display: inline-flex; gap: 3px; vertical-align: middle; }
-.riotinfo .champs { gap: 4px; align-items: center; } .riotinfo .champ { margin-left: 4px; }
 .lane { color: var(--muted); font-size: 12px; font-weight: 500; white-space: nowrap; }
 .team li .st { text-align: right; line-height: 1.35; margin-left: auto; }
 .team li .who { flex: 1 1 64px; }
@@ -217,8 +216,31 @@ td.num, th.num { text-align: right; }
 .log .lost { color: var(--muted); }
 @media (max-width: 520px) { .log li { grid-template-columns: minmax(0, 1fr) auto; } .log time { grid-column: 1 / -1; } }
 .streak { font-size: 12px; font-weight: 700; margin-left: 6px; } .streak.w { color: var(--good); } .streak.l { color: var(--bad); }
-.editform { flex-wrap: wrap; margin-bottom: 12px; } .editform input { flex: 1 1 160px; }
-.editform + .editform { margin-top: -4px; } .riotinfo { margin: -4px 0 12px; } .riotinfo b { color: var(--ink); }
+/* 명단 편집: 위쪽 큰 버튼으로 시작하고, 편집 중엔 금색 띠에서 끝내요. 고를 사람을 누르면 그 사람만 고치는 작은 칸이 열려요. */
+.roster-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 12px; }
+.roster-head h2 { margin: 0; flex: 1; }
+.editbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 10px 12px; margin-bottom: 12px; border-radius: 10px;
+  background: color-mix(in srgb, var(--gold) 14%, var(--surface)); border: 1px solid color-mix(in srgb, var(--gold) 45%, var(--line)); }
+.editbar .msg { margin-right: auto; font-size: 14px; } .editbar .msg b { color: var(--gold); }
+.editbar .btn.gold { font-size: 17px; padding: 8px 20px; }
+.editpanel { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px 10px; align-items: center; padding: 14px; margin-bottom: 12px; border: 1px solid var(--gold); border-radius: 12px; background: var(--sunk); }
+.editpanel .ep-head { grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: center; font-weight: 700; font-size: 16px; }
+.editpanel label { color: var(--muted); font-size: 13px; white-space: nowrap; }
+.editpanel form { display: flex; gap: 6px; min-width: 0; } .editpanel form input { flex: 1; min-width: 0; }
+.editpanel .ep-sub { grid-column: 2; color: var(--muted); font-size: 12.5px; margin-top: -4px; }
+.editpanel .ep-foot { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 16px; }
+.linkbtn.danger { color: var(--bad); }
+.xbtn { font: inherit; font-size: 18px; line-height: 1; background: none; border: 0; color: var(--muted); cursor: pointer; padding: 2px 6px; }
+/* 선수 카드: 이름에 마우스를 올리거나(폰은 표에서 이름을 누르면) 내전 기록·롤 정보를 한눈에 */
+[data-card] { cursor: help; } button[data-card], .pl[data-card] { cursor: pointer; }
+.pcard { position: fixed; z-index: 60; width: min(300px, calc(100vw - 16px)); padding: 12px 14px; border-radius: 12px; background: var(--surface); border: 1px solid var(--gold);
+  box-shadow: 0 10px 30px rgba(0,0,0,.35); font-size: 13px; line-height: 1.5; pointer-events: none; }
+.pcard .ph { display: flex; align-items: center; gap: 6px; font-weight: 700; font-size: 15px; margin-bottom: 6px; }
+.pcard .ph small { margin-left: auto; color: var(--muted); font-weight: 500; font-size: 12px; }
+.pcard dl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 3px 10px; margin: 0; }
+.pcard dt { color: var(--muted); white-space: nowrap; } .pcard dd { margin: 0; min-width: 0; }
+.pcard .champs { flex-wrap: wrap; gap: 4px 8px; } .pcard .champs span { display: inline-flex; gap: 4px; align-items: center; white-space: nowrap; }
+.pcard .hint { margin: 6px 0 0; color: var(--muted); font-size: 12px; }
 .gate { position: fixed; inset: 0; z-index: 60; background: var(--bg); display: grid; place-items: center; padding: 16px; overflow-y: auto; }
 .gate-card { width: min(100%, 400px); display: grid; gap: 12px; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 24px 20px; }
 .gate-card h1 { font-size: clamp(28px, 8vw, 36px); } .gate-card .sub { margin: 0; }
@@ -280,7 +302,8 @@ body.gated { overflow: hidden; }
     </div>
 
     <div class="card">
-      <h2>선수 명단 <span class="r" id="rosterCount"></span></h2>
+      <div class="roster-head"><h2>선수 명단 <span class="r" id="rosterCount"></span></h2><button class="btn ghost" id="editToggle">✎ 명단 편집</button></div>
+      <div id="editBar"></div>
       <div id="roster"></div>
       <div id="editBox"></div>
       <form class="add" id="addForm">
@@ -290,8 +313,6 @@ body.gated { overflow: hidden; }
       <div class="row" style="margin-top:10px">
         <button class="btn ghost small" id="selAll">전체 선택</button>
         <button class="btn ghost small" id="selNone">선택 해제</button>
-        <button class="btn ghost small" id="editToggle" aria-pressed="false">명단 편집</button>
-        <button class="btn ghost small" id="riotRefresh" hidden>롤 정보 새로고침</button>
       </div>
       <p class="note" id="rosterNote"></p>
     </div>
@@ -355,6 +376,7 @@ body.gated { overflow: hidden; }
   </section>
 </div>
 <div class="toast" id="toast" hidden></div>
+<div class="pcard" id="pcard" role="tooltip" hidden></div>
 
 <script src="https://cdn.jsdelivr.net/npm/ably@2.29.0/build/ably.min.js" id="ablyLib" async></script>
 <script>
@@ -680,17 +702,53 @@ function champIcon(id, tip) {
 const man = n => n >= 1e4 ? `${+(n / 1e4).toFixed(1)}만` : String(n); // 123456 → '12.3만'
 const mostIcons = p => (S.riot[p]?.most || []).map(([c, g, w]) => champIcon(c, `최근 ${g}판 ${pct(w, g)}%`)).join('');
 const mastIcons = p => (S.riot[p]?.mast || []).map(([c, lv, pts]) => champIcon(c, `숙련도 ${lv}레벨 · ${man(pts)}점`)).join('');
-// 명단 편집에서 이름을 눌렀을 때 보이는 롤 정보
-function riotInfo(p) {
-  const r = S.riot[p], item = (c, text) => `<span class="champs">${champIcon(c)}${esc(champName(c))} ${text}</span>`;
-  const lines = [`솔랭 <b>${esc(soloText(p))}</b>${r.solo ? ` · ${r.solo.w}승 ${r.solo.l}패` : ''} · ${ago(r.at)} 불러옴`];
-  if (r.n) lines.push(`주 라인 <b>${esc(laneText(p))}</b> · 최근 ${r.n}판(솔랭 ${r.q[0]} · 자랭 ${r.q[1]} · 일반 ${r.q[2]})`);
-  else if (r.n === 0) lines.push('최근 솔랭·자랭·일반 판이 없어서 주 라인·모스트는 비워 둬요.');
-  if (r.most?.length) lines.push('모스트 ' + r.most.map(([c, g, w]) => item(c, `${g}판 ${pct(w, g)}%`)).join(' · '));
-  if (r.mast?.length) lines.push('숙련도 ' + r.mast.map(([c, , pts]) => item(c, `${man(pts)}점`)).join(' · '));
-  if (!r.gAt) lines.push('최근 판을 아직 다 못 불러왔어요. 2분쯤 뒤에 알아서 이어서 불러와요.');
-  return lines.join('<br>');
+// ---------- 선수 카드 ----------
+// 이름이 보이는 곳(명단·오늘 할 사람·팀·팀장 뽑기·전적·이번 세션·분석)에 data-card="이름"을 붙여 두면,
+// 마우스를 올리거나 키보드로 고르면 내전 기록과 롤 정보를 카드로 보여줘요. 폰은 표·세션에서 이름을 누르면 열려요.
+function playerCard(p) {
+  const st = computeStats(S.players, S.matches), s = st.P[p], T = tierMap(st)[p], x = computeStats([], sessionMatches()).P[p];
+  const r = S.riot[p], item = (c, text) => `<span>${champIcon(c)}${esc(champName(c))} ${text}</span>`;
+  const rows = [['내전', s?.g ? `${s.g}판 ${s.w}승 ${s.g - s.w}패 · <b>${pct(s.w, s.g)}%</b> · MMR ${Math.round(s.mmr)}` : '아직 기록 없음']];
+  if (x?.g) rows.push(['이번 세션', `${x.w}승 ${x.g - x.w}패`]);
+  if (r) {
+    rows.push(['솔랭', `<b>${esc(soloText(p))}</b>${r.solo ? ` · ${r.solo.w}승 ${r.solo.l}패` : ''}`]);
+    if (r.n) rows.push(['주 라인', `<b>${esc(laneText(p))}</b> · 최근 ${r.n}판`]);
+    if (r.most?.length) rows.push(['모스트', `<span class="champs">${r.most.map(([c, g, w]) => item(c, `${g}판 ${pct(w, g)}%`)).join('')}</span>`]);
+    if (r.mast?.length) rows.push(['숙련도', `<span class="champs">${r.mast.map(([c, , pts]) => item(c, `${man(pts)}점`)).join('')}</span>`]);
+  }
+  return `<div class="ph">${tierIcon(T)}${esc(p)}<small>${T ? esc(T.name) : ''}</small></div>
+    <dl>${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl>
+    <p class="hint">${r ? `${esc(r.id)} · ${ago(r.at)} 불러옴${r.gAt ? '' : ' · 최근 판 불러오는 중'}` : 'Riot ID를 연결하면 솔랭·주 라인·모스트도 보여요 (명단 편집)'}</p>`;
 }
+let cardFor = null, cardTimer;
+function showCard(el) {
+  const p = el.dataset.card, box = $('#pcard');
+  if (!p || !S.players.includes(p) && !S.matches.some(m => m.blue.includes(p) || m.red.includes(p))) return;
+  clearTimeout(cardTimer); cardFor = el;
+  box.innerHTML = playerCard(p); box.hidden = false;
+  // 이름 아래에 띄우고, 화면 아래가 모자라면 위로. 양옆은 화면 안으로.
+  const a = el.getBoundingClientRect(), b = box.getBoundingClientRect(), m = 8;
+  const top = a.bottom + m + b.height > innerHeight && a.top - m - b.height > 0 ? a.top - m - b.height : a.bottom + m;
+  box.style.top = Math.max(m, Math.min(top, innerHeight - b.height - m)) + 'px';
+  box.style.left = Math.max(m, Math.min(a.left, innerWidth - b.width - m)) + 'px';
+}
+function hideCard() { clearTimeout(cardTimer); cardFor = null; $('#pcard').hidden = true; }
+document.addEventListener('pointerover', e => {
+  if (e.pointerType !== 'mouse') return;
+  const el = e.target.closest('[data-card]');
+  if (el === cardFor) return;
+  clearTimeout(cardTimer);
+  cardTimer = setTimeout(() => (el ? showCard(el) : hideCard()), el ? 250 : 120);
+});
+document.addEventListener('focusin', e => { const el = e.target.closest?.('[data-card]'); if (el?.matches(':focus-visible')) showCard(el); else hideCard(); });
+document.addEventListener('focusout', () => { if (cardFor && document.activeElement !== cardFor) hideCard(); });
+// 폰: 버튼이 아닌 이름(표·세션)을 누르면 열고, 다른 곳을 누르면 닫아요. 명단 칩은 눌러서 넣고 빼는 거라 그대로 둬요.
+document.addEventListener('click', e => {
+  const el = e.target.closest('[data-card]');
+  if (el && !el.closest('button') && el !== cardFor) return showCard(el);
+  if (cardFor) hideCard();
+});
+addEventListener('scroll', () => { if (cardFor) hideCard(); }, { passive: true, capture: true });
 const ago = t => { const m = Math.round((Date.now() - t) / 6e4); return m < 1 ? '방금' : m < 60 ? `${m}분 전` : m < 1440 ? `${Math.round(m / 60)}시간 전` : `${Math.round(m / 1440)}일 전`; };
 // 6시간 넘었거나 최근 판을 다 못 불러온 사람이 있으면 서버에 불러 달라고 해요.
 // 한 화면에서 한 시간에 한 번만 묻고, 서버가 아직 남았다고(more) 하면 2분 반 뒤에 이어서 물어봐요(키 제한: 2분 100번).
@@ -721,10 +779,10 @@ function renderRoster() {
   const chip = (p, edit) => {
     const [mark, cls, label] = edit ? ['✎', 'x', '편집'] : sel.has(p) ? ['✕', 'x', '빼기'] : ['↓', 'in', '오늘 할 사람에 넣기'];
     const can = edit ? roster : host;
-    return `<button class="chip${(edit ? S.editTarget === p : sel.has(p)) ? ' on' : ''}" data-i="${players.indexOf(p)}"${can ? ` aria-label="${esc(p)} ${label}"` : ' tabindex="-1" style="cursor:default"'}>${tierIcon(T[p])}${esc(p)}${can ? `<span class="${cls}" aria-hidden="true">${mark}</span>` : ''}</button>`;
+    return `<button class="chip${(edit ? S.editTarget === p : sel.has(p)) ? ' on' : ''}" data-i="${players.indexOf(p)}" data-card="${esc(p)}"${can ? ` aria-label="${esc(p)} ${label}"` : ' tabindex="-1" style="cursor:default"'}>${tierIcon(T[p])}${esc(p)}${can ? `<span class="${cls}" aria-hidden="true">${mark}</span>` : ''}</button>`;
   };
   if (!roster) S.editing = false;
-  $('#addForm').hidden = !roster; $('#editToggle').hidden = !roster;
+  $('#addForm').hidden = !roster; $('#editToggle').hidden = !roster || S.editing;
   $('#selAll').hidden = $('#selNone').hidden = !host;
   $('#shuffleRow').hidden = $('#modeNote').hidden = !host;
   $('#playCard').hidden = !S.room;
@@ -738,16 +796,23 @@ function renderRoster() {
   const n = today.length;
   $('#selCount').textContent = `${n}명` + (n >= 2 ? ` · ${Math.ceil(n / 2)} 대 ${Math.floor(n / 2)}` : '');
   $('#shuffle').disabled = n < 2;
-  $('#editToggle').setAttribute('aria-pressed', S.editing); $('#editToggle').textContent = S.editing ? '편집 끝' : '명단 편집';
-  $('#riotRefresh').hidden = !S.editing || !Object.keys(S.riot).length;
-  $('#rosterNote').textContent = S.editing ? '이름을 누르면 이름을 바꾸거나 명단에서 빼거나, Riot ID를 연결해서 솔랭 티어·주 라인·모스트·숙련도를 불러올 수 있어요. 이미 있는 이름으로 바꾸면 두 사람 전적이 합쳐져요.'
+  // 편집 중엔 위에 금색 띠(무엇을 하는지 + 편집 끝), 아니면 제목 옆 '명단 편집' 버튼
+  $('#editBar').innerHTML = S.editing ? `<div class="editbar"><span class="msg"><b>✎ 명단 편집 중</b> · 고칠 사람을 누르세요</span>
+    ${Object.keys(S.riot).length ? '<button class="btn ghost small" id="riotRefresh">롤 정보 새로고침</button>' : ''}<button class="btn gold" id="editDone">편집 끝</button></div>` : '';
+  $('#rosterNote').textContent = S.editing ? '이미 있는 이름으로 바꾸면 두 사람 전적이 하나로 합쳐져요.'
     : host ? '이름을 누르면 아래 \'오늘 할 사람\' 칸으로 내려가요. 거기서 다시 누르면 명단으로 돌아와요. 명단은 저장돼서 다음에도 그대로 있어요.'
     : '구경 중이에요. 오늘 할 사람과 팀은 이 방 방장이 정해요.';
-  const t = S.editTarget, r = t && S.riot[t];
-  $('#editBox').innerHTML = S.editing && t
-    ? `<form class="add editform" id="renameForm"><input id="renameInput" type="text" maxlength="16" value="${esc(t)}" aria-label="새 이름"><button class="btn" type="submit">이름 바꾸기</button><button class="btn ghost" type="button" id="removeBtn">명단에서 빼기</button></form>
-      <form class="add editform" id="riotForm"><input id="riotInput" type="text" maxlength="30" value="${esc(r?.id ?? '')}" placeholder="Riot ID (이름#태그 · 태그 없으면 #KR1)" aria-label="${esc(t)}의 Riot ID" autocomplete="off"><button class="btn" type="submit" id="riotBtn">${r ? '다시 불러오기' : '롤 정보 불러오기'}</button>${r ? '<button class="btn ghost" type="button" id="riotUnlink">연결 끊기</button>' : ''}</form>
-      <p class="note riotinfo">${r ? riotInfo(t) : '롤 닉네임(이름#태그)을 넣으면 솔랭 티어, 주 라인·모스트(최근 솔랭·자랭·일반 20판), 숙련도를 불러와서 전적 표와 팀 칸에 보여줘요.'}</p>` : '';
+  // 고른 사람 한 명만 고치는 작은 칸: 이름 / Riot ID 두 줄, 지우는 건 아래 글자 버튼으로. 롤 정보 자세한 건 선수 카드에서 봐요.
+  const t = S.editTarget, r = t && S.riot[t], lane = t && laneText(t, true);
+  $('#editBox').innerHTML = S.editing && t ? `<div class="editpanel">
+      <div class="ep-head"><span>${esc(t)}</span><button class="xbtn" type="button" id="epClose" aria-label="닫기">✕</button></div>
+      <label for="renameInput">이름</label>
+      <form id="renameForm"><input id="renameInput" type="text" maxlength="16" value="${esc(t)}"><button class="btn small" type="submit">바꾸기</button></form>
+      <label for="riotInput">Riot ID</label>
+      <form id="riotForm"><input id="riotInput" type="text" maxlength="30" value="${esc(r?.id ?? '')}" placeholder="이름#태그 (태그 없으면 #KR1)" autocomplete="off"><button class="btn small" type="submit" id="riotBtn">불러오기</button></form>
+      <div class="ep-sub">${r ? `솔랭 ${esc(soloText(t))}${lane ? ` · ${esc(lane)}` : ''} · ${ago(r.at)} 불러옴` : '넣으면 솔랭·주 라인·모스트·숙련도를 불러와요'}</div>
+      <div class="ep-foot">${r ? '<button class="linkbtn" type="button" id="riotUnlink">Riot ID 연결 끊기</button>' : ''}<button class="linkbtn danger" type="button" id="removeBtn">명단에서 빼기</button></div>
+    </div>` : '';
 }
 $('#roster').addEventListener('click', async e => {
   const b = e.target.closest('button[data-i]'); if (!b) return;
@@ -798,21 +863,26 @@ $('#editBox').addEventListener('submit', async e => {
 });
 $('#editBox').addEventListener('click', e => {
   if (!S.editTarget) return;
+  if (e.target.id === 'epClose') { S.editTarget = null; return renderRoster(); }
   if (e.target.id === 'riotUnlink') return linkRiot(S.editTarget, '');
   if (e.target.id !== 'removeBtn') return;
   const name = S.editTarget;
   S.players = S.players.filter(p => p !== name); S.selected.delete(name); delete S.riot[name]; S.editTarget = null; renderAll();
   rosterAction('removePlayer', { name });
 });
-$('#riotRefresh').onclick = async () => {
-  const btn = $('#riotRefresh'); btn.disabled = true;
+$('#editBar').addEventListener('click', e => {
+  if (e.target.id === 'editDone') { S.editing = false; S.editTarget = null; renderRoster(); }
+  if (e.target.id === 'riotRefresh') refreshRiotNow(e.target);
+});
+async function refreshRiotNow(btn) {
+  btn.disabled = true;
   try {
     const d = await api('refreshRiot', { force: true }); riotAgain(d);
     toast(d.refreshed ? `${d.refreshed}명의 롤 정보를 새로 불러왔어요.${d.more ? ' 나머지는 2분쯤 뒤에 이어서 불러와요.' : ''}`
       : d.more ? '방금 많이 불러서 잠깐 쉬는 중이에요. 2분쯤 뒤에 알아서 이어서 불러와요.' : '방금 불러온 정보라서 그대로예요. 10분 뒤에 다시 눌러 주세요.');
   } catch {}
   btn.disabled = false; renderAll();
-};
+}
 $('#addForm').addEventListener('submit', e => {
   e.preventDefault();
   if (!needRoster()) return;
@@ -865,7 +935,7 @@ function renderTeams(shuffling) {
   // 이름 칸은 끌어서 옮기는 손잡이, 옆 화살표 버튼은 눌러서 상대 팀으로 보내기예요. 둘 다 방장만.
   const swapBtn = (p, side) => rec || shuffling || !host ? ''
     : `<button class="swap" data-swap="${esc(p)}" data-side="${side}" title="상대 팀으로" aria-label="${esc(p)} ${side === 'blue' ? '2팀' : '1팀'}으로 보내기">${side === 'blue' ? '→' : '←'}</button>`;
-  const li = (p, side) => { const s = st.P[p], x = ss.P[p]; return `<li><div class="pl" data-p="${esc(p)}" data-side="${side}"><span class="who">${tierIcon(T[p])}<span class="nm">${esc(p)}</span><span class="lane">${laneText(p, true)}</span></span><span class="st">${s?.g ? `${pct(s.w, s.g)}% · ${s.g}판` : '첫 판'}${x?.g ? `<br><span class="sess">이번 ${x.w}승 ${x.g - x.w}패</span>` : ''}</span></div>${swapBtn(p, side)}</li>`; };
+  const li = (p, side) => { const s = st.P[p], x = ss.P[p]; return `<li><div class="pl" data-p="${esc(p)}" data-card="${esc(p)}" data-side="${side}"><span class="who">${tierIcon(T[p])}<span class="nm">${esc(p)}</span><span class="lane">${laneText(p, true)}</span></span><span class="st">${s?.g ? `${pct(s.w, s.g)}% · ${s.g}판` : '첫 판'}${x?.g ? `<br><span class="sess">이번 ${x.w}승 ${x.g - x.w}패</span>` : ''}</span></div>${swapBtn(p, side)}</li>`; };
   const avg = t => t.reduce((s, p) => s + mmrOf(st, p), 0) / (t.length || 1);
   const eb = 1 / (1 + Math.pow(10, (avg(c.red) - avg(c.blue)) / 400)), both = c.blue.length && c.red.length;
   // 한쪽 팀을 다 비워도 빈 팀 칸은 남겨서 다시 옮겨 올 수 있게 해요.
@@ -1101,7 +1171,7 @@ function renderDraft() {
     return;
   }
   const turn = draftTurn(d), left = draftPool(d).length;
-  const row = (p, cap) => `<li><div class="pl"><span class="who">${tierIcon(T[p])}<span class="nm">${esc(p)}</span>${cap ? '<span class="capb">팀장</span>' : ''}</span><span class="st">${info(p, '<br>')}</span></div></li>`;
+  const row = (p, cap) => `<li><div class="pl" data-card="${esc(p)}"><span class="who">${tierIcon(T[p])}<span class="nm">${esc(p)}</span>${cap ? '<span class="capb">팀장</span>' : ''}</span><span class="st">${info(p, '<br>')}</span></div></li>`;
   const slots = side => Array.from({ length: draftSize(d) - teamLen(d, side) }, () => '<li class="slot">빈 자리</li>').join('');
   const team = side => `<div class="team ${side} draft-team${turn === side ? ' turn' : ''}" data-team="${side}"><h3>${TEAM[side]} <small>${turn === side ? '뽑을 차례' : ''}</small></h3>
     <ul>${row(d.cap[side], true)}${d.picks[side].map(p => row(p)).join('')}${slots(side)}</ul></div>`;
@@ -1113,7 +1183,7 @@ function renderDraft() {
   const chip = p => {
     const side = d.picks.blue.includes(p) ? 'blue' : d.picks.red.includes(p) ? 'red' : null;
     return side ? `<span class="chip taken ${side}" aria-hidden="true">${tierIcon(T[p])}${esc(p)}<small>${side === 'blue' ? '1팀' : '2팀'}</small></span>`
-      : `<button class="chip" data-pick="${esc(p)}" aria-label="${esc(p)} 뽑기">${tierIcon(T[p])}${esc(p)}<span class="champs">${mostIcons(p)}</span><small>${info(p, '<br>')}</small></button>`;
+      : `<button class="chip" data-pick="${esc(p)}" data-card="${esc(p)}" aria-label="${esc(p)} 뽑기">${tierIcon(T[p])}${esc(p)}<span class="champs">${mostIcons(p)}</span><small>${info(p, '<br>')}</small></button>`;
   };
   box.innerHTML = `<div class="draft">${head}
     <p class="draft-turn">${title}<small>${sub}</small></p>
@@ -1159,7 +1229,7 @@ function renderStats() {
   const riotCols = p => (solo ? `<td class="tiername"${S.riot[p] ? ` title="${esc(S.riot[p].id)}"` : ''}>${esc(soloText(p)) || '—'}</td>` : '')
     + (lane ? `<td class="tiername">${esc(laneText(p)) || '—'}</td>` : '') + (most ? `<td><span class="champs">${mostIcons(p)}</span></td>` : '') + (mast ? `<td><span class="champs">${mastIcons(p)}</span></td>` : '');
   $('#statsBox').innerHTML = `<div class="tbl-wrap"><table><thead><tr><th></th>${th('name', '선수')}<th>내전 티어</th>${solo ? '<th>솔랭</th>' : ''}${lane ? '<th>주 라인</th>' : ''}${most ? '<th>모스트</th>' : ''}${mast ? '<th>숙련도</th>' : ''}${th('g', '판', 'num')}<th class="num">승-패</th>${th('rate', '승률')}${th('mmr', 'MMR', 'num')}<th>최근 5판</th></tr></thead><tbody>${
-    rows.map((p, i) => `<tr><td class="rank">${p.g ? i + 1 : ''}</td><td>${tierIcon(T[p.name])}<b>${esc(p.name)}</b></td><td class="tiername">${T[p.name]?.name ?? '—'}</td>${riotCols(p.name)}<td class="num">${p.g}</td><td class="num">${p.w}-${p.g - p.w}</td>
+    rows.map((p, i) => `<tr><td class="rank">${p.g ? i + 1 : ''}</td><td data-card="${esc(p.name)}">${tierIcon(T[p.name])}<b>${esc(p.name)}</b></td><td class="tiername">${T[p.name]?.name ?? '—'}</td>${riotCols(p.name)}<td class="num">${p.g}</td><td class="num">${p.w}-${p.g - p.w}</td>
       <td><div class="rate"><span style="width:38px;text-align:right">${p.g ? pct(p.w, p.g) + '%' : '—'}</span><span class="track"><i style="width:${pct(p.w, p.g)}%;background:${p.w / p.g >= .5 ? 'var(--good)' : 'var(--bad)'}"></i></span></div></td>
       <td class="num">${p.g ? Math.round(p.mmr) : '—'}</td><td><span class="form">${p.form.slice(-5).map(f => `<i class="${f ? 'w' : 'l'}">${f ? '승' : '패'}</i>`).join('')}</span>${streak(p.form)}</td></tr>`).join('')
   }</tbody></table></div>`;
@@ -1175,7 +1245,7 @@ function renderSession() {
   const d = new Date(Math.min(...ms.map(m => m.t))), p2 = n => String(n).padStart(2, '0');
   $('#sessionMeta').textContent = `${ms.length}판 · ${d.getMonth() + 1}/${d.getDate()} ${p2(d.getHours())}:${p2(d.getMinutes())}부터`;
   $('#sessionBox').innerHTML = `<div class="tbl-wrap"><table><thead><tr><th></th><th>선수</th><th class="num">승-패</th><th>승률</th><th>흐름</th></tr></thead><tbody>${
-    rows.map((p, i) => `<tr><td class="rank">${i + 1}</td><td>${tierIcon(T[p.name])}<b>${esc(p.name)}</b></td><td class="num">${p.w}-${p.g - p.w}</td>
+    rows.map((p, i) => `<tr><td class="rank">${i + 1}</td><td data-card="${esc(p.name)}">${tierIcon(T[p.name])}<b>${esc(p.name)}</b></td><td class="num">${p.w}-${p.g - p.w}</td>
       <td><div class="rate"><span style="width:38px;text-align:right">${pct(p.w, p.g)}%</span>${bar(p.w / p.g)}</div></td>
       <td><span class="form">${p.form.slice(-8).map(f => `<i class="${f ? 'w' : 'l'}">${f ? '승' : '패'}</i>`).join('')}</span>${streak(p.form)}</td></tr>`).join('')
   }</tbody></table></div>`;
@@ -1202,7 +1272,7 @@ function renderAnalysis() {
   </div>${!duos.length && !rivals.length ? `<p class="note">최소 ${minG}판을 채운 조합이 아직 없어요. 최소 판수를 낮춰 보세요.</p>` : ''}`;
 
   if (!focus || !st.P[focus]?.g) focus = active[0]?.name;
-  $('#pickPlayer').innerHTML = active.map(p => `<button class="chip${p.name === focus ? ' on' : ''}" data-focus="${esc(p.name)}">${esc(p.name)}</button>`).join('');
+  $('#pickPlayer').innerHTML = active.map(p => `<button class="chip${p.name === focus ? ' on' : ''}" data-focus="${esc(p.name)}" data-card="${esc(p.name)}">${esc(p.name)}</button>`).join('');
   const me = st.P[focus];
   const opp = pairs(st.vs, focus).filter(x => x.g >= minG).map(x => ({ ...x, r: x.w / x.g }));
   const mates = pairs(st.duo, focus).filter(x => x.g >= minG).map(x => ({ ...x, r: x.w / x.g }));
