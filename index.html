@@ -6,15 +6,19 @@
 <title>똥겜사랑단 놀이터</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=IBM+Plex+Sans+KR:wght@400;500;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&display=swap">
+<!-- 본문은 Pretendard(필요한 글자만 받는 버전). 제목 로고만 Black Han Sans -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
 <style>
 /* Layout: 상단 탭(내전·전적·분석·기록) 한 열, 내전 탭은 명단 → 팀 → 결과 순서로 내려감 */
 :root {
   --bg: #0c1120; --surface: #151c2e; --sunk: #10172a; --ink: #e9edf7; --muted: #8f9ab3; --line: #263049;
   --blue: #4c8dff; --red: #ff5468; --gold: #d8b55b; --on-gold: #1a1406;
   --good: #2ec4a0; --bad: #f08a3c;
-  --display: "Black Han Sans", "IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
-  --body: "IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  /* --logo는 맨 위 사이트 이름에만. 버튼·팀 이름 같은 굵은 글씨(--display)는 Pretendard 800으로 써요(작은 크기에서도 안 뭉개져요). */
+  --logo: "Black Han Sans", "Pretendard Variable", Pretendard, "Malgun Gothic", sans-serif;
+  --display: "Pretendard Variable", Pretendard, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  --body: "Pretendard Variable", Pretendard, "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
   color-scheme: dark;
 }
 @media (prefers-color-scheme: light) {
@@ -32,7 +36,17 @@
 body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--body); font-size: 15px; line-height: 1.55; }
 .wrap { max-width: 980px; margin: 0 auto; padding-block: 26px 56px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: flex; flex-direction: column; gap: 18px; }
 header { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: end; gap: 12px; }
-h1 { margin: 0; font-family: var(--display); font-weight: 400; font-size: clamp(30px, 6vw, 42px); line-height: 1; }
+/* 오른쪽 위: 버전(누르면 패치노트) · 공유 상태. 새 버전을 아직 안 봤으면 금색 점 */
+.head-r { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.badge.ver { font: inherit; font-size: 12.5px; font-weight: 500; cursor: pointer; white-space: nowrap; } .badge.ver:hover { color: var(--ink); border-color: var(--gold); }
+.badge.ver .dot { background: var(--gold); }
+dialog.notes { width: min(520px, calc(100vw - 32px)); max-height: min(80vh, 640px); padding: 0; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); color: var(--ink); overflow: auto; }
+dialog.notes::backdrop { background: rgba(0, 0, 0, .55); }
+.notes-head { position: sticky; top: 0; display: flex; justify-content: space-between; align-items: center; padding: 14px 18px; background: var(--surface); border-bottom: 1px solid var(--line); font-size: 16px; }
+.notes-body { padding: 4px 18px 18px; }
+.note-ver h3 { margin: 16px 0 6px; font-size: 15px; display: flex; gap: 8px; align-items: baseline; } .note-ver h3 small { color: var(--muted); font-weight: 500; font-size: 12.5px; }
+.note-ver ul { margin: 0; padding-left: 18px; } .note-ver li { margin: 3px 0; font-size: 14px; line-height: 1.5; }
+h1 { margin: 0; font-family: var(--logo); font-weight: 400; font-size: clamp(30px, 6vw, 42px); line-height: 1; }
 h1 em { font-style: normal; color: var(--gold); }
 .sub { margin: 6px 0 0; color: var(--muted); font-size: 14px; }
 .badge { display: inline-flex; gap: 6px; align-items: center; font-size: 12.5px; font-weight: 500; color: var(--muted); border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 5px 11px; }
@@ -47,7 +61,7 @@ h1 em { font-style: normal; color: var(--gold); }
 .room-info p { margin: 0 0 6px; } .room-info .row { margin-top: 4px; }
 .linkbtn { font: inherit; font-size: 12.5px; background: none; border: 0; padding: 0; color: var(--gold); cursor: pointer; text-decoration: underline; }
 .games { display: flex; flex-wrap: wrap; gap: 8px; }
-.games button { font-family: var(--display); font-weight: 400; font-size: 18px; padding: 9px 18px; border-radius: 12px; border: 1.5px solid var(--line); background: var(--surface); color: var(--muted); cursor: pointer; }
+.games button { font-family: var(--display); font-weight: 800; font-size: 18px; padding: 9px 18px; border-radius: 12px; border: 1.5px solid var(--line); background: var(--surface); color: var(--muted); cursor: pointer; }
 .games button[aria-selected=true] { background: var(--gold); color: var(--on-gold); border-color: transparent; }
 .game { display: flex; flex-direction: column; gap: 18px; }
 .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); overflow-x: auto; }
@@ -77,29 +91,30 @@ td .tier { margin-right: 6px; }
 .team li .who { flex: 1 1 64px; }
 .team h3 { flex-wrap: wrap; white-space: nowrap; }
 .team li .sess { color: var(--ink); font-weight: 500; }
+.team li .st b { color: var(--ink); } .team li .st .up { color: var(--good); font-weight: 700; } .team li .st .down { color: var(--bad); font-weight: 700; }
 .team li.dragging .pl { opacity: .35; }
 .team li.drop .pl, .team.drop ul { outline: 2px dashed var(--gold); outline-offset: -2px; border-radius: 8px; }
 /* 팀장 뽑기 */
 .draft { display: grid; gap: 14px; margin-top: 16px; }
-.draft-bar { justify-content: flex-end; } .draft-title { margin-right: auto; font-family: var(--display); font-weight: 400; font-size: 20px; }
+.draft-bar { justify-content: flex-end; } .draft-title { margin-right: auto; font-family: var(--display); font-weight: 800; font-size: 20px; }
 .draft-caps { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .cap { display: grid; gap: 6px; padding: 10px 12px; border-radius: 12px; color: #fff; min-width: 0; }
 .cap.blue { background: var(--blue); } .cap.red { background: var(--red); }
-.cap span { font-family: var(--display); font-size: 17px; } .cap select { width: 100%; min-width: 0; font-weight: 700; }
+.cap span { font-family: var(--display); font-weight: 800; font-size: 17px; } .cap select { width: 100%; min-width: 0; font-weight: 700; }
 .draft-order { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; padding: 14px; border-radius: 12px; background: var(--sunk); border: 1px solid var(--line); }
 .draft-order-r { display: grid; gap: 8px; flex: 1 1 220px; }
-.coin-res { margin: 0; font-family: var(--display); font-size: 20px; }
+.coin-res { margin: 0; font-family: var(--display); font-weight: 800; font-size: 20px; }
 .coin, .coin-q { width: 76px; height: 76px; flex: none; }
-.coin-q { border-radius: 50%; background: var(--gold); color: var(--on-gold); display: grid; place-items: center; font-family: var(--display); font-size: 30px; }
+.coin-q { border-radius: 50%; background: var(--gold); color: var(--on-gold); display: grid; place-items: center; font-family: var(--display); font-weight: 800; font-size: 30px; }
 .coin { position: relative; transform-style: preserve-3d; }
-.coin .face { position: absolute; inset: 0; border-radius: 50%; display: grid; place-items: center; font-style: normal; font-family: var(--display); font-size: 20px; color: #fff; backface-visibility: hidden; border: 4px solid rgba(255,255,255,.35); }
+.coin .face { position: absolute; inset: 0; border-radius: 50%; display: grid; place-items: center; font-style: normal; font-family: var(--display); font-weight: 800; font-size: 20px; color: #fff; backface-visibility: hidden; border: 4px solid rgba(255,255,255,.35); }
 .coin .face.b { background: var(--blue); } .coin .face.r { background: var(--red); transform: rotateY(180deg); }
 .coin.red { transform: rotateY(180deg); }
 .coin.flip-blue { animation: coinB 1.2s cubic-bezier(.15,.6,.3,1) both; } .coin.flip-red { animation: coinR 1.2s cubic-bezier(.15,.6,.3,1) both; }
 @keyframes coinB { from { transform: rotateY(0); } to { transform: rotateY(1800deg); } }
 @keyframes coinR { from { transform: rotateY(0); } to { transform: rotateY(1980deg); } }
 /* 차례 안내는 늘 두 줄 높이라서 이름 길이가 바뀌어도 아래가 안 움직여요 */
-.draft-turn { margin: 0; font-family: var(--display); font-size: 22px; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.draft-turn { margin: 0; font-family: var(--display); font-weight: 800; font-size: 22px; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .draft-turn small { display: block; font-family: var(--body); font-size: 13px; color: var(--muted); }
 .draft-team li { min-height: 58px; } /* 뽑힌 사람 줄(좁은 폰에선 두 줄)과 빈 자리 높이를 맞춰요 */
 .draft-team li.slot { justify-content: center; border: 1.5px dashed var(--line); border-radius: 8px; color: var(--muted); font-size: 12.5px; }
@@ -125,7 +140,7 @@ select { font: inherit; color: var(--ink); background: var(--sunk); border: 1px 
 .btn { font: inherit; font-weight: 700; border: 0; border-radius: 10px; padding: 9px 16px; background: var(--ink); color: var(--bg); cursor: pointer; white-space: nowrap; }
 .btn.ghost { background: transparent; color: var(--ink); border: 1px solid var(--line); font-weight: 500; }
 .btn.small { padding: 5px 11px; font-size: 13px; }
-.btn.gold { font-family: var(--display); font-weight: 400; font-size: 20px; padding: 11px 26px; background: var(--gold); color: var(--on-gold); }
+.btn.gold { font-family: var(--display); font-weight: 800; font-size: 20px; padding: 11px 26px; background: var(--gold); color: var(--on-gold); }
 .btn:disabled { opacity: .4; cursor: not-allowed; }
 .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
 .seg button { font: inherit; font-size: 14px; border: 0; background: none; color: var(--muted); padding: 8px 14px; cursor: pointer; }
@@ -134,7 +149,7 @@ select { font: inherit; color: var(--ink); background: var(--sunk); border: 1px 
 .teams { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; margin-top: 12px; }
 @media (max-width: 520px) { .teams { gap: 8px; } }
 .team { border-radius: 12px; border: 1px solid var(--line); background: var(--sunk); overflow: hidden; min-width: 0; }
-.team h3 { margin: 0; padding: 8px 12px; font-family: var(--display); font-weight: 400; font-size: 19px; color: #fff; display: flex; justify-content: space-between; align-items: baseline; gap: 6px; }
+.team h3 { margin: 0; padding: 8px 12px; font-family: var(--display); font-weight: 800; font-size: 19px; color: #fff; display: flex; justify-content: space-between; align-items: baseline; gap: 6px; }
 .team.blue h3 { background: var(--blue); } .team.red h3 { background: var(--red); }
 .team h3 small { font-family: var(--body); font-size: 12px; font-weight: 500; opacity: .9; }
 .team ul { list-style: none; margin: 0; padding: 6px; display: flex; flex-direction: column; gap: 2px; }
@@ -153,7 +168,7 @@ select { font: inherit; color: var(--ink); background: var(--sunk); border: 1px 
 .odds .bar i { display: block; } .odds .bar .b { background: var(--blue); } .odds .bar .r { background: var(--red); }
 .odds .lbl { display: flex; justify-content: space-between; font-size: 13px; color: var(--muted); margin-top: 4px; font-variant-numeric: tabular-nums; }
 .result { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 16px; }
-.win { font-family: var(--display); font-weight: 400; font-size: 19px; border: 0; border-radius: 12px; padding: 14px 8px; color: #fff; cursor: pointer; }
+.win { font-family: var(--display); font-weight: 800; font-size: 19px; border: 0; border-radius: 12px; padding: 14px 8px; color: #fff; cursor: pointer; }
 .win.blue { background: var(--blue); } .win.red { background: var(--red); }
 .win:disabled { opacity: .35; cursor: not-allowed; }
 /* 기록된 뒤: 이긴 팀 색으로 결과를 크게 보여 주고, 다음 판 버튼 두 개를 승리 버튼만큼 크게 */
@@ -161,9 +176,9 @@ select { font: inherit; color: var(--ink); background: var(--sunk); border: 1px 
 .recorded.red { --side: var(--red); }
 .rec-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
 .rec-head .k { font-size: 13px; font-weight: 700; color: var(--muted); }
-.rec-head b { flex: 1; font-family: var(--display); font-weight: 400; font-size: clamp(22px, 6vw, 28px); line-height: 1.2; color: var(--side); }
+.rec-head b { flex: 1; font-family: var(--display); font-weight: 800; font-size: clamp(22px, 6vw, 28px); line-height: 1.2; color: var(--side); }
 .rec-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.big { font-family: var(--display); font-weight: 400; font-size: clamp(16px, 4.4vw, 19px); border-radius: 12px; padding: 14px 8px; cursor: pointer; color: var(--ink); background: var(--surface); border: 1px solid var(--line); }
+.big { font-family: var(--display); font-weight: 800; font-size: clamp(16px, 4.4vw, 19px); border-radius: 12px; padding: 14px 8px; cursor: pointer; color: var(--ink); background: var(--surface); border: 1px solid var(--line); }
 .big.primary { background: var(--gold); color: var(--on-gold); border-color: transparent; }
 .empty { color: var(--muted); padding: 14px 0; }
 
@@ -180,12 +195,12 @@ td.num, th.num { text-align: right; }
 .form { display: inline-flex; gap: 3px; }
 .form i { width: 16px; height: 16px; border-radius: 4px; font-style: normal; font-size: 10px; font-weight: 700; display: grid; place-items: center; color: #fff; }
 .form .w { background: var(--good); } .form .l { background: var(--bad); }
-.rank { color: var(--gold); font-family: var(--display); font-size: 16px; width: 26px; }
+.rank { color: var(--gold); font-family: var(--display); font-weight: 800; font-size: 16px; width: 26px; }
 
 .highlights { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
 .hl { background: var(--sunk); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; min-width: 0; }
 .hl .k { font-size: 12px; color: var(--muted); font-weight: 700; letter-spacing: .04em; }
-.hl .v { font-family: var(--display); font-size: 22px; line-height: 1.25; margin: 4px 0 2px; overflow-wrap: anywhere; }
+.hl .v { font-family: var(--display); font-weight: 800; font-size: 22px; line-height: 1.25; margin: 4px 0 2px; overflow-wrap: anywhere; }
 .hl .d { font-size: 13px; color: var(--muted); }
 .pgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; margin-top: 12px; }
 .plist { background: var(--sunk); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; min-width: 0; }
@@ -287,8 +302,15 @@ body.gated { overflow: hidden; }
       <h1>똥겜사랑단 <em>놀이터</em></h1>
       <p class="sub">우리끼리 하는 게임 기록을 모아 두는 곳이에요.</p>
     </div>
-    <span class="badge" id="syncBadge"><i></i><span>연결 중…</span></span>
+    <div class="head-r">
+      <button class="badge ver" id="verBtn" aria-haspopup="dialog"><i class="dot" hidden></i><span id="verText">v</span> · 패치노트</button>
+      <span class="badge" id="syncBadge"><i></i><span>연결 중…</span></span>
+    </div>
   </header>
+  <dialog class="notes" id="notes" aria-labelledby="notesTitle">
+    <div class="notes-head"><b id="notesTitle">패치노트</b><button class="xbtn" id="notesClose" aria-label="닫기">✕</button></div>
+    <div class="notes-body" id="notesBody"></div>
+  </dialog>
 
   <!-- 게임 탭: 지금은 롤 내전 하나. 다른 게임이 생기면 버튼과 section.game을 하나씩 더 붙이면 돼요. -->
   <nav class="games" role="tablist" aria-label="게임">
@@ -908,8 +930,12 @@ $('#addForm').addEventListener('submit', e => {
   if (!needRoster()) return;
   const names = $('#addInput').value.split(/[,，\n]/).map(s => s.trim().slice(0, 16)).filter(Boolean);
   if (!names.length) return;
+  // 선수는 이름으로 전적을 이어서, 같은 이름은 같은 사람이에요. 번호를 붙이지 않고 이미 있으면 그대로 둬요.
+  const already = [...new Set(names.filter(n => S.players.includes(n)))];
   for (const n of names) if (!S.players.includes(n) && S.players.length < 60) S.players.push(n);
-  $('#addInput').value = ''; renderAll(); toast(`${names.length}명을 명단에 넣었어요. ↓를 누르면 오늘 할 사람으로 내려가요.`);
+  const added = new Set(names).size - already.length;
+  $('#addInput').value = ''; renderAll();
+  toast(already.length ? `${already.join(', ')}은(는) 이미 명단에 있어요.${added ? ` 나머지 ${added}명을 넣었어요.` : ''}` : `${added}명을 명단에 넣었어요. ↓를 누르면 오늘 할 사람으로 내려가요.`);
   rosterAction('addPlayers', { names });
 });
 $('#selNone').onclick = () => { if (!needHost()) return; const off = [...S.selected]; S.selected.clear(); renderRoster(); syncSelect(off, false); };
@@ -954,12 +980,16 @@ function renderTeams(shuffling) {
   // 이름 칸은 끌어서 옮기는 손잡이, 옆 화살표 버튼은 눌러서 상대 팀으로 보내기예요. 둘 다 방장만.
   const swapBtn = (p, side) => rec || shuffling || !host ? ''
     : `<button class="swap" data-swap="${esc(p)}" data-side="${side}" title="상대 팀으로" aria-label="${esc(p)} ${side === 'blue' ? '2팀' : '1팀'}으로 보내기">${side === 'blue' ? '→' : '←'}</button>`;
-  const li = (p, side) => { const s = st.P[p], x = ss.P[p]; return `<li><div class="pl" data-p="${esc(p)}" data-card="${esc(p)}" data-side="${side}"><span class="who">${tierIcon(T[p])}<span class="nm">${esc(p)}</span><span class="lane">${laneText(p, true)}</span></span><span class="st">${s?.g ? `${pct(s.w, s.g)}% · ${s.g}판` : '첫 판'}${x?.g ? `<br><span class="sess">이 방 ${x.w}승 ${x.g - x.w}패</span>` : ''}</span></div>${swapBtn(p, side)}</li>`; };
-  const avg = t => t.reduce((s, p) => s + mmrOf(st, p), 0) / (t.length || 1);
+  // 결과를 기록했으면 그 판 전(before)과 후(st)의 MMR을 같이 보여줘요: 'MMR 985 → 997 +12'
+  const before = rec && computeStats(S.players, S.matches.filter(m => m !== rec));
+  const mmrMove = p => { const a = Math.round(mmrOf(before, p)), b = Math.round(mmrOf(st, p)), d = b - a;
+    return `MMR ${a} → <b>${b}</b> <span class="${d >= 0 ? 'up' : 'down'}">${d >= 0 ? '+' : ''}${d}</span>`; };
+  const li = (p, side) => { const s = st.P[p], x = ss.P[p]; return `<li><div class="pl" data-p="${esc(p)}" data-card="${esc(p)}" data-side="${side}"><span class="who">${tierIcon(T[p])}<span class="nm">${esc(p)}</span><span class="lane">${laneText(p, true)}</span></span><span class="st">${rec ? mmrMove(p) : s?.g ? `${pct(s.w, s.g)}% · ${s.g}판` : '첫 판'}${x?.g ? `<br><span class="sess">이 방 ${x.w}승 ${x.g - x.w}패</span>` : ''}</span></div>${swapBtn(p, side)}</li>`; };
+  const avg = (t, from = st) => t.reduce((s, p) => s + mmrOf(from, p), 0) / (t.length || 1);
   const eb = 1 / (1 + Math.pow(10, (avg(c.red) - avg(c.blue)) / 400)), both = c.blue.length && c.red.length;
   // 한쪽 팀을 다 비워도 빈 팀 칸은 남겨서 다시 옮겨 올 수 있게 해요.
   const ul = side => `<ul>${c[side].map(p => li(p, side)).join('') || `<li class="empty-team">비었어요. ${side === 'blue' ? '←' : '→'} 버튼이나 끌어서 옮겨 오세요.</li>`}</ul>`;
-  const mmr = side => c[side].length ? `MMR ${Math.round(avg(c[side]))}` : '';
+  const mmr = side => !c[side].length ? '' : rec ? `MMR ${Math.round(avg(c[side], before))} → ${Math.round(avg(c[side]))}` : `MMR ${Math.round(avg(c[side]))}`;
   const bp = Math.round(eb * 100), canRec = c.blue.length && c.red.length;
   // 카톡용 복사는 팀 바로 위에 둬요. 섞는 동안에도 자리를 지켜서 화면이 들썩이지 않게 해요.
   box.innerHTML = `
@@ -1378,10 +1408,19 @@ function renderRoomBar(force) {
   }
   box.innerHTML = `<div class="rooms">${tabs}<button class="room new" id="newRoom">+ 새 방</button></div>${info}`;
 }
-$('#roomCard').addEventListener('submit', e => {
+// 닉네임은 서버에 맡겨 둬서 다른 사람이 쓰고 있으면 뒤에 번호가 붙어요('일윤' → '일윤 2').
+// 서버에 못 닿으면 적은 그대로 써요. 열 때마다 한 번 다시 맡겨서, 30일 넘게 안 쓴 닉네임만 다른 사람이 가져갈 수 있어요.
+async function claimNick(v) {
+  let nick = v;
+  try { nick = (await api('claimNick', { nick: v }, true)).nick || v; } catch {}
+  ME.nick = nick; saveMe();
+  if (nick !== v) toast(`'${v}'은(는) 다른 사람이 쓰고 있어서 '${nick}'(으)로 정했어요. 바꾸려면 위의 '바꾸기'를 눌러요.`);
+  return nick;
+}
+$('#roomCard').addEventListener('submit', async e => {
   e.preventDefault();
   const v = $('#nickInput').value.trim().slice(0, 16); if (!v) return;
-  ME.nick = v; saveMe(); S.nickEditing = false; renderRoomBar(true); renderAll(); pull(true);
+  S.nickEditing = false; await claimNick(v); renderRoomBar(true); renderAll(); pull(true);
 });
 $('#roomCard').addEventListener('click', async e => {
   const t = e.target.closest('button'), r = curRoom();
@@ -1414,19 +1453,46 @@ function showGate(on) {
   $('#gate').hidden = !on; document.body.classList.toggle('gated', on);
   if (on) setTimeout(() => $('#gateInput').focus(), 50);
 }
-$('#gateForm').addEventListener('submit', e => {
+$('#gateForm').addEventListener('submit', async e => {
   e.preventDefault();
   const v = $('#gateInput').value.trim().slice(0, 16);
   if (!v) { $('#gateInput').focus(); return toast('닉네임을 적어 주세요.'); }
-  ME.nick = v; saveMe(); showGate(false); renderAll(); pull(true);
-  toast(`${v}님, 반가워요!`);
+  const nick = await claimNick(v); showGate(false); renderAll(); pull(true);
+  if (nick === v) toast(`${v}님, 반가워요!`);
 });
 
+// ---------- 버전 · 패치노트 ----------
+// 커밋해서 올릴 때마다 맨 위에 새 항목을 더해요(규칙은 CLAUDE.md). 오른쪽 위 버전은 맨 위 항목이에요.
+const NOTES = [
+  { v: '1.0.0', d: '2026-10-22', items: [
+    '첫 정식 버전이에요. 지금까지 만든 기능을 정리해서 1.0.0으로 시작해요.',
+    '방·방장·구경: 방장만 오늘 할 사람·팀·승패를 정하고, 나머지는 실시간으로 구경해요. 방 위에 구경 중인 사람이 보여요.',
+    '팀 섞기(완전 랜덤·실력 밸런스·팀장 뽑기)와 승패 기록. 결과를 기록하면 선수마다 MMR이 얼마에서 얼마로 바뀌었는지(+12 / −12) 보여줘요.',
+    'Riot ID 연결: 솔랭 티어·주 라인·모스트·숙련도를 불러와요. 태그 없이 이름만 넣으면 #KR1로 찾아요.',
+    '선수 카드: 이름에 마우스를 올리면(폰은 표에서 이름을 누르면) 내전 기록과 롤 정보를 한눈에 봐요.',
+    '이 방 기록: 내전 탭 아래에 지금 방에서 한 판들만 따로 세요. 전적·분석·기록 탭은 모든 방을 합친 전체 기준이에요.',
+    '방 이름·닉네임이 겹치면 뒤에 번호가 붙어요(일윤 → 일윤 2).',
+    '글꼴을 Pretendard로 바꿔서 큰 화면에서도 글씨가 뭉개지지 않게 했어요.',
+  ] },
+];
+const VERSION = NOTES[0].v;
+function renderNotes() {
+  $('#verText').textContent = 'v' + VERSION;
+  let seen = ''; try { seen = localStorage.getItem(LS + ':seenVer') || ''; } catch {}
+  $('#verBtn .dot').hidden = seen === VERSION;
+  $('#notesBody').innerHTML = NOTES.map(n => `<section class="note-ver"><h3>v${n.v} <small>${n.d}</small></h3><ul>${n.items.map(i => `<li>${esc(i)}</li>`).join('')}</ul></section>`).join('');
+}
+$('#verBtn').onclick = () => { $('#notes').showModal(); try { localStorage.setItem(LS + ':seenVer', VERSION); } catch {} renderNotes(); };
+$('#notesClose').onclick = () => $('#notes').close();
+$('#notes').addEventListener('click', e => { if (e.target === e.currentTarget) e.currentTarget.close(); }); // 바깥(어두운 곳)을 눌러도 닫혀요
+
 loadLocal();
+renderNotes();
 setMode(S.mode);
 setBadge();
 showGate(!ME.nick);
 renderAll();
+if (ME.nick) claimNick(ME.nick).then(n => { if (n) renderAll(); });
 startSync();
 </script>
 </body>

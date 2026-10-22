@@ -6,7 +6,7 @@ const url = process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL;
 const token = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN;
 const redis = globalThis.__redis ?? (url && token ? new Redis({ url, token }) : null);
 
-const K = { players: 'lol:players', matches: 'lol:matches', ver: 'lol:ver', riot: 'lol:riot', riotLock: 'lol:riot:lock', riotRest: 'lol:riot:rest', riotGames: 'lol:riot:games', rooms: 'lol:rooms', hostSeen: 'lol:hostseen' };
+const K = { players: 'lol:players', matches: 'lol:matches', ver: 'lol:ver', riot: 'lol:riot', riotLock: 'lol:riot:lock', riotRest: 'lol:riot:rest', riotGames: 'lol:riot:games', rooms: 'lol:rooms', hostSeen: 'lol:hostseen', nicks: 'lol:nicks' };
 // 방마다 따로인 것: 오늘 할 사람(정렬 집합), 팀 배치, 지금 보고 있는 사람(정렬 집합, 점수 = 마지막 신호 시각)
 const RK = { sel: r => `lol:room:${r}:sel`, cur: r => `lol:room:${r}:cur`, seen: r => `lol:room:${r}:seen` };
 const MAX_MATCHES = 5000;
@@ -15,6 +15,7 @@ const MAX_ROOMS = 10;
 const HOST_AWAY = 10 * 6e4;   // 방장 신호가 10분 끊기면 방장 자리가 비어요
 const VIEW_FRESH = 40e3;      // 화면은 15초마다 신호를 보내요. 40초 안에 신호가 있으면 '보고 있는 사람'
 const ROOM_IDLE = 12 * 36e5;  // 12시간 동안 아무 일 없는 방은 정리해요
+const NICK_KEEP = 30 * 864e5; // 닉네임은 30일 동안 안 쓰면 다른 사람이 가져갈 수 있어요
 
 // ---------- Riot API (솔랭 티어 · 주 라인 · 모스트 · 숙련도) ----------
 // RIOT_API_KEY 환경변수에 developer.riotgames.com에서 받은 키를 넣어요. 키는 서버에서만 써서 화면 코드에는 안 보여요.
@@ -146,6 +147,11 @@ async function refreshRiot(gap) {
 }
 
 const cleanName = v => (typeof v === 'string' && v.trim() ? v.trim().slice(0, 16) : null);
+// 이미 있는 이름이면 뒤에 번호를 붙여요: '일윤의 방' → '일윤의 방 2' (16자 안으로 줄여서)
+function uniqueName(base, taken) {
+  if (!taken(base)) return base;
+  for (let n = 2; ; n++) { const tail = ` ${n}`, c = base.slice(0, 16 - tail.length).trimEnd() + tail; if (!taken(c)) return c; }
+}
 const cleanNames = (a, max) => (Array.isArray(a) ? [...new Set(a.map(cleanName).filter(Boolean))].slice(0, max) : null);
 const bad = res => res.status(400).json({ error: 'bad_request' });
 const cleanId = v => (typeof v === 'string' && /^[a-z0-9]{6,32}$/.test(v) ? v : null); // 기기 id·방 id
@@ -257,8 +263,8 @@ export default async function handler(req, res) {
     }
     if (req.method !== 'POST') return res.status(405).json({ error: 'method_not_allowed' });
     const b = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body || {};
-    // 솔랭 새로고침은 기록을 바꾸지 않아서 비밀번호 없이도 돼요.
-    if (b.action !== 'refreshRiot' && !pinOk(req)) return res.status(401).json({ error: 'pin_required' });
+    // 솔랭 새로고침·닉네임 정하기는 기록을 바꾸지 않아서 비밀번호 없이도 돼요.
+    if (!['refreshRiot', 'claimNick'].includes(b.action) && !pinOk(req)) return res.status(401).json({ error: 'pin_required' });
     // 방장 확인: 기기마다 화면이 만든 id(x-device)로 구분해요. 친구끼리 쓰는 거라 로그인 없이 이 정도로 막아요.
     const me = cleanId(req.headers['x-device']), rooms = await readRooms();
     const room = rooms.find(r => r.id === cleanId(b.room)), isHost = r => !!r && !!me && r.hostId === me;
@@ -271,8 +277,21 @@ export default async function handler(req, res) {
       if (!room) return res.status(404).json({ error: 'no_room' });
       if (!isHost(room)) return notHost();
     }
-    let id, dup = false, refreshed, more, roomId = room?.id;
+    let id, dup = false, refreshed, more, nick, roomId = room?.id;
     switch (b.action) {
+      case 'claimNick': {
+        // 닉네임은 기기마다 하나예요. 다른 기기가 쓰고 있는 닉네임이면 뒤에 번호를 붙여서 돌려줘요('일윤' → '일윤 2').
+        // 내가 쓰던 예전 닉네임은 놓아줘서 다른 사람이 쓸 수 있어요. 화면에 보이는 기록은 안 바뀌어서 버전은 그대로예요.
+        const want = cleanName(b.nick);
+        if (!me || !want) return bad(res);
+        const all = Object.entries((await redis.hgetall(K.nicks)) || {}).map(([n, v]) => [n, parse(v)]), now = Date.now();
+        const taken = n => all.some(([x, v]) => x === n && v.id !== me && now - v.at < NICK_KEEP);
+        nick = uniqueName(want, taken);
+        for (const [x, v] of all) if (v.id === me && x !== nick) await redis.hdel(K.nicks, x);
+        await redis.hset(K.nicks, { [nick]: { id: me, at: now } });
+        dup = true;
+        break;
+      }
       case 'createRoom': {
         // 새 방을 만든 사람이 방장이에요. 오래 조용했던 방은 이때 같이 지워요.
         const nick = cleanName(b.nick);
@@ -282,7 +301,8 @@ export default async function handler(req, res) {
         if (rooms.length >= MAX_ROOMS) return res.status(409).json({ error: 'rooms_full' });
         const now = Date.now();
         id = roomId = now.toString(36) + Math.random().toString(36).slice(2, 7);
-        await saveRoom({ id, name: cleanName(b.name) || `${nick}의 방`, hostId: me, hostNick: nick, createdAt: now, lastActive: now });
+        const name = uniqueName(cleanName(b.name) || `${nick}의 방`, n => rooms.some(r => r.name === n)); // 같은 이름 방이 있으면 번호
+        await saveRoom({ id, name, hostId: me, hostNick: nick, createdAt: now, lastActive: now });
         await redis.hset(K.hostSeen, { [id]: now });
         break;
       }
@@ -423,7 +443,7 @@ export default async function handler(req, res) {
     // 바뀌었으면 버전을 올리고 Ably로 '바뀜' 신호를 쏴요(새 상태를 읽는 동안 같이).
     const newVer = dup ? null : await redis.incr(K.ver);
     const [state] = await Promise.all([readState(roomId), newVer != null && ablyPublish(newVer)]);
-    return res.status(200).json({ id, dup, refreshed, more, ...state });
+    return res.status(200).json({ id, dup, refreshed, more, nick, ...state });
   } catch (e) {
     if (e instanceof RiotError) return res.status(424).json({ error: e.code });
     console.error(e);
