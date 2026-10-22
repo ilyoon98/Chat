@@ -26,6 +26,8 @@ const RIOT_FORCE_GAP = 10 * 6e4; // 새로고침 버튼은 10분에 한 번까�
 const RIOT_BUDGET = 80, RIOT_LINK_BUDGET = 40, RIOT_REST = 2 * 6e4;
 // 주 라인·모스트는 최근 협곡 20판(솔랭·자랭·일반)으로 세요. 칼바람·아레나 같은 건 라인이 없어서 안 불러요.
 const RIOT_GAMES = 20;
+// 라인 추천용으로는 예전 판까지 사람당 100판을 모아 둬요. 새로고침할 때마다 새 판 + 예전 판 20판씩 거슬러 올라가요.
+const RIOT_HISTORY = 100;
 const RIOT_QUERIES = ['type=ranked', 'queue=400', 'queue=480', 'queue=490']; // 솔랭·자랭 / 일반 드래프트 / 신속 대전 / 빠른 대전
 const RIOT_LANES = ['TOP', 'JUNGLE', 'MIDDLE', 'BOTTOM', 'UTILITY'];
 class RiotError extends Error { constructor(code, status) { super(code); this.code = code; this.status = status; } }
@@ -63,26 +65,54 @@ async function riotMastery(puuid, ctx) {
   return (m || []).map(c => [c.championId, c.championLevel, c.championPoints]);
 }
 // 최근 협곡 판을 세서 주 라인·모스트를 만들어요. 한 판씩 불러온 결과는 K.riotGames에 PUUID별로 남겨서, 다음엔 새 판만 불러요.
-// 남기는 모양: [매치 id, 챔피언 번호, 라인, 이김 1/0, 큐 번호]. 다시하기(조기 항복)는 라인을 ''로 남겨서 세지 않아요.
+// 남기는 모양: [매치 id, 챔피언 번호, 라인, 이김 1/0, 큐 번호, 시작 시각(초)]. 다시하기(조기 항복)는 라인을 ''로 남겨서 세지 않아요.
+// 새 판을 받은 뒤 남는 횟수로 예전 판을 20판씩 더 거슬러 받아서, 사람당 100판까지 모아요(full = 더 예전 판이 없음).
 async function riotGames(puuid, ctx) {
   const P = encodeURIComponent(puuid), num = id => Number(String(id).split('_')[1]) || 0;
+  const saved = parse(await redis.hget(K.riotGames, puuid)) || {};
+  const have = new Map((saved.g || []).map(x => [x[0], x]));
+  const fetchGames = ids => Promise.all(ids.map(id => soft(ctx, riot(RIOT_REGION, `/lol/match/v5/matches/${id}`, ctx).then(m => {
+    const p = m?.info?.participants?.find(x => x.puuid === puuid), t = Math.floor((m?.info?.gameStartTimestamp || 0) / 1e3);
+    have.set(id, p ? [id, p.championId, p.gameEndedInEarlySurrender ? '' : p.teamPosition || '', p.win ? 1 : 0, m.info.queueId, t] : [id, 0, '', 0, 0, t]);
+  }))));
   const lists = await Promise.all(RIOT_QUERIES.map(q => riot(RIOT_REGION, `/lol/match/v5/matches/by-puuid/${P}/ids?${q}&count=${RIOT_GAMES}`, ctx)));
   const ids = [...new Set(lists.flat().filter(Boolean))].sort((a, b) => num(b) - num(a)).slice(0, RIOT_GAMES);
-  const have = new Map((parse(await redis.hget(K.riotGames, puuid))?.g || []).map(x => [x[0], x]));
-  await Promise.all(ids.filter(id => !have.has(id)).map(id => soft(ctx, riot(RIOT_REGION, `/lol/match/v5/matches/${id}`, ctx).then(m => {
-    const p = m?.info?.participants?.find(x => x.puuid === puuid);
-    have.set(id, p ? [id, p.championId, p.gameEndedInEarlySurrender ? '' : p.teamPosition || '', p.win ? 1 : 0, m.info.queueId] : [id, 0, '', 0, 0]);
-  }))));
-  const g = ids.map(id => have.get(id)).filter(Boolean); // 못 불러온 판은 빼고 저장해서 다음에 다시 불러요
-  await redis.hset(K.riotGames, { [puuid]: { g } });
-  const ok = g.filter(x => RIOT_LANES.includes(x[2])), lanes = {}, champs = {}, q = [0, 0, 0];
+  // 시각이 없는 예전 모양 판(최근 20판)도 다시 받아서 시각을 채워요. 그래야 거슬러 올라갈 기준이 생겨요.
+  await fetchGames(ids.filter(id => !have.get(id)?.[5]));
+  let full = !!saved.full;
+  const kept = () => [...have.values()].filter(x => x[5]).sort((a, b) => b[5] - a[5]);
+  if (!full && !ctx.stop && kept().length && kept().length < RIOT_HISTORY) {
+    const end = kept().at(-1)[5] - 1; // 지금 가진 가장 예전 판보다 더 예전
+    const older = await soft(ctx, Promise.all(RIOT_QUERIES.map(q => riot(RIOT_REGION, `/lol/match/v5/matches/by-puuid/${P}/ids?${q}&endTime=${end}&count=${RIOT_GAMES}`, ctx))));
+    if (older) {
+      const more = [...new Set(older.flat().filter(Boolean))].filter(id => !have.has(id)).sort((a, b) => num(b) - num(a)).slice(0, RIOT_GAMES);
+      if (!more.length) full = true;
+      await fetchGames(more);
+    }
+  }
+  // 최신 순으로 100판까지 남겨요. 못 불러온 판은 빠져서 다음에 다시 불러요.
+  const all = kept().slice(0, RIOT_HISTORY);
+  await redis.hset(K.riotGames, { [puuid]: { g: all, full } });
+  const recent = ids.map(id => have.get(id)).filter(Boolean);
+  const ok = recent.filter(x => RIOT_LANES.includes(x[2])), lanes = {}, champs = {}, q = [0, 0, 0];
   for (const [, c, lane, w, queue] of ok) {
     lanes[lane] = (lanes[lane] || 0) + 1;
     (champs[c] ??= [c, 0, 0])[1]++; champs[c][2] += w;
     q[queue === 420 ? 0 : queue === 440 ? 1 : 2]++;
   }
-  // n = 센 판 수, lanes = 라인별 판 수, most = 많이 한 챔피언 3개 [번호, 판, 승], q = [솔랭, 자랭, 일반] 판 수
-  return { n: ok.length, lanes, most: Object.values(champs).sort((a, b) => b[1] - a[1] || b[2] - a[2]).slice(0, 3), q, done: g.length === ids.length };
+  // 라인 추천용: 모아 둔 판 전체로 라인마다 [판, 승, 많이 한 챔피언 3개 [번호, 판, 승]]
+  const ls = {};
+  for (const [, c, lane, w] of all) {
+    if (!RIOT_LANES.includes(lane)) continue;
+    const L = ls[lane] ??= [0, 0, {}];
+    L[0]++; L[1] += w; (L[2][c] ??= [c, 0, 0])[1]++; L[2][c][2] += w;
+  }
+  for (const L of Object.values(ls)) L[2] = Object.values(L[2]).sort((a, b) => b[1] - a[1] || b[2] - a[2]).slice(0, 3);
+  // n = 최근 20판 중 센 판 수, lanes = 라인별 판 수, most = 많이 한 챔피언 3개 [번호, 판, 승], q = [솔랭, 자랭, 일반] 판 수
+  // hn = 모아 둔 판 수(라인 추천 기준), ls = 라인별 기록, hFull = 더 모을 판이 없음(100판이거나 예전 판이 끝남)
+  const hFull = full || all.length >= RIOT_HISTORY;
+  return { n: ok.length, lanes, most: Object.values(champs).sort((a, b) => b[1] - a[1] || b[2] - a[2]).slice(0, 3), q,
+    hn: all.filter(x => RIOT_LANES.includes(x[2])).length, ls, hFull, done: recent.length === ids.length };
 }
 // 계정을 못 찾으면 null. PUUID는 API 키(앱)마다 달라서, 키를 바꾸면 예전 PUUID가 400으로 거절돼요. 그땐 Riot ID로 다시 찾아요.
 // 돌려주는 모양: { id, puuid, solo, at(티어 시각), mast, n, lanes, most, q, gAt(최근 판까지 다 불러온 시각) }
@@ -102,7 +132,8 @@ async function riotLookup(e, ctx) {
   if (games) { const { done, ...stats } = games; Object.assign(out, stats); if (done && mast) out.gAt = Date.now(); }
   return out;
 }
-const riotStaleAt = e => Math.min(e.at || 0, e.gAt || 0);
+// 100판을 다 모으기 전(hFull === false)이면 곧바로 다시 부를 차례예요. 그래서 화면이 열려 있는 동안 계속 거슬러 올라가요.
+const riotStaleAt = e => (e.puuid && !e.hFull ? 0 : Math.min(e.at || 0, e.gAt || 0));
 // "Hide on bush #KR1" → "Hide on bush#KR1". 태그 없이 이름만 넣으면 한국 계정에 가장 흔한 #KR1을 붙여요.
 // (Riot API엔 이름 검색이 없어서 이름#태그가 정확해야 찾을 수 있어요)
 const RIOT_DEFAULT_TAG = 'KR1';
@@ -133,7 +164,7 @@ async function refreshRiot(gap) {
   try {
     for (const [n, e] of stale) {
       // 계정을 못 찾으면(이름을 바꿨거나 키가 바뀜) 예전 정보를 두고 시각만 바꿔서 계속 다시 묻지 않게 해요.
-      done[n] = (await riotLookup(e, ctx)) ?? { ...e, at: now, gAt: now };
+      done[n] = (await riotLookup(e, ctx)) ?? { ...e, at: now, gAt: now, hFull: true };
       if (ctx.stop) break;
     }
   } catch (err) {
@@ -143,7 +174,7 @@ async function refreshRiot(gap) {
     if (ctx.used) await redis.set(K.riotRest, Date.now() + Math.round(RIOT_REST * ctx.used / 100));
   }
   if (Object.keys(done).length) await redis.hset(K.riot, done);
-  return { n: Object.keys(done).length, more: stale.some(([n]) => !(done[n]?.gAt >= now)) };
+  return { n: Object.keys(done).length, more: stale.some(([n]) => !(done[n]?.gAt >= now) || !done[n]?.hFull) };
 }
 
 const cleanName = v => (typeof v === 'string' && v.trim() ? v.trim().slice(0, 16) : null);
@@ -244,6 +275,23 @@ export default async function handler(req, res) {
   res.setHeader('cache-control', 'no-store');
   if (!redis) return res.status(503).json({ error: 'no_db' });
   try {
+    if (req.method === 'GET' && new URL(req.url, 'http://local').searchParams.get('cron') === 'riot') {
+      // Vercel Cron(vercel.json)이 하루 한 번 불러요. 아무도 사이트를 안 열어도 롤 정보·라인 추천용 판을 이어서 모아요.
+      // 키 제한(2분 100번) 때문에 한 번 부르고 쉬는 시간이 지나면 또 불러서, 50초 안에서 되는 만큼 모아요(무료 요금제 함수는 최대 60초).
+      // CRON_SECRET 환경변수를 넣으면 Vercel이 보내는 그 비밀값이 있을 때만 돌아요.
+      if (process.env.CRON_SECRET && req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) return res.status(401).json({ error: 'cron_only' });
+      if (!process.env.RIOT_API_KEY) return res.status(200).json({ ok: false, error: 'no_riot_key' });
+      const start = Date.now(); let total = 0, r = { more: true };
+      while (r.more && Date.now() - start < 50e3) {
+        try { r = await refreshRiot(RIOT_STALE); } catch { break; }
+        total += r.n;
+        if (r.n) await redis.incr(K.ver);
+        const wait = Math.max((Number(await redis.get(K.riotRest)) || 0) - Date.now(), 0) + 1e3;
+        if (!r.more || Date.now() - start + wait > 50e3) break;
+        await new Promise(ok => setTimeout(ok, wait));
+      }
+      return res.status(200).json({ ok: true, refreshed: total, more: r.more });
+    }
     if (req.method === 'GET') {
       // Ably가 켜져 있으면 화면은 '바뀜' 신호가 올 때와 2분마다 한 번만 물어봐요. 꺼져 있으면 5초마다 물어봐요.
       // 바뀐 게 없으면 Redis 명령 1번으로 끝내서 무료 한도를 아껴요.

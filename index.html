@@ -78,6 +78,21 @@ h1 em { font-style: normal; color: var(--gold); }
 .games button { font-family: var(--display); font-weight: 800; font-size: 18px; padding: 9px 18px; border-radius: 12px; border: 1.5px solid var(--line); background: var(--surface); color: var(--muted); cursor: pointer; }
 .games button[aria-selected=true] { background: var(--gold); color: var(--on-gold); border-color: transparent; }
 .game { display: flex; flex-direction: column; gap: 18px; }
+/* 롤 5인 큐: 라인 추천 */
+.fiveplan { border: 1px solid var(--line); border-radius: 12px; background: var(--sunk); padding: 12px 14px; }
+.fiveplan + .fiveplan { margin-top: 10px; }
+.fiveplan.best { border-color: var(--gold); background: color-mix(in srgb, var(--gold) 10%, var(--surface)); }
+.fp-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 8px; }
+.fp-head b { font-family: var(--display); font-weight: 800; font-size: 19px; } .fp-head span { color: var(--muted); font-size: 13px; }
+.fiveplan ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.fiveplan li { display: grid; grid-template-columns: 22px 44px minmax(0, 1fr) auto; gap: 2px 8px; align-items: center; }
+.fiveplan li .lane { font-weight: 700; }
+.fiveplan li .who { font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fiveplan li .why { grid-column: 3 / 5; color: var(--muted); font-size: 12.5px; }
+.fiveplan li .ch { display: inline-flex; gap: 2px; }
+.fiveplan.mini ul { grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); }
+.fiveplan.mini li { grid-template-columns: 18px minmax(0, 1fr); font-size: 13.5px; }
+.fiveplan li .bad { color: var(--bad); }
 /* 폭이 좁으면 옆으로 밀어서 보되, 스크롤바는 안 보이게 (밑줄이 1px 겹쳐서 위아래 스크롤바가 생겼어요) */
 .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
 .tabs::-webkit-scrollbar { display: none; }
@@ -391,6 +406,7 @@ body.gated { overflow: hidden; }
   <!-- 게임 탭: 지금은 롤 내전 하나. 다른 게임이 생기면 버튼과 section.game을 하나씩 더 붙이면 돼요. -->
   <nav class="games" role="tablist" aria-label="게임">
     <button role="tab" id="game-lol" aria-selected="true" aria-controls="g-lol">롤 내전</button>
+    <button role="tab" id="game-five" aria-selected="false" aria-controls="g-five">롤 5인 큐</button>
   </nav>
 
   <section class="game" id="g-lol" role="tabpanel" aria-labelledby="game-lol">
@@ -478,6 +494,20 @@ body.gated { overflow: hidden; }
       <ul class="log" id="logBox"></ul>
     </div>
   </section>
+  </section>
+
+  <!-- 롤 5인 큐: 친구 다섯이 같이 랭크·일반을 돌릴 때 라인을 추천해요. 내전 기록과는 따로예요. -->
+  <section class="game" id="g-five" role="tabpanel" aria-labelledby="game-five" hidden>
+    <div class="card">
+      <h2>같이 할 5명 <span class="r" id="fiveCount"></span></h2>
+      <div class="chips" id="fivePick"></div>
+      <div class="row"><button class="btn ghost small" id="fiveClear">다시 고르기</button><button class="btn ghost small" id="fiveRefresh">롤 정보 새로고침</button></div>
+      <p class="note">명단에서 5명을 고르면 각자 최근 판(사람당 최대 100판)의 라인별 판 수·승률·챔피언을 보고 가장 잘 맞는 라인 배치를 찾아줘요. 롤 정보는 내전 탭 명단 편집에서 Riot ID를 연결한 사람만 있어요.</p>
+    </div>
+    <div class="card">
+      <h2>추천 라인 <span class="r" id="fiveMeta"></span></h2>
+      <div id="fiveBox"></div>
+    </div>
   </section>
 </div>
 <div class="toast" id="toast" hidden></div>
@@ -883,7 +913,8 @@ let riotNext = 0;
 const riotAgain = d => { if (d?.more) riotNext = Date.now() + RIOT_MORE; };
 function autoRefreshRiot() {
   if (status !== 'online' || Date.now() < riotNext) return;
-  if (!Object.values(S.riot).some(r => Date.now() - Math.min(r.at || 0, r.gAt || 0) >= RIOT_STALE)) return;
+  // 라인 추천용 100판을 아직 다 못 모은 사람(hFull이 아님)이 있어도 이어서 불러요.
+  if (!Object.values(S.riot).some(r => (r.puuid && !r.hFull) || Date.now() - Math.min(r.at || 0, r.gAt || 0) >= RIOT_STALE)) return;
   riotNext = Date.now() + 36e5;
   api('refreshRiot', {}, true).then(d => { riotAgain(d); renderAll(); }, () => {});
 }
@@ -1607,7 +1638,77 @@ $('#roomCard').addEventListener('click', async e => {
 });
 
 // 방을 옮기거나 닉네임을 바꾸면 화면을 다시 그리니까, 여기서 Ably '보고 있어요'도 같이 맞춰요(바뀐 게 없으면 아무것도 안 해요).
-function renderAll() { syncPresence(); renderRoomBar(); renderRoster(); renderTeams(); renderSession(); renderStats(); renderAnalysis(); renderLog(); }
+// ---------- 라인 추천 ----------
+// 한 사람이 한 라인에 얼마나 잘 맞는지 점수예요. 많이 해 본 라인일수록(비율), 그 라인 승률이 높을수록(판이 쌓일수록 믿어요),
+// 그 라인에서 2판 넘게 한 챔피언이 많을수록 높아요. 서버가 모아 둔 판(ls, 최대 100판)이 없으면 최근 20판 주 라인(lanes)으로 대신해요.
+const LANES = ['TOP', 'JUNGLE', 'MIDDLE', 'BOTTOM', 'UTILITY'];
+function laneFit(p, L) {
+  const r = S.riot[p], ls = r?.ls || (r?.lanes && Object.fromEntries(Object.entries(r.lanes).map(([k, n]) => [k, [n, n / 2, []]])));
+  const all = ls ? Object.values(ls).reduce((s, x) => s + x[0], 0) : 0;
+  if (!all) return { score: 0, g: 0, w: 0, all: 0, champs: [], known: false };
+  const [g = 0, w = 0, champs = []] = ls[L] || [];
+  const conf = g / (g + 4), wr = (w + 2.5) / (g + 5), pool = champs.filter(c => c[1] >= 2).length;
+  return { score: 70 * Math.sqrt(g / all) + 60 * conf * (wr - .5) + 4 * pool, g, w, all, champs, known: true };
+}
+// 사람들을 서로 다른 라인에 놓는 모든 경우(5명이면 120가지)를 다 계산해서 점수 합이 높은 순으로 돌려줘요. [{ total, picks: [[이름, 라인, fit]] }]
+function bestLanes(names, top = 3) {
+  const fits = names.map(p => Object.fromEntries(LANES.map(L => [L, laneFit(p, L)])));
+  const out = [], pick = [];
+  (function go(i, used, sum) {
+    if (i === names.length) { out.push({ total: sum, picks: pick.map((L, j) => [names[j], L, fits[j][L]]) }); return; }
+    for (const L of LANES) if (!used.has(L)) { pick[i] = L; used.add(L); go(i + 1, used, sum + fits[i][L].score); used.delete(L); }
+  })(0, new Set(), 0);
+  return out.sort((a, b) => b.total - a.total).slice(0, top);
+}
+
+// ---------- 롤 5인 큐 ----------
+// 고른 5명은 이 기기에만 저장해요(혼자 보는 추천이라 방·서버와 상관없어요).
+let FIVE = []; try { FIVE = JSON.parse(localStorage.getItem(LS + ':five') || '[]').filter(p => typeof p === 'string'); } catch {}
+const saveFive = () => { try { localStorage.setItem(LS + ':five', JSON.stringify(FIVE)); } catch {} };
+function renderFive() {
+  FIVE = FIVE.filter(p => S.players.includes(p));
+  const linked = p => !!S.riot[p]?.puuid, order = [...S.players].sort((a, b) => linked(b) - linked(a));
+  $('#fiveCount').textContent = `${FIVE.length} / 5명`;
+  $('#fivePick').innerHTML = order.map(p => `<button class="chip${FIVE.includes(p) ? ' on' : ''}" data-five="${esc(p)}" aria-pressed="${FIVE.includes(p)}">${esc(p)}${quick(p)}${linked(p) ? '' : '<small style="color:var(--muted)">롤 정보 없음</small>'}</button>`).join('')
+    || '<span class="empty">명단이 비어 있어요. 롤 내전 탭에서 이름을 넣어 주세요.</span>';
+  const box = $('#fiveBox');
+  if (FIVE.length < 5) { $('#fiveMeta').textContent = ''; box.innerHTML = `<p class="empty">${5 - FIVE.length}명 더 골라 주세요.</p>`; return; }
+  const plans = bestLanes(FIVE), none = FIVE.filter(p => !linked(p)), loading = FIVE.filter(p => linked(p) && !S.riot[p].hFull);
+  const hn = p => S.riot[p]?.hn ?? S.riot[p]?.n ?? 0;
+  $('#fiveMeta').textContent = `사람당 최근 ${Math.min(...FIVE.filter(linked).map(hn).concat(100))}~${Math.max(0, ...FIVE.map(hn))}판 기준`;
+  const why = (p, L, f) => !f.known ? '롤 정보 없음 (Riot ID 연결 필요)' : !f.g ? `<span class="bad">최근 ${f.all}판 중 이 라인 0판</span>`
+    : `최근 ${f.all}판 중 ${f.g}판(${pct(f.g, f.all)}%) · 승률 ${pct(f.w, f.g)}%`;
+  const champs = f => `<span class="ch">${f.champs.map(([c, g, w]) => champIcon(c, `이 라인 ${g}판 ${pct(w, g)}%`)).join('')}</span>`;
+  const plan = (pl, i) => i === 0
+    ? `<div class="fiveplan best"><div class="fp-head"><b>추천 1순위</b><span>잘 맞는 정도 ${Math.round(pl.total)}</span></div><ul>${
+      [...pl.picks].sort((a, b) => LANES.indexOf(a[1]) - LANES.indexOf(b[1])).map(([p, L, f]) =>
+        `<li>${laneIcon(L)}<span class="lane">${LANE[L]}</span><span class="who" data-card="${esc(p)}">${esc(p)}</span>${champs(f)}<span class="why">${why(p, L, f)}</span></li>`).join('')}</ul></div>`
+    : `<div class="fiveplan mini"><div class="fp-head"><b>${i + 1}순위</b><span>1순위보다 ${Math.round(plans[0].total - pl.total)} 낮아요</span></div><ul>${
+      [...pl.picks].sort((a, b) => LANES.indexOf(a[1]) - LANES.indexOf(b[1])).map(([p, L]) => `<li>${laneIcon(L)}<span data-card="${esc(p)}">${esc(p)}</span></li>`).join('')}</ul></div>`;
+  box.innerHTML = plans.map(plan).join('')
+    + (none.length ? `<p class="note">롤 정보가 없는 사람: ${none.map(esc).join(', ')} — 남는 라인에 넣었어요. Riot ID를 연결하면 더 정확해져요.</p>` : '')
+    + (loading.length ? `<p class="note">예전 판을 아직 모으는 중: ${loading.map(p => `${esc(p)}(${hn(p)}판)`).join(', ')} — 사이트가 열려 있으면 2분쯤마다 이어서 모아요.</p>` : '');
+}
+$('#fivePick').addEventListener('click', e => {
+  const b = e.target.closest('[data-five]'); if (!b) return;
+  const p = b.dataset.five;
+  if (FIVE.includes(p)) FIVE = FIVE.filter(x => x !== p);
+  else if (FIVE.length >= 5) return toast('5명까지 고를 수 있어요. 한 명을 먼저 빼 주세요.');
+  else FIVE.push(p);
+  saveFive(); renderFive();
+});
+$('#fiveClear').onclick = () => { FIVE = []; saveFive(); renderFive(); };
+$('#fiveRefresh').onclick = e => refreshRiotNow(e.currentTarget);
+// 게임 탭(롤 내전 / 롤 5인 큐). 마지막에 본 탭을 기억해요.
+const GAMES = ['lol', 'five'];
+function showGame(g) {
+  for (const x of GAMES) { $('#game-' + x).setAttribute('aria-selected', x === g); $('#g-' + x).hidden = x !== g; }
+  try { localStorage.setItem(LS + ':game', g); } catch {}
+}
+GAMES.forEach(g => $('#game-' + g).addEventListener('click', () => showGame(g)));
+try { const g = localStorage.getItem(LS + ':game'); if (GAMES.includes(g)) showGame(g); } catch {}
+
+function renderAll() { syncPresence(); renderRoomBar(); renderRoster(); renderTeams(); renderSession(); renderStats(); renderAnalysis(); renderLog(); renderFive(); }
 
 // 닉네임이 없으면 입장 화면부터. 정하면 바로 방 신호를 보내서 '구경 중'에 이름이 떠요.
 function showGate(on) {
@@ -1625,6 +1726,12 @@ $('#gateForm').addEventListener('submit', async e => {
 // ---------- 버전 · 패치노트 ----------
 // 커밋해서 올릴 때마다 맨 위에 새 항목을 더해요(규칙은 CLAUDE.md). 오른쪽 위 버전은 맨 위 항목이에요.
 const NOTES = [
+  { v: '1.4.0', d: '2026-10-22', items: [
+    '새 게임 탭 "롤 5인 큐": 친구 다섯이 같이 랭크·일반을 돌릴 때, 5명을 고르면 가장 잘 맞는 라인 배치를 1~3순위로 추천해요.',
+    '라인 추천은 각자 최근 판의 라인별 판 수·승률·그 라인에서 한 챔피언을 보고 계산해요. 1순위엔 사람마다 "최근 60판 중 탑 30판 · 승률 57%"처럼 이유와 챔피언이 붙어요.',
+    '롤 정보를 사람당 최대 100판까지 모아요. 새로고침할 때마다 새 판을 받고 예전 판을 20판씩 거슬러 올라가며 저장해서, 한 번 받은 판은 다시 안 불러요.',
+    '사이트가 열려 있으면 2분쯤마다 이어서 모으고, 아무도 안 열어도 매일 새벽 4시에 한 번 서버가 알아서 모아요.',
+  ] },
   { v: '1.3.2', d: '2026-10-22', items: [
     '탭 아이콘을 노란 바탕에 D 두 개 겹친 모양으로 바꿨어요. 탭이 여러 개 열려 있어도 금방 찾을 수 있어요.',
   ] },

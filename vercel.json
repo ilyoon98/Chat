@@ -1,0 +1,8 @@
+{
+  "functions": {
+    "api/data.js": { "maxDuration": 60 }
+  },
+  "crons": [
+    { "path": "/api/data?cron=riot", "schedule": "0 19 * * *" }
+  ]
+}
