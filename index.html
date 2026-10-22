@@ -254,6 +254,8 @@ select { font: inherit; color: var(--ink); background: var(--sunk); border: 1px 
 .rec-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
 .rec-head .k { font-size: 13px; font-weight: 700; color: var(--muted); }
 .rec-head b { flex: 1; font-family: var(--display); font-weight: 800; font-size: clamp(22px, 6vw, 28px); line-height: 1.2; color: var(--side); }
+.rec-streak { margin: -4px 0 0; display: flex; flex-wrap: wrap; gap: 4px 14px; font-weight: 700; font-size: 14px; }
+.rec-streak .w { color: var(--good); } .rec-streak .l { color: var(--bad); }
 .rec-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .big { font-family: var(--display); font-weight: 800; font-size: clamp(16px, 4.4vw, 19px); border-radius: 12px; padding: 14px 8px; cursor: pointer; color: var(--ink); background: var(--surface); border: 1px solid var(--line); }
 .big.primary { background: var(--gold); color: var(--on-gold); border-color: transparent; }
@@ -496,7 +498,7 @@ body.gated { overflow: hidden; }
     </div>
 
     <div class="card" id="sessionCard" hidden>
-      <h2>이 방 기록 <span class="r" id="sessionMeta"></span></h2>
+      <h2>이 방 기록 <span class="r"><span id="sessionMeta"></span> <button class="btn ghost small" id="copySession">카톡용 복사</button></span></h2>
       <div id="sessionBox"></div>
       <p class="note">이 방에서 한 판들만 따로 세요. 모든 방을 합친 전체 전적은 전적 탭에서 봐요.</p>
     </div>
@@ -1242,7 +1244,7 @@ function renderTeams(shuffling) {
     ${both ? `<div class="odds"><div class="bar"><i class="b" style="width:${bp}%"></i><i class="r" style="width:${100 - bp}%"></i></div>
       <div class="lbl"><span>1팀 예상 승률 ${bp}%</span><span>2팀 ${100 - bp}%</span></div></div>` : ''}    ${shuffling ? '' : rec ? `
       <div class="recorded ${rec.win}${celebrate ? ' celebrate' : ''}">
-        <div class="rec-head"><span class="k">기록됨</span><b>${TEAM[rec.win]} 승리</b>${host ? '<button class="btn ghost small" id="undo">↶ 되돌리기</button>' : ''}</div>
+        <div class="rec-head"><span class="k">기록됨</span><b>${TEAM[rec.win]} 승리</b>${host ? '<button class="btn ghost small" id="undo">↶ 되돌리기</button>' : ''}</div>${streakNote(rec, st)}
         ${host ? '<div class="rec-actions"><button class="big primary" id="reshuffle">새로 섞기</button><button class="big" id="again">같은 팀으로 한 판 더</button></div>' : ''}
         ${mvpBox(rec)}${penBox(pen, spinPen, host)}</div>` : !host ? '' : `
       <div class="result"><button class="win blue" data-win="blue" ${canRec ? '' : 'disabled'}>${TEAM.blue} 승리</button><button class="win red" data-win="red" ${canRec ? '' : 'disabled'}>${TEAM.red} 승리</button></div>`}`;
@@ -1250,6 +1252,16 @@ function renderTeams(shuffling) {
   if (spinPen) runPenSpin(pen, rec);
 }
 const TEAM = { blue: '1팀 블루', red: '2팀 레드' };
+// 기록된 판에 뛴 사람 중 3연승·3연패 이상(전체 기록 기준)을 결과 아래에 한 줄로 알려 줘요: '🔥 다다 4연승 · 🧊 가 3연패'
+function streakNote(rec, st) {
+  const out = [];
+  for (const p of [...rec[rec.win], ...rec[rec.win === 'blue' ? 'red' : 'blue']]) {
+    const f = st.P[p]?.form || [], last = f.at(-1); let n = 0;
+    for (let i = f.length - 1; i >= 0 && f[i] === last; i--) n++;
+    if (n >= 3) out.push(`<span class="${last ? 'w' : 'l'}">${last ? '🔥' : '🧊'} ${esc(p)} ${n}연${last ? '승' : '패'}</span>`);
+  }
+  return out.length ? `<p class="rec-streak">${out.join('')}</p>` : '';
+}
 // ---------- MVP 투표 ----------
 // 기록된 판마다 보고 있는 사람 누구나(구경 포함) 한 표씩, 그 판에 뛴 사람 중에 MVP를 뽑아요. 다시 누르면 취소, 다른 사람을 누르면 옮겨요.
 // 서버는 판마다 표 수만 알려 줘서, 내가 누구를 뽑았는지는 이 기기에 기억해요. 가장 많이 받은 사람이 MVP(같으면 같이).
@@ -1694,6 +1706,14 @@ function renderSession() {
       <td><span class="form">${p.form.slice(-8).map(f => `<i class="${f ? 'w' : 'l'}">${f ? '승' : '패'}</i>`).join('')}</span>${streak(p.form)}</td></tr>`).join('')
   }</tbody></table></div>`;
 }
+// 이 방 기록을 단톡방용 글자로: '[일윤의 방] 내전 5판' 다음 줄부터 표와 같은 순서로 승-패·승률·MVP
+$('#copySession').onclick = () => {
+  const ms = roomMatches(); if (!ms.length) return;
+  const st = computeStats([], ms), mv = mvpCounts(ms), medal = ['🥇', '🥈', '🥉'];
+  const rows = Object.values(st.P).sort((a, b) => b.w - a.w || (a.g - a.w) - (b.g - b.w) || a.name.localeCompare(b.name, 'ko'));
+  copyText([`[${curRoom()?.name || '내전'}] 내전 ${ms.length}판`,
+    ...rows.map((p, i) => `${medal[i] || `${i + 1}.`} ${p.name} ${p.w}승 ${p.g - p.w}패 (${pct(p.w, p.g)}%)${mv[p.name] ? ` ⭐${mv[p.name]}` : ''}`)].join('\n'));
+};
 const emptyStats = () => `<p class="empty">아직 기록된 경기가 없어요. 내전 탭에서 팀을 섞고 이긴 팀을 누르면 여기에 쌓여요.</p>`;
 
 // ---------- 분석 탭 ----------
