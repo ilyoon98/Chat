@@ -333,16 +333,16 @@ body.gated { overflow: hidden; }
     </div>
 
     <div class="card" id="sessionCard" hidden>
-      <h2>이번 세션 <span class="r" id="sessionMeta"></span></h2>
+      <h2>이 방 기록 <span class="r" id="sessionMeta"></span></h2>
       <div id="sessionBox"></div>
-      <p class="note">경기 사이가 4시간 넘게 비면 새 세션으로 쳐요. 전체 승률은 전적 탭에서 봐요.</p>
+      <p class="note">이 방에서 한 판들만 따로 세요. 모든 방을 합친 전체 전적은 전적 탭에서 봐요.</p>
     </div>
   </section>
 
   <!-- 전적 -->
   <section id="p-stats" role="tabpanel" hidden>
     <div class="card">
-      <h2>선수별 전적 <span class="r"><span id="statsMeta"></span> · <label>기간 <select class="period"><option value="all">전체</option><option value="session">이번 세션</option><option value="30">최근 30일</option><option value="7">최근 7일</option><option value="1">최근 24시간</option></select></label></span></h2>
+      <h2>선수별 전적 <span class="r"><span id="statsMeta"></span> · <label>기간 <select class="period"><option value="all">전체</option><option value="30">최근 30일</option><option value="7">최근 7일</option><option value="1">최근 24시간</option></select></label></span></h2>
       <div id="statsBox"></div>
       <p class="note">MMR은 1000점에서 시작해서, 강한 팀을 이기면 많이 오르고 약한 팀에 지면 많이 내려가요. 실력 밸런스 섞기에 이 점수를 써요.<br>내전 티어(엠블럼)는 전체 기간 MMR 순위가 우리 중 상위 몇 %인지를 실제 롤 티어 분포에 맞춘 거예요. 1판 이상 한 사람만 붙어요.<br>솔랭은 실제 솔로랭크 티어예요. 주 라인·모스트는 최근 솔랭·자랭·일반 20판으로 세고(칼바람·다시하기 빼고), 숙련도는 챔피언 숙련도 점수 상위 3개예요. 명단 편집에서 이름을 누르고 Riot ID를 넣으면 불러와요. 아이콘에 마우스를 올리면 자세히 나와요.</p>
     </div>
@@ -351,7 +351,7 @@ body.gated { overflow: hidden; }
   <!-- 분석 -->
   <section id="p-analysis" role="tabpanel" hidden>
     <div class="card">
-      <h2>한눈에 보기 <span class="r"><label>기간 <select class="period"><option value="all">전체</option><option value="session">이번 세션</option><option value="30">최근 30일</option><option value="7">최근 7일</option><option value="1">최근 24시간</option></select></label> <label>최소 판수 <select id="minG"><option>1</option><option>2</option><option selected>3</option><option>5</option></select></label></span></h2>
+      <h2>한눈에 보기 <span class="r"><label>기간 <select class="period"><option value="all">전체</option><option value="30">최근 30일</option><option value="7">최근 7일</option><option value="1">최근 24시간</option></select></label> <label>최소 판수 <select id="minG"><option>1</option><option>2</option><option selected>3</option><option>5</option></select></label></span></h2>
       <div id="hlBox"></div>
     </div>
     <div class="card">
@@ -703,13 +703,13 @@ const man = n => n >= 1e4 ? `${+(n / 1e4).toFixed(1)}만` : String(n); // 123456
 const mostIcons = p => (S.riot[p]?.most || []).map(([c, g, w]) => champIcon(c, `최근 ${g}판 ${pct(w, g)}%`)).join('');
 const mastIcons = p => (S.riot[p]?.mast || []).map(([c, lv, pts]) => champIcon(c, `숙련도 ${lv}레벨 · ${man(pts)}점`)).join('');
 // ---------- 선수 카드 ----------
-// 이름이 보이는 곳(명단·오늘 할 사람·팀·팀장 뽑기·전적·이번 세션·분석)에 data-card="이름"을 붙여 두면,
-// 마우스를 올리거나 키보드로 고르면 내전 기록과 롤 정보를 카드로 보여줘요. 폰은 표·세션에서 이름을 누르면 열려요.
+// 이름이 보이는 곳(명단·오늘 할 사람·팀·팀장 뽑기·전적·이 방 기록·분석)에 data-card="이름"을 붙여 두면,
+// 마우스를 올리거나 키보드로 고르면 내전 기록과 롤 정보를 카드로 보여줘요. 폰은 표에서 이름을 누르면 열려요.
 function playerCard(p) {
-  const st = computeStats(S.players, S.matches), s = st.P[p], T = tierMap(st)[p], x = computeStats([], sessionMatches()).P[p];
+  const st = computeStats(S.players, S.matches), s = st.P[p], T = tierMap(st)[p], x = computeStats([], roomMatches()).P[p];
   const r = S.riot[p], item = (c, text) => `<span>${champIcon(c)}${esc(champName(c))} ${text}</span>`;
   const rows = [['내전', s?.g ? `${s.g}판 ${s.w}승 ${s.g - s.w}패 · <b>${pct(s.w, s.g)}%</b> · MMR ${Math.round(s.mmr)}` : '아직 기록 없음']];
-  if (x?.g) rows.push(['이번 세션', `${x.w}승 ${x.g - x.w}패`]);
+  if (x?.g) rows.push(['이 방', `${x.w}승 ${x.g - x.w}패`]);
   if (r) {
     rows.push(['솔랭', `<b>${esc(soloText(p))}</b>${r.solo ? ` · ${r.solo.w}승 ${r.solo.l}패` : ''}`]);
     if (r.n) rows.push(['주 라인', `<b>${esc(laneText(p))}</b> · 최근 ${r.n}판`]);
@@ -742,7 +742,7 @@ document.addEventListener('pointerover', e => {
 });
 document.addEventListener('focusin', e => { const el = e.target.closest?.('[data-card]'); if (el?.matches(':focus-visible')) showCard(el); else hideCard(); });
 document.addEventListener('focusout', () => { if (cardFor && document.activeElement !== cardFor) hideCard(); });
-// 폰: 버튼이 아닌 이름(표·세션)을 누르면 열고, 다른 곳을 누르면 닫아요. 명단 칩은 눌러서 넣고 빼는 거라 그대로 둬요.
+// 폰: 버튼이 아닌 이름(표)을 누르면 열고, 다른 곳을 누르면 닫아요. 명단 칩은 눌러서 넣고 빼는 거라 그대로 둬요.
 document.addEventListener('click', e => {
   const el = e.target.closest('[data-card]');
   if (el && !el.closest('button') && el !== cardFor) return showCard(el);
@@ -931,11 +931,11 @@ function renderTeams(shuffling) {
   const box = $('#teamsBox'), c = S.current, st = computeStats(S.players, S.matches);
   if (!c || !c.blue.length && !c.red.length) { box.innerHTML = '<p class="empty">사람을 고르고 팀 섞기를 누르면 1팀(블루)과 2팀(레드)이 여기에 나와요.</p>'; return; }
   const rec = recordedMatch(), host = isHost(), hostNick = curRoom()?.hostNick || '방장';
-  const T = tierMap(st), ss = computeStats([], sessionMatches());
+  const T = tierMap(st), ss = computeStats([], roomMatches());
   // 이름 칸은 끌어서 옮기는 손잡이, 옆 화살표 버튼은 눌러서 상대 팀으로 보내기예요. 둘 다 방장만.
   const swapBtn = (p, side) => rec || shuffling || !host ? ''
     : `<button class="swap" data-swap="${esc(p)}" data-side="${side}" title="상대 팀으로" aria-label="${esc(p)} ${side === 'blue' ? '2팀' : '1팀'}으로 보내기">${side === 'blue' ? '→' : '←'}</button>`;
-  const li = (p, side) => { const s = st.P[p], x = ss.P[p]; return `<li><div class="pl" data-p="${esc(p)}" data-card="${esc(p)}" data-side="${side}"><span class="who">${tierIcon(T[p])}<span class="nm">${esc(p)}</span><span class="lane">${laneText(p, true)}</span></span><span class="st">${s?.g ? `${pct(s.w, s.g)}% · ${s.g}판` : '첫 판'}${x?.g ? `<br><span class="sess">이번 ${x.w}승 ${x.g - x.w}패</span>` : ''}</span></div>${swapBtn(p, side)}</li>`; };
+  const li = (p, side) => { const s = st.P[p], x = ss.P[p]; return `<li><div class="pl" data-p="${esc(p)}" data-card="${esc(p)}" data-side="${side}"><span class="who">${tierIcon(T[p])}<span class="nm">${esc(p)}</span><span class="lane">${laneText(p, true)}</span></span><span class="st">${s?.g ? `${pct(s.w, s.g)}% · ${s.g}판` : '첫 판'}${x?.g ? `<br><span class="sess">이 방 ${x.w}승 ${x.g - x.w}패</span>` : ''}</span></div>${swapBtn(p, side)}</li>`; };
   const avg = t => t.reduce((s, p) => s + mmrOf(st, p), 0) / (t.length || 1);
   const eb = 1 / (1 + Math.pow(10, (avg(c.red) - avg(c.blue)) / 400)), both = c.blue.length && c.red.length;
   // 한쪽 팀을 다 비워도 빈 팀 칸은 남겨서 다시 옮겨 올 수 있게 해요.
@@ -1193,20 +1193,11 @@ function renderDraft() {
 }
 
 // ---------- 전적 탭 ----------
-// 경기 사이가 4시간 넘게 비면 새 세션이에요. 마지막 경기 뒤로 4시간이 지나면 이번 세션은 끝난 걸로 봐요.
-const SESSION_GAP = 4 * 36e5;
-function sessionFrom(matches) {
-  const ts = matches.map(m => m.t).sort((a, b) => b - a);
-  if (!ts.length || Date.now() - ts[0] > SESSION_GAP) return Infinity;
-  let i = 0; while (i + 1 < ts.length && ts[i] - ts[i + 1] <= SESSION_GAP) i++;
-  return ts[i];
-}
-const sessionMatches = () => { const ms = S.matches, from = sessionFrom(ms); return ms.filter(m => m.t >= from); };
+// '이 방' = 지금 들어가 있는 방에서 기록한 판들이에요(판마다 방 id가 남아요). 전적·분석·기록 탭은 모든 방을 합친 전체 기준이에요.
+const roomMatches = () => S.room ? S.matches.filter(m => m.room === S.room) : [];
 function periodMatches() {
-  const ms = S.matches;
-  if (S.period === 'session') return sessionMatches();
   const from = S.period === 'all' ? 0 : Date.now() - Number(S.period) * 864e5;
-  return ms.filter(m => m.t >= from);
+  return S.matches.filter(m => m.t >= from);
 }
 const NO_PERIOD = '<p class="empty">이 기간에는 기록된 경기가 없어요. 기간을 넓혀 보세요.</p>';
 function streak(form) {
@@ -1236,9 +1227,9 @@ function renderStats() {
 }
 $('#statsBox').addEventListener('click', e => { const b = e.target.closest('button[data-sort]'); if (b) { sortKey = b.dataset.sort; renderStats(); } });
 
-// 내전 탭 맨 아래 '이번 세션' 표: 오늘 모여서 한 판들만 따로 세요. 많이 이긴 순.
+// 내전 탭 맨 아래 '이 방 기록' 표: 이 방에서 한 판들만 따로 세요. 많이 이긴 순.
 function renderSession() {
-  const ms = sessionMatches(), card = $('#sessionCard');
+  const ms = roomMatches(), card = $('#sessionCard');
   card.hidden = !ms.length; if (!ms.length) return;
   const st = computeStats([], ms), T = tierMap(computeStats(S.players, S.matches));
   const rows = Object.values(st.P).sort((a, b) => b.w - a.w || (a.g - a.w) - (b.g - b.w) || a.name.localeCompare(b.name, 'ko'));

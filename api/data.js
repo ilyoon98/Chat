@@ -399,7 +399,8 @@ export default async function handler(req, res) {
         const prev = round && matches.find(x => x.round === round);
         if (prev) { id = prev.id; dup = true; break; }
         id = now.toString(36) + Math.random().toString(36).slice(2, 7);
-        await redis.hset(K.matches, { [id]: { t: now, blue, red, win: m.win, ...(round && { round }) } });
+        // room: 어느 방에서 한 판인지 남겨서, 화면의 '이 방 기록'은 그 방 판들만 따로 세요.
+        await redis.hset(K.matches, { [id]: { t: now, blue, red, win: m.win, room: room.id, ...(round && { round }) } });
         await saveRoom({ ...room, lastActive: now });
         break;
       }
