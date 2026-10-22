@@ -441,6 +441,25 @@ body.gated { overflow: hidden; }
    기록 탭: '이미지' 버튼이 '삭제' 옆에 붙어요(오른쪽 끝은 삭제). 최근 1:1: 버튼 두 개를 한 줄로 */
 .rec-head b { flex: 1 0 auto; }
 .mhead [data-shot] + .btn { margin-left: 0; }
+/* 토너먼트 대진표: 라운드마다 한 칸(가로로 넘기기), 판마다 두 줄(누르면 그쪽이 이겨요) */
+.tform { display: grid; grid-template-columns: auto minmax(0, 1fr) auto minmax(0, 1fr); gap: 8px 10px; align-items: center; }
+.tform label { color: var(--muted); font-size: 13px; }
+@media (max-width: 520px) { .tform { grid-template-columns: auto minmax(0, 1fr); } }
+.tchamp { margin: 0 0 12px; padding: 12px 14px; border-radius: 12px; background: color-mix(in srgb, var(--gold) 20%, var(--surface)); border: 1px solid var(--gold); font-size: 16px; }
+.bracket-wrap { overflow-x: auto; padding-bottom: 4px; }
+.bracket { display: grid; grid-template-columns: repeat(var(--cols), minmax(150px, 1fr)); gap: 14px; min-width: calc(var(--cols) * 164px); }
+.bcol { display: flex; flex-direction: column; }
+.bh { font-size: 12px; font-weight: 700; color: var(--muted); text-align: center; margin-bottom: 6px; }
+.bms { flex: 1; display: flex; flex-direction: column; justify-content: space-around; gap: 10px; }
+.bm { border: 1px solid var(--line); border-radius: 10px; background: var(--sunk); overflow: hidden; }
+.bm button { display: flex; width: 100%; justify-content: space-between; align-items: center; gap: 6px; padding: 7px 10px; background: none; border: 0; color: var(--ink); font: inherit; font-size: 14px; text-align: left; cursor: pointer; }
+.bm button + button { border-top: 1px solid var(--line); }
+.bm button:disabled { cursor: default; }
+.bm button.win { background: color-mix(in srgb, var(--gold) 22%, var(--surface)); font-weight: 700; }
+.bm button.lose { color: var(--muted); }
+.bm button.lose span { text-decoration: line-through; }
+.bm .tbd { color: var(--muted); font-style: italic; }
+.tfoot { display: flex; justify-content: flex-end; margin-top: 10px; }
 /* 승부 예측 · MMR 그래프 · 참가 신청 */
 .pred { display: grid; gap: 8px; margin-top: 12px; padding: 10px 12px; border-radius: 12px; border: 1px dashed var(--line); }
 .pred.done { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
@@ -515,6 +534,7 @@ li.match.picked { outline: 2px solid var(--bad); outline-offset: -2px; }
     <button role="tab" id="game-lol" aria-selected="true" aria-controls="g-lol">롤 내전</button>
     <button role="tab" id="game-duel" aria-selected="false" aria-controls="g-duel">롤 1:1</button>
     <button role="tab" id="game-five" aria-selected="false" aria-controls="g-five">롤 5인 큐</button>
+    <button role="tab" id="game-tourn" aria-selected="false" aria-controls="g-tourn">토너먼트</button>
     <button role="tab" id="game-roster" aria-selected="false" aria-controls="g-roster">선수 명단</button>
   </nav>
 
@@ -607,7 +627,7 @@ li.match.picked { outline: 2px solid var(--bad); outline-offset: -2px; }
       <div class="row log-tools" id="logTools"></div>
       <div class="reset-panel" id="resetPanel" hidden>
         <b>전체 기록 초기화</b>
-        <p>내전·1:1 기록, MVP 표, 시즌이 모두 지워지고 처음부터 다시 시작해요. 선수 명단·Riot ID·방은 그대로예요. 누르면 먼저 지금 기록을 백업 파일로 받아 둬요("백업 불러오기"로 되살릴 수 있어요).</p>
+        <p>내전·1:1 기록, MVP 표, 승부 예측, 토너먼트, 시즌이 모두 지워지고 처음부터 다시 시작해요. 선수 명단·Riot ID·방은 그대로예요. 누르면 먼저 지금 기록을 백업 파일로 받아 둬요("백업 불러오기"로 되살릴 수 있어요).</p>
         <div class="row"><input id="resetInput" type="text" placeholder='여기에 "초기화"라고 적어 주세요' autocomplete="off" aria-label="확인 글자"><button class="btn small warn" id="resetGo" disabled>백업 받고 초기화</button><button class="btn ghost small" id="resetCancel">취소</button></div>
       </div>
       <ul class="log" id="logBox"></ul>
@@ -635,6 +655,26 @@ li.match.picked { outline: 2px solid var(--bad); outline-offset: -2px; }
       <h2>최근 1:1 <span class="r" id="duelLogMeta"></span></h2>
       <ul class="log" id="duelLog"></ul>
     </div>
+  </section>
+
+  <!-- 토너먼트: 롤 1:1이든 다른 게임이든 대진표를 짜요(개인전·팀전). 만들기·결과 누르기는 어느 방이든 방장이 해요. -->
+  <section class="game" id="g-tourn" role="tabpanel" aria-labelledby="game-tourn" hidden>
+    <div class="card">
+      <h2>새 토너먼트</h2>
+      <div id="tMakeBox">
+        <div class="tform">
+          <label for="tName">이름</label><input id="tName" type="text" maxlength="30" autocomplete="off">
+          <label for="tGame">게임</label><input id="tGame" type="text" maxlength="20" value="롤 1:1" list="tGames" autocomplete="off">
+          <datalist id="tGames"><option>롤 1:1</option><option>롤 2:2</option><option>칼바람</option><option>롤토체스</option><option>발로란트</option><option>카트라이더</option><option>마리오카트</option><option>테트리스</option><option>보드게임</option></datalist>
+        </div>
+        <div class="seg" id="tMode" role="group" aria-label="참가 방식" style="margin-top:10px"><button type="button" data-tm="1" aria-pressed="true">개인전</button><button type="button" data-tm="2" aria-pressed="false">2인 팀</button><button type="button" data-tm="3" aria-pressed="false">3인 팀</button><button type="button" data-tm="5" aria-pressed="false">5인 팀</button></div>
+        <p class="pick-h" style="margin-top:14px">참가할 사람을 눌러요 <span id="tPickMeta"></span></p>
+        <div class="chips" id="tPick"></div>
+        <div class="row"><button class="btn gold" id="tMake" disabled>대진표 만들기</button><span class="note" id="tNote" style="margin:0"></span></div>
+      </div>
+      <p class="note" id="tNoHost" hidden>토너먼트를 만들고 결과를 누르는 건 어느 방이든 방장이 해요. 롤 내전 탭에서 방을 만들면 방장이 돼요. 대진표는 누구나 볼 수 있어요.</p>
+    </div>
+    <div id="tournList"></div>
   </section>
 
   <!-- 선수 명단: 롤 내전·1:1·롤 5인 큐가 같이 쓰는 명단을 여기서 관리해요(추가·이름 바꾸기·빼기·Riot ID). -->
@@ -685,7 +725,7 @@ async function copyText(text) {
 
 // ---------- 상태 ----------
 // current·selected는 지금 들어가 있는 방(room)의 팀 배치·오늘 할 사람이에요. presence = 이 방을 보고 있는 사람들.
-const S = { players: [], matches: [], duels: [], mvp: {}, pred: [], seasons: [], current: null, selected: new Set(), riot: {}, rooms: [], room: null, presence: [], mode: 'random', editing: false, editTarget: null, period: 'all', season: 'cur', capMethod: 'top', draft: null };
+const S = { players: [], matches: [], duels: [], mvp: {}, pred: [], tourns: [], seasons: [], current: null, selected: new Set(), riot: {}, rooms: [], room: null, presence: [], mode: 'random', editing: false, editTarget: null, period: 'all', season: 'cur', capMethod: 'top', draft: null };
 const LS = 'lol-naejeon-v1';
 // 이 기기를 구분하는 id와 닉네임. 로그인 없이 방장을 가려요.
 const ME = (() => {
@@ -771,6 +811,7 @@ async function api(action, body, quiet) {
         host_busy: '지금 방장이 있어요. 방장이 넘겨줘야 해요.', not_host: '방장만 바꿀 수 있어요.', no_room: '그 방이 없어요. 닫혔을 수 있어요.',
         no_match: '그 판 기록이 없어요. 지워졌을 수 있어요.', mvp_closed: 'MVP 투표는 기록하고 하루 안에만 할 수 있어요.',
         pred_closed: '이 판은 결과가 나와서 예측이 마감됐어요.', pred_stale: '팀이 바뀌었어요. 새 팀으로 다시 찍어 주세요.',
+        tourn_locked: '다음 판 결과를 먼저 풀어야 바꿀 수 있어요.', no_tourn: '그 토너먼트가 없어요. 지워졌을 수 있어요.', tourn_full: '토너먼트는 50개까지예요. 지난 토너먼트를 지워 주세요.',
         season_empty: '이번 시즌엔 아직 기록한 판이 없어요. 한 판 이상 하고 새 시즌을 시작해 주세요.' }[e] || '저장에 실패했어요.');
       throw new Error(e || String(res.status));
     }
@@ -788,6 +829,7 @@ function applyServer(d) {
   if (Array.isArray(d.matches)) S.matches = d.matches.filter(validMatch);
   if (Array.isArray(d.duels)) S.duels = d.duels.filter(validDuel);
   if (d.mvp && typeof d.mvp === 'object') S.mvp = d.mvp;
+  if (Array.isArray(d.tourns)) S.tourns = d.tourns.filter(t => t && typeof t.id === 'string' && Array.isArray(t.rounds) && Array.isArray(t.ents));
   if (Array.isArray(d.pred)) S.pred = d.pred.filter(x => x && typeof x.n === 'string' && ['blue', 'red'].includes(x.s));
   if (Array.isArray(d.seasons)) S.seasons = cleanSeasons(d.seasons);
   if (d.riot && typeof d.riot === 'object') S.riot = d.riot;
@@ -1066,6 +1108,8 @@ function playerCard(p) {
   const du = duelStats(seasonDuels()).P[p];
   if (du?.g) rows.push(['1:1', `${wl(du.w, du.g - du.w)} · MMR ${Math.round(du.mmr)}`]);
   // 내전에서 라인을 정해 뛴 판: '탑 3승 1패 · 미드 1승 2패' (많이 한 라인부터)
+  const tw = S.tourns.filter(t => t.champ != null && t.ents[t.champ]?.includes(p)).length;
+  if (tw) rows.push(['토너먼트', `🏆 우승 ${tw}번`]);
   const mv = mvpCounts(seasonMatches())[p];
   if (mv) rows.push(['MVP', `⭐ ${mv}번`]);
   const nl = Object.entries(naeLanes()[p] || {}).sort((a, b) => b[1][0] - a[1][0]);
@@ -2346,7 +2390,7 @@ $('#fivePick').addEventListener('click', e => {
 $('#fiveClear').onclick = () => { FIVE = []; saveFive(); renderFive(); };
 $('#fiveRefresh').onclick = e => refreshRiotNow(e.currentTarget);
 // 게임 탭(롤 내전 / 롤 5인 큐). 마지막에 본 탭을 기억해요.
-const GAMES = ['lol', 'duel', 'five', 'roster'];
+const GAMES = ['lol', 'duel', 'five', 'tourn', 'roster'];
 function showGame(g) {
   for (const x of GAMES) { $('#game-' + x).setAttribute('aria-selected', x === g); $('#g-' + x).hidden = x !== g; }
   try { localStorage.setItem(LS + ':game', g); } catch {}
@@ -2428,7 +2472,75 @@ $('#g-duel').addEventListener('click', async e => {
   if (del && needRoster() && confirm('이 1:1 기록을 지울까요?')) { try { await api('deleteDuel', { id: del.dataset.duelDel }); toast('1:1 기록을 지웠어요.'); } catch {} renderAll(); }
 });
 
-function renderAll() { syncPresence(); renderSeasonPick(); renderRoomBar(); renderRoster(); renderTeams(); renderSession(); renderStats(); renderAnalysis(); renderLog(); renderFive(); renderDuel(); }
+function renderAll() { syncPresence(); renderSeasonPick(); renderRoomBar(); renderRoster(); renderTeams(); renderSession(); renderStats(); renderAnalysis(); renderLog(); renderFive(); renderDuel(); renderTourn(); }
+
+// ---------- 토너먼트 ----------
+// 만들기: 게임 이름·참가 방식(개인전 / 2·3·5인 팀)을 고르고 참가할 사람을 누르면, 팀은 무작위로 묶고 순서도 섞어서 대진표를 짜요.
+// 결과: 판마다 이긴 쪽 줄을 누르면 다음 라운드로 올라가요(같은 줄을 다시 누르면 풀려요). 결승이 끝나면 🏆 우승.
+const TN = { mode: 1, pick: new Set() };
+let tournDel = null;
+const roundName = n => (n === 2 ? '결승' : n === 4 ? '4강' : `${n}강`);
+const entLabel = e => e.join('·');
+function renderTourn() {
+  const can = canRoster();
+  $('#tMakeBox').hidden = !can; $('#tNoHost').hidden = can;
+  for (const n of [...TN.pick]) if (!S.players.includes(n)) TN.pick.delete(n);
+  $('#tPick').innerHTML = S.players.map(p => `<button class="chip${TN.pick.has(p) ? ' on' : ''}" data-tp="${esc(p)}" aria-pressed="${TN.pick.has(p)}">${esc(p)}</button>`).join('') || '<span class="empty">선수 명단 탭에서 이름을 먼저 넣어 주세요.</span>';
+  document.querySelectorAll('#tMode [data-tm]').forEach(b => b.setAttribute('aria-pressed', +b.dataset.tm === TN.mode));
+  const n = TN.pick.size, k = TN.mode, E = Math.floor(n / k), P = E >= 2 ? 2 ** Math.ceil(Math.log2(E)) : 0;
+  const ok = n % k === 0 && E >= 2 && E <= 32;
+  $('#tPickMeta').textContent = n ? `${n}명 골랐어요` : '';
+  $('#tNote').textContent = !n ? '' : n % k ? `${k}명씩 팀을 묶으려면 ${k}의 배수로 골라 주세요.` : E < 2 ? '두 팀(두 명) 이상 골라 주세요.' : E > 32 ? '32팀(명)까지 돼요.'
+    : `${k > 1 ? `${E}팀` : `${E}명`} · ${roundName(P)}부터${P > E ? ` · 부전승 ${P - E}` : ''}${k > 1 ? ' · 팀은 무작위로 묶어요' : ''}`;
+  $('#tMake').disabled = !ok;
+  $('#tournList').innerHTML = S.tourns.map(T => {
+    const champ = T.champ != null ? T.ents[T.champ] : null, team = T.ents[0]?.length > 1;
+    const slot = (m, r, i, side) => {
+      const e = m[side], other = side === 'a' ? 'b' : 'a';
+      if (e == null) return `<button disabled><span class="tbd">${r === 0 && side === 'b' ? '부전승' : '기다리는 중'}</span></button>`;
+      const cls = m.w === side ? 'win' : m.w === other ? 'lose' : '', live = can && m.a != null && m.b != null;
+      return `<button class="${cls}" data-tw="${esc(T.id)}|${r}|${i}|${side}"${live ? '' : ' disabled'}><span>${esc(entLabel(T.ents[e]))}</span>${m.w === side ? '<b>승</b>' : ''}</button>`;
+    };
+    return `<div class="card tourn"><h2>${champ ? '🏆 ' : ''}${esc(T.name)} <span class="r">${T.game ? `${esc(T.game)} · ` : ''}${T.ents.length}${team ? '팀' : '명'} · ${champ ? '끝났어요' : '진행 중'}</span></h2>
+      ${champ ? `<div class="tchamp">🏆 우승 <b>${esc(entLabel(champ))}</b></div>` : ''}
+      <div class="bracket-wrap"><div class="bracket" style="--cols:${T.rounds.length}">${T.rounds.map((rd, r) => `<div class="bcol"><div class="bh">${roundName(rd.length * 2)}</div><div class="bms">${rd.map((m, i) => `<div class="bm">${slot(m, r, i, 'a')}${slot(m, r, i, 'b')}</div>`).join('')}</div></div>`).join('')}</div></div>
+      ${can ? `<div class="tfoot"><button class="btn ghost small" data-tdel="${esc(T.id)}" style="${tournDel === T.id ? 'color:var(--bad);border-color:var(--bad)' : ''}">${tournDel === T.id ? '정말 지우기' : '토너먼트 지우기'}</button></div>` : ''}
+    </div>`;
+  }).join('') || '<div class="card"><p class="empty" style="margin:0">아직 토너먼트가 없어요. 위에서 참가할 사람을 고르고 대진표를 만들어 보세요.</p></div>';
+}
+$('#tPick').addEventListener('click', e => {
+  const b = e.target.closest('[data-tp]'); if (!b) return;
+  const p = b.dataset.tp; TN.pick.has(p) ? TN.pick.delete(p) : TN.pick.add(p); renderTourn();
+});
+$('#tMode').addEventListener('click', e => { const b = e.target.closest('[data-tm]'); if (b) { TN.mode = +b.dataset.tm; renderTourn(); } });
+$('#tMake').onclick = async () => {
+  if (!needRoster()) return;
+  const k = TN.mode, picked = shuffle([...TN.pick]), entrants = [];
+  for (let i = 0; i + k <= picked.length; i += k) entrants.push(picked.slice(i, i + k));
+  const d = new Date(), game = $('#tGame').value.trim(), name = $('#tName').value.trim() || `${d.getMonth() + 1}월 ${d.getDate()}일 ${game || ''} 토너먼트`.replace(/\s+/g, ' ');
+  $('#tMake').disabled = true;
+  try { await api('createTourn', { name, game, entrants }); TN.pick.clear(); $('#tName').value = ''; sfx('done'); toast('대진표를 만들었어요. 판마다 이긴 쪽을 눌러 주세요.'); } catch {}
+  renderAll();
+};
+$('#tournList').addEventListener('click', async e => {
+  const del = e.target.closest('[data-tdel]');
+  if (del) {
+    if (!needRoster()) return;
+    const id = del.dataset.tdel;
+    if (tournDel !== id) { tournDel = id; renderTourn(); clearTimeout(renderTourn.t); renderTourn.t = setTimeout(() => { tournDel = null; renderTourn(); }, 3000); return; }
+    tournDel = null; try { await api('deleteTourn', { id }); toast('토너먼트를 지웠어요.'); } catch {}
+    return renderAll();
+  }
+  const b = e.target.closest('[data-tw]'); if (!b || b.disabled || !needRoster()) return;
+  const [id, r, i, side] = b.dataset.tw.split('|'), T = S.tourns.find(t => t.id === id), m = T?.rounds[+r]?.[+i];
+  if (!m) return;
+  const w = m.w === side ? null : side, last = +r === T.rounds.length - 1;
+  try {
+    await api('tournWin', { id, r: +r, i: +i, w });
+    if (w && last) { sfx('win'); toast(`🏆 ${entLabel(T.ents[m[w]])} 우승!`); burst(b, 'gold', true); } else sfx(w ? 'on' : 'undo');
+  } catch {}
+  renderAll();
+});
 
 // 닉네임이 없으면 입장 화면부터. 정하면 바로 방 신호를 보내서 '구경 중'에 이름이 떠요.
 function showGate(on) {
@@ -2655,6 +2767,10 @@ document.addEventListener('click', e => {
 // ---------- 버전 · 패치노트 ----------
 // 커밋해서 올릴 때마다 맨 위에 새 항목을 더해요(규칙은 CLAUDE.md). 오른쪽 위 버전은 맨 위 항목이에요.
 const NOTES = [
+  { v: '1.19.0', d: '2026-10-22', items: [
+    '🏆 토너먼트 탭이 생겼어요: 게임 이름(롤 1:1, 칼바람, 마리오카트… 아무 게임이나)과 참가 방식(개인전 / 2·3·5인 팀)을 고르고 참가할 사람을 누르면 대진표를 짜 줘요. 인원이 안 맞으면 부전승이 들어가요.',
+    '판마다 이긴 쪽을 누르면 다음 라운드로 올라가고, 결승이 끝나면 🏆 우승자가 나와요. 잘못 눌렀으면 같은 줄을 다시 누르면 풀려요. 우승 횟수는 선수 카드에 남아요. 만들기·결과 누르기는 어느 방이든 방장이 해요.',
+  ] },
   { v: '1.18.0', d: '2026-10-22', items: [
     '🔮 승부 예측: 팀이 짜지면 팀 아래에 "1팀 블루 승 / 2팀 레드 승" 버튼이 생겨요. 보고 있는 사람 누구나(뛰는 사람도) 한 번 찍고, 결과를 기록하면 마감돼요. 맞힌 사람이 결과 아래에 나오고, 분석 탭 "예측왕"에 적중률 순위가 쌓여요.',
     '📈 MMR 그래프: 선수 이름에 마우스를 올리면(폰은 누르면) 나오는 선수 카드와 분석 탭 "선수 상세"에 그 사람의 MMR이 판마다 오르내린 선이 나와요.',

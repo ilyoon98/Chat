@@ -6,7 +6,7 @@ const url = process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL;
 const token = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN;
 const redis = globalThis.__redis ?? (url && token ? new Redis({ url, token }) : null);
 
-const K = { players: 'lol:players', matches: 'lol:matches', ver: 'lol:ver', riot: 'lol:riot', riotLock: 'lol:riot:lock', riotRest: 'lol:riot:rest', riotGames: 'lol:riot:games', rooms: 'lol:rooms', hostSeen: 'lol:hostseen', nicks: 'lol:nicks', duels: 'lol:duels', mvp: 'lol:mvp', seasons: 'lol:seasons', pred: 'lol:pred' };
+const K = { players: 'lol:players', matches: 'lol:matches', ver: 'lol:ver', riot: 'lol:riot', riotLock: 'lol:riot:lock', riotRest: 'lol:riot:rest', riotGames: 'lol:riot:games', rooms: 'lol:rooms', hostSeen: 'lol:hostseen', nicks: 'lol:nicks', duels: 'lol:duels', mvp: 'lol:mvp', seasons: 'lol:seasons', pred: 'lol:pred', tourn: 'lol:tourn' };
 // 방마다 따로인 것: 오늘 할 사람(정렬 집합), 팀 배치, 지금 보고 있는 사람(정렬 집합, 점수 = 마지막 신호 시각)
 const RK = { sel: r => `lol:room:${r}:sel`, cur: r => `lol:room:${r}:cur`, seen: r => `lol:room:${r}:seen` };
 const MAX_MATCHES = 5000;
@@ -249,6 +249,27 @@ const cleanPenalty = (p, losers) => (p && typeof p === 'object' && typeof p.what
 // 시즌: 시즌 2부터 시작한 시각(ms)을 순서대로 남겨요. 시작 전 기록은 모두 시즌 1이에요.
 // 판은 지우거나 고치지 않고, 화면이 판 시각으로 시즌을 나눠서 MMR·티어·전적을 새로 세요.
 const readSeasons = async () => ((await redis.get(K.seasons)) || []).map(Number).filter(t => t > 0).sort((a, b) => a - b);
+// ---------- 토너먼트 ----------
+// 해시 'id' → { name, game, ents: [[이름…], …](참가하는 사람·팀), rounds: [[{ a, b, w }]], champ, t, doneAt }
+// a·b는 ents 번호, w는 이긴 쪽('a'|'b'). 1라운드는 위쪽 절반이 각 판의 a, 나머지가 앞 판부터 b에 들어가고, 빈자리는 부전승이에요.
+// 이긴 쪽은 다음 라운드 '판 번호/2' 판으로 올라가요(짝수 판이면 a, 홀수 판이면 b 자리). 마지막 판 승자가 우승(champ)이에요.
+const MAX_TOURN = 50;
+async function readTourns() {
+  return Object.entries((await redis.hgetall(K.tourn)) || {}).map(([id, v]) => ({ id, ...parse(v) })).filter(x => Array.isArray(x.rounds) && Array.isArray(x.ents)).sort((a, b) => b.t - a.t);
+}
+function tournAdvance(T, r, i) {
+  const m = T.rounds[r][i], win = m.w ? m[m.w] : null;
+  if (r + 1 < T.rounds.length) T.rounds[r + 1][i >> 1][i % 2 ? 'b' : 'a'] = win;
+  else { T.champ = win; T.doneAt = win == null ? null : Date.now(); }
+}
+function makeTourn(name, game, ents) {
+  const n = ents.length, P = 2 ** Math.ceil(Math.log2(n)), half = P / 2, rounds = [];
+  rounds.push(Array.from({ length: half }, (_, i) => ({ a: i, b: i < n - half ? half + i : null, w: null })));
+  for (let k = half / 2; k >= 1; k /= 2) rounds.push(Array.from({ length: k }, () => ({ a: null, b: null, w: null })));
+  const T = { name, game, ents, rounds, champ: null, t: Date.now(), doneAt: null };
+  rounds[0].forEach((m, i) => { if (m.b == null) { m.w = 'a'; tournAdvance(T, 0, i); } }); // 부전승은 바로 올라가요
+  return T;
+}
 // 승부 예측: 해시 필드 '판round|기기id' → { s: 'blue'|'red', n: 닉네임, t }. 화면에는 기기id 대신 짧은 열쇠(k)만 줘요.
 const predKey = id => createHash('sha256').update(id).digest('hex').slice(0, 10);
 async function readPred() {
@@ -258,10 +279,10 @@ async function readPred() {
   }).filter(Boolean);
 }
 async function readState(room) {
-  const [players, matches, ver, riot, rooms, duels, mvp, seasons, pred] = await Promise.all([readPlayers(), readMatches(), redis.get(K.ver), readRiot(), readRooms(), readDuels(), readMvp(), readSeasons(), readPred()]);
+  const [players, matches, ver, riot, rooms, duels, mvp, seasons, pred, tourns] = await Promise.all([readPlayers(), readMatches(), redis.get(K.ver), readRiot(), readRooms(), readDuels(), readMvp(), readSeasons(), readPred(), readTourns()]);
   const r = rooms.find(x => x.id === room);
   const roomState = r ? { id: r.id, selected: await readSelected(r.id), current: (await redis.get(RK.cur(r.id))) || null } : null;
-  return { players, matches, duels, mvp, pred, riot, rooms, seasons, room: roomState, ver: Number(ver) || 0, ably: ABLY_NS };
+  return { players, matches, duels, mvp, pred, tourns, riot, rooms, seasons, room: roomState, ver: Number(ver) || 0, ably: ABLY_NS };
 }
 // 지금 보고 있다는 신호(15초마다). 멤버는 "기기id|닉네임"이고, 방장이면 방장 신호 시각도 남겨요.
 async function heartbeat(room, me, nick, claimsHost) {
@@ -387,7 +408,7 @@ export default async function handler(req, res) {
     const notHost = () => res.status(423).json({ error: 'not_host' });
     // 선수 명단(추가·이름 바꾸기·빼기·Riot ID)은 누구나 고쳐요. 기록 삭제·1:1 기록·백업 불러오기·새 시즌은
     // 모든 방이 같이 쓰는 기록이라 어느 방이든 방장인 사람만 해요.
-    const rosterAction = ['deleteMatch', 'deleteMatches', 'resetRecords', 'addDuel', 'deleteDuel', 'importBackup', 'startSeason'].includes(b.action);
+    const rosterAction = ['deleteMatch', 'deleteMatches', 'resetRecords', 'addDuel', 'deleteDuel', 'importBackup', 'startSeason', 'createTourn', 'tournWin', 'deleteTourn'].includes(b.action);
     if (rosterAction && !rooms.some(isHost)) return notHost();
     // 그 방의 오늘 할 사람·팀 배치·승패는 그 방 방장만
     if (['select', 'current', 'addMatch', 'giveHost', 'closeRoom'].includes(b.action)) {
@@ -483,8 +504,36 @@ export default async function handler(req, res) {
         // 전체 기록 초기화(방장): 내전·1:1·MVP 표·시즌을 모두 지워요. 선수 명단·Riot ID·방·팀 배치는 그대로예요.
         // 화면이 지우기 전에 백업 파일을 먼저 받아 두고, 실수로 불리지 않게 '초기화'라는 글자를 같이 보내야 해요.
         if (b.confirm !== '초기화') return bad(res);
-        await redis.del(K.matches, K.duels, K.mvp, K.seasons, K.pred);
+        await redis.del(K.matches, K.duels, K.mvp, K.seasons, K.pred, K.tourn);
         for (const r of rooms) { const cur = await redis.get(RK.cur(r.id)); if (cur?.penalty) { const { penalty, ...rest } = cur; await redis.set(RK.cur(r.id), rest); } }
+        break;
+      }
+      case 'createTourn': {
+        // 새 토너먼트(방장): 참가자(사람 또는 팀) 2~32. 순서대로 대진표 칸에 들어가요(화면이 미리 섞어서 보내요).
+        const name = typeof b.name === 'string' && b.name.trim() ? b.name.trim().slice(0, 30) : null, game = typeof b.game === 'string' ? b.game.trim().slice(0, 20) : '';
+        const ents = Array.isArray(b.entrants) ? b.entrants.map(e => cleanNames(e, 5)).filter(e => e?.length) : [], all = ents.flat();
+        if (!name || ents.length < 2 || ents.length > 32 || new Set(all).size !== all.length) return bad(res);
+        if ((await readTourns()).length >= MAX_TOURN) return res.status(409).json({ error: 'tourn_full' });
+        id = 't' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+        await redis.hset(K.tourn, { [id]: makeTourn(name, game, ents) });
+        break;
+      }
+      case 'tournWin': {
+        // 대진표 한 판의 승자(방장). 같은 쪽을 다시 누르면 풀어요. 다음 라운드 판 결과가 이미 있으면 그걸 먼저 풀어야 바꿀 수 있어요.
+        const tid = typeof b.id === 'string' ? b.id : '', T = tid && parse(await redis.hget(K.tourn, tid));
+        const r = Number(b.r), i = Number(b.i), w = b.w === 'a' || b.w === 'b' ? b.w : null, m = T?.rounds?.[r]?.[i];
+        if (!m) return res.status(404).json({ error: 'no_tourn' });
+        if (m.a == null || m.b == null) return bad(res); // 부전승이나 아직 상대가 안 정해진 판
+        if (m.w === w) { dup = true; break; }
+        if (T.rounds[r + 1]?.[i >> 1]?.w) return res.status(409).json({ error: 'tourn_locked' });
+        m.w = w; tournAdvance(T, r, i);
+        await redis.hset(K.tourn, { [tid]: T });
+        if (w && r === T.rounds.length - 1) notify = `🏆 **${T.name}** 우승: ${T.ents[T.champ].join('·')}${T.game ? ` (${T.game})` : ''}`;
+        break;
+      }
+      case 'deleteTourn': {
+        if (typeof b.id !== 'string' || !b.id) return bad(res);
+        await redis.hdel(K.tourn, b.id);
         break;
       }
       case 'selfSelect': {
@@ -534,7 +583,8 @@ export default async function handler(req, res) {
         const [matches, curs] = await Promise.all([readMatches(), Promise.all(rooms.map(r => redis.get(RK.cur(r.id))))]);
         // 같은 판에 둘 다 뛴 적이 있거나 어느 방 팀에 둘 다 있으면 서로 다른 사람이라 합칠 수 없어요.
         const dueled = (await readDuels()).some(d => [d.a, d.b].includes(from) && [d.a, d.b].includes(to)); // 1:1로 서로 붙은 사이도 다른 사람
-        if (matches.some(both) || curs.some(c => c?.blue && c?.red && both(c)) || dueled) {
+        const tourns = await readTourns(), inTourn = tourns.some(t => { const all = t.ents.flat(); return all.includes(from) && all.includes(to); }); // 같은 토너먼트에 둘 다 나왔어도
+        if (matches.some(both) || curs.some(c => c?.blue && c?.red && both(c)) || dueled || inTourn) {
           return res.status(422).json({ error: 'played_together' });
         }
         const players = await readPlayers();
@@ -557,6 +607,9 @@ export default async function handler(req, res) {
         }
         const riotIds = await readRiot(); // 연결된 Riot ID도 새 이름으로 (합칠 땐 원래 있던 쪽을 둬요)
         if (riotIds[from]) { if (!riotIds[to]) await redis.hset(K.riot, { [to]: riotIds[from] }); await redis.hdel(K.riot, from); }
+        const tChanged = {}; // 토너먼트 참가자 이름도 새 이름으로
+        for (const { id: tid, ...t } of tourns) if (t.ents.flat().includes(from)) tChanged[tid] = { ...t, ents: t.ents.map(e => e.map(p => (p === from ? to : p))) };
+        if (Object.keys(tChanged).length) await redis.hset(K.tourn, tChanged);
         const votes = {}; // MVP 표도 새 이름으로
         for (const [k, v] of Object.entries((await redis.hgetall(K.mvp)) || {})) if (parse(v)?.n === from) votes[k] = { ...parse(v), n: to };
         if (Object.keys(votes).length) await redis.hset(K.mvp, votes);
