@@ -434,6 +434,7 @@ body.gated { overflow: hidden; }
   <nav class="games" role="tablist" aria-label="게임">
     <button role="tab" id="game-lol" aria-selected="true" aria-controls="g-lol">롤 내전</button>
     <button role="tab" id="game-five" aria-selected="false" aria-controls="g-five">롤 5인 큐</button>
+    <button role="tab" id="game-roster" aria-selected="false" aria-controls="g-roster">선수 명단</button>
   </nav>
 
   <section class="game" id="g-lol" role="tabpanel" aria-labelledby="game-lol">
@@ -455,14 +456,8 @@ body.gated { overflow: hidden; }
     </div>
 
     <div class="card">
-      <div class="roster-head"><h2>선수 명단 <span class="r" id="rosterCount"></span></h2><button class="btn ghost" id="editToggle">✎ 명단 편집</button></div>
-      <div id="editBar"></div>
+      <div class="roster-head"><h2>선수 명단 <span class="r" id="rosterCount"></span></h2><button class="btn ghost small" id="goRoster">✎ 명단 관리</button></div>
       <div id="roster"></div>
-      <div id="editBox"></div>
-      <form class="add" id="addForm">
-        <input id="addInput" type="text" placeholder="이름 추가 (쉼표로 여러 명: 철수, 영희)" autocomplete="off" maxlength="300">
-        <button class="btn" type="submit">추가</button>
-      </form>
       <p class="note" id="rosterNote"></p>
     </div>
 
@@ -547,12 +542,26 @@ body.gated { overflow: hidden; }
   </section>
 
   <!-- 롤 5인 큐: 친구 다섯이 같이 랭크·일반을 돌릴 때 라인을 추천해요. 내전 기록과는 따로예요. -->
+  <!-- 선수 명단: 롤 내전·1:1·롤 5인 큐가 같이 쓰는 명단을 여기서 관리해요(추가·이름 바꾸기·빼기·Riot ID). -->
+  <section class="game" id="g-roster" role="tabpanel" aria-labelledby="game-roster" hidden>
+    <div class="card">
+      <div class="roster-head"><h2>선수 명단 <span class="r" id="rosterEditCount"></span></h2><button class="btn ghost small" id="riotRefresh" hidden>롤 정보 새로고침</button></div>
+      <form class="add" id="addForm">
+        <input id="addInput" type="text" placeholder="이름 추가 (쉼표로 여러 명: 철수, 영희)" autocomplete="off" maxlength="300">
+        <button class="btn" type="submit">추가</button>
+      </form>
+      <div id="rosterEdit" style="margin-top:12px"></div>
+      <div id="editBox"></div>
+      <p class="note" id="rosterEditNote"></p>
+    </div>
+  </section>
+
   <section class="game" id="g-five" role="tabpanel" aria-labelledby="game-five" hidden>
     <div class="card">
       <h2>같이 할 5명 <span class="r" id="fiveCount"></span></h2>
       <div class="chips" id="fivePick"></div>
       <div class="row"><button class="btn ghost small" id="fiveClear">다시 고르기</button><button class="btn ghost small" id="fiveRefresh">롤 정보 새로고침</button></div>
-      <p class="note">명단에서 5명을 고르면 각자 최근 판(사람당 최대 100판)의 라인별 판 수·승률·챔피언을 보고 가장 잘 맞는 라인 배치를 찾아줘요. 롤 정보는 내전 탭 명단 편집에서 Riot ID를 연결한 사람만 있어요.</p>
+      <p class="note">명단에서 5명을 고르면 각자 최근 판(사람당 최대 100판)의 라인별 판 수·승률·챔피언을 보고 가장 잘 맞는 라인 배치를 찾아줘요. 롤 정보는 "선수 명단" 탭에서 Riot ID를 연결한 사람만 있어요.</p>
     </div>
     <div class="card">
       <h2>추천 라인 <span class="r" id="fiveMeta"></span></h2>
@@ -932,7 +941,7 @@ function playerCard(p) {
     `${champIcon(c) || "<span></span>"}${cname(c)}<span class="num">${man(pts)}점</span>`).join('')}</div></div>` : '';
   return `<div class="ph">${tierIcon(T)}${esc(p)}<small>${T ? `내전 ${esc(T.name)}` : ''}</small></div>
     <dl>${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl>${most}${mast}
-    <p class="hint">${r ? esc(r.id) + (r.gAt ? '' : ' · 최근 판 불러오는 중') : 'Riot ID를 연결하면 솔랭·주 라인·모스트도 보여요 (명단 편집)'}</p>`;
+    <p class="hint">${r ? esc(r.id) + (r.gAt ? '' : ' · 최근 판 불러오는 중') : 'Riot ID를 연결하면 솔랭·주 라인·모스트도 보여요 (선수 명단 탭)'}</p>`;
 }
 let cardFor = null, cardTimer;
 function showCard(el) {
@@ -992,37 +1001,40 @@ function renderRoster() {
   const sel = S.selected, players = S.players, T = tierMap(computeStats(players, S.matches)), host = isHost(), roster = canRoster();
   // 이름 오른쪽 표시: 명단에선 ↓(아래로 넣기), 오늘 할 사람에선 ✕(빼기), 편집 중엔 ✎. 바꿀 수 없는 사람(구경)에겐 표시 없이 보여만 줘요.
   // 명단 칩은 골라도 그 자리에 그대로 두고 흐리게 ✓만 바꿔요. 칩이 빠지면 줄이 바뀌면서 아래가 들썩였거든요.
-  // where: 'edit'(명단 편집) / 'roster'(선수 명단) / 'today'(오늘 할 사람)
+  // where: 'edit'(선수 명단 탭에서 고치기) / 'roster'(내전 탭 명단) / 'today'(오늘 할 사람)
   const chip = (p, where) => {
     const edit = where === 'edit', picked = where === 'roster' && sel.has(p);
     const [mark, cls, label] = edit ? ['✎', 'x', '편집'] : where === 'today' ? ['✕', 'x', '빼기'] : picked ? ['✓', 'in', '오늘 할 사람에서 빼기'] : ['↓', 'in', '오늘 할 사람에 넣기'];
     const can = edit ? roster : host;
     return `<button class="chip${(edit ? S.editTarget === p : where === 'today') ? ' on' : picked ? ' picked' : ''}" data-i="${players.indexOf(p)}" data-card="${esc(p)}"${can ? ` aria-label="${esc(p)} ${label}"` : ' tabindex="-1" style="cursor:default"'}>${tierIcon(T[p])}${esc(p)}${can ? `<span class="${cls}" aria-hidden="true">${mark}</span>` : ''}</button>`;
   };
-  if (!roster) S.editing = false;
-  $('#addForm').hidden = !roster; $('#editToggle').hidden = !roster || S.editing;
+  $('#addForm').hidden = !roster;
   $('#shuffleRow').hidden = $('#modeNote').hidden = !host;
   $('#playCard').hidden = !S.room;
   // 위에서 아래로: 명단에서 누른 사람은 아래 '오늘 할 사람' 칸으로 내려가요(고른 순서대로). 편집할 땐 명단 전체를 보여요.
   const today = [...sel].filter(p => players.includes(p)), rest = players.filter(p => !sel.has(p));
   $('#roster').innerHTML = `<div class="chips">${!players.length
-    ? '<span class="empty">아직 명단이 없어요. 아래에 친구들 이름을 한 번에 넣어 주세요.</span>'
-    : players.map(p => chip(p, S.editing ? 'edit' : 'roster')).join('')}</div>`;
-  $('#rosterCount').textContent = !players.length ? '' : S.editing ? `전체 ${players.length}명` : `남은 ${rest.length}명 / 전체 ${players.length}명`;
+    ? '<span class="empty">아직 명단이 없어요. 위 "선수 명단" 탭에서 친구들 이름을 넣어 주세요.</span>'
+    : players.map(p => chip(p, 'roster')).join('')}</div>`;
+  $('#rosterCount').textContent = !players.length ? '' : `남은 ${rest.length}명 / 전체 ${players.length}명`;
+  // 선수 명단 탭: 누르면 그 사람을 고치는 칸이 열려요(방장만). 롤 정보가 있으면 이름 옆에 라인·솔랭 아이콘.
+  $('#rosterEdit').innerHTML = `<div class="chips">${!players.length ? '<span class="empty">아직 명단이 없어요. 위 칸에 친구들 이름을 쉼표로 한 번에 넣어 주세요.</span>'
+    : players.map(p => chip(p, 'edit').replace('</button>', `${quick(p)}</button>`)).join('')}</div>`;
+  $('#rosterEditCount').textContent = players.length ? `${players.length}명` : '';
+  $('#riotRefresh').hidden = !Object.keys(S.riot).length;
+  $('#rosterEditNote').textContent = roster
+    ? '이름을 누르면 이름 바꾸기·Riot ID 연결·명단에서 빼기를 할 수 있어요. 이미 있는 이름으로 바꾸면 두 사람 전적이 하나로 합쳐져요. 이 명단을 롤 내전·1:1·롤 5인 큐가 같이 써요.'
+    : '명단은 방장만 바꿀 수 있어요. 롤 내전 탭에서 새 방을 만들면 방장이 돼요.';
   $('#today').innerHTML = today.map(p => chip(p, 'today')).join('') || '<span class="empty">위 명단에서 이름을 누르면 여기로 내려와요.</span>';
   const n = today.length;
   $('#selCount').innerHTML = `<span class="count"><b>${n}</b>명</span>` + (n >= 2 ? `<span class="vs">${Math.ceil(n / 2)} 대 ${Math.floor(n / 2)}</span>` : '');
   $('#shuffle').disabled = n < 2;
   $('#selNone').hidden = !host || !n; // 오늘 할 사람이 있을 때만, 방장에게만
-  // 편집 중엔 위에 금색 띠(무엇을 하는지 + 편집 끝), 아니면 제목 옆 '명단 편집' 버튼
-  $('#editBar').innerHTML = S.editing ? `<div class="editbar"><span class="msg"><b>✎ 명단 편집 중</b> · 고칠 사람을 누르세요</span>
-    ${Object.keys(S.riot).length ? '<button class="btn ghost small" id="riotRefresh">롤 정보 새로고침</button>' : ''}<button class="btn gold" id="editDone">편집 끝</button></div>` : '';
-  $('#rosterNote').textContent = S.editing ? '이미 있는 이름으로 바꾸면 두 사람 전적이 하나로 합쳐져요.'
-    : host ? '이름을 누르면 아래 \'오늘 할 사람\' 칸으로 내려가요. 거기서 다시 누르면 명단으로 돌아와요. 명단은 저장돼서 다음에도 그대로 있어요.'
+  $('#rosterNote').textContent = host ? '이름을 누르면 아래 \'오늘 할 사람\' 칸으로 내려가요. 거기서 다시 누르면 명단으로 돌아와요. 이름 추가·바꾸기는 "선수 명단" 탭에서 해요.'
     : '구경 중이에요. 오늘 할 사람과 팀은 이 방 방장이 정해요.';
   // 고른 사람 한 명만 고치는 작은 칸: 이름 / Riot ID 두 줄, 지우는 건 아래 글자 버튼으로. 롤 정보 자세한 건 선수 카드에서 봐요.
   const t = S.editTarget, r = t && S.riot[t], lane = t && laneText(t, true);
-  $('#editBox').innerHTML = S.editing && t ? `<div class="editpanel">
+  $('#editBox').innerHTML = t && roster ? `<div class="editpanel">
       <div class="ep-head"><span>${esc(t)}</span><button class="xbtn" type="button" id="epClose" aria-label="닫기">✕</button></div>
       <label for="renameInput">이름</label>
       <form id="renameForm"><input id="renameInput" type="text" maxlength="16" value="${esc(t)}"><button class="btn small" type="submit">바꾸기</button></form>
@@ -1035,15 +1047,18 @@ function renderRoster() {
 $('#roster').addEventListener('click', async e => {
   const b = e.target.closest('button[data-i]'); if (!b) return;
   const name = S.players[+b.dataset.i];
-  if (S.editing) {
-    S.editTarget = S.editTarget === name ? null : name; renderRoster();
-    if (S.editTarget) $('#renameInput')?.focus();
-  } else {
-    if (!needHost()) return;
-    const on = !S.selected.has(name);
-    on ? S.selected.add(name) : S.selected.delete(name); renderRoster(); syncSelect([name], on);
-  }
+  if (!needHost()) return;
+  const on = !S.selected.has(name);
+  on ? S.selected.add(name) : S.selected.delete(name); renderRoster(); syncSelect([name], on);
 });
+// 선수 명단 탭: 고칠 사람 고르기 (다시 누르면 닫혀요)
+$('#rosterEdit').addEventListener('click', e => {
+  const b = e.target.closest('button[data-i]'); if (!b || !needRoster()) return;
+  const name = S.players[+b.dataset.i];
+  S.editTarget = S.editTarget === name ? null : name; renderRoster();
+  if (S.editTarget) $('#renameInput')?.focus();
+});
+$('#goRoster').onclick = () => { showGame('roster'); scrollTo({ top: 0, behavior: reduceMotion ? 'auto' : 'smooth' }); };
 $('#today').addEventListener('click', e => {
   const b = e.target.closest('button[data-i]'); if (!b || !needHost()) return;
   const name = S.players[+b.dataset.i];
@@ -1088,10 +1103,7 @@ $('#editBox').addEventListener('click', e => {
   S.players = S.players.filter(p => p !== name); S.selected.delete(name); delete S.riot[name]; S.editTarget = null; renderAll();
   rosterAction('removePlayer', { name });
 });
-$('#editBar').addEventListener('click', e => {
-  if (e.target.id === 'editDone') { S.editing = false; S.editTarget = null; renderRoster(); }
-  if (e.target.id === 'riotRefresh') refreshRiotNow(e.target);
-});
+$('#riotRefresh').onclick = e => refreshRiotNow(e.currentTarget);
 async function refreshRiotNow(btn) {
   btn.disabled = true;
   try {
@@ -1115,7 +1127,6 @@ $('#addForm').addEventListener('submit', e => {
   rosterAction('addPlayers', { names });
 });
 $('#selNone').onclick = () => { if (!needHost()) return; const off = [...S.selected]; S.selected.clear(); renderRoster(); syncSelect(off, false); };
-$('#editToggle').onclick = () => { if (!S.editing && !needRoster()) return; S.editing = !S.editing; S.editTarget = null; renderRoster(); };
 
 // ---------- 팀 섞기 ----------
 function setMode(m) {
@@ -1781,7 +1792,7 @@ function renderFive() {
   const linked = p => !!S.riot[p]?.puuid, order = [...S.players].sort((a, b) => linked(b) - linked(a));
   $('#fiveCount').textContent = `${FIVE.length} / 5명`;
   $('#fivePick').innerHTML = order.map(p => `<button class="chip${FIVE.includes(p) ? ' on' : ''}" data-five="${esc(p)}" aria-pressed="${FIVE.includes(p)}">${esc(p)}${quick(p)}${linked(p) ? '' : '<small style="color:var(--muted)">롤 정보 없음</small>'}</button>`).join('')
-    || '<span class="empty">명단이 비어 있어요. 롤 내전 탭에서 이름을 넣어 주세요.</span>';
+    || '<span class="empty">명단이 비어 있어요. "선수 명단" 탭에서 이름을 넣어 주세요.</span>';
   const box = $('#fiveBox');
   if (FIVE.length < 5) { $('#fiveMeta').textContent = ''; box.innerHTML = `<p class="empty">${5 - FIVE.length}명 더 골라 주세요.</p>`; return; }
   const plans = bestLanes(FIVE), none = FIVE.filter(p => !linked(p)), loading = FIVE.filter(p => linked(p) && !S.riot[p].hFull);
@@ -1811,7 +1822,7 @@ $('#fivePick').addEventListener('click', e => {
 $('#fiveClear').onclick = () => { FIVE = []; saveFive(); renderFive(); };
 $('#fiveRefresh').onclick = e => refreshRiotNow(e.currentTarget);
 // 게임 탭(롤 내전 / 롤 5인 큐). 마지막에 본 탭을 기억해요.
-const GAMES = ['lol', 'five'];
+const GAMES = ['lol', 'five', 'roster'];
 function showGame(g) {
   for (const x of GAMES) { $('#game-' + x).setAttribute('aria-selected', x === g); $('#g-' + x).hidden = x !== g; }
   try { localStorage.setItem(LS + ':game', g); } catch {}
@@ -1848,7 +1859,7 @@ function renderDuel() {
     ? `<div class="result"><button class="win blue" data-duelwin="a">${esc(a)} 승리</button><button class="win red" data-duelwin="b">${esc(b)} 승리</button></div>`
     : '<p class="note">1:1 결과는 방장(어느 방이든)만 기록할 수 있어요. 구경하는 사람은 순위와 기록을 볼 수 있어요.</p>';
   $('#duelPick').innerHTML = S.players.map(p => `<button class="chip${p === a ? ' a' : p === b ? ' b' : ''}" data-duel="${esc(p)}" aria-pressed="${p === a || p === b}">${esc(p)}${quick(p)}</button>`).join('')
-    || '<span class="empty">명단이 비어 있어요. 내전 탭에서 이름을 넣어 주세요.</span>';
+    || '<span class="empty">명단이 비어 있어요. "선수 명단" 탭에서 이름을 넣어 주세요.</span>';
   $('#duelMeta').textContent = `총 ${S.duels.length}판`;
   // 순위: 1:1 MMR 높은 순(판이 있는 사람만)
   const rows = Object.values(P).filter(x => x.g).sort((x, y) => y.mmr - x.mmr || y.w - x.w);
@@ -1906,6 +1917,10 @@ $('#gateForm').addEventListener('submit', async e => {
 // ---------- 버전 · 패치노트 ----------
 // 커밋해서 올릴 때마다 맨 위에 새 항목을 더해요(규칙은 CLAUDE.md). 오른쪽 위 버전은 맨 위 항목이에요.
 const NOTES = [
+  { v: '1.7.0', d: '2026-10-22', items: [
+    '"선수 명단" 탭이 따로 생겼어요. 롤 내전·1:1·롤 5인 큐가 같이 쓰는 명단을 여기서 관리해요. 이름 추가, 이름 바꾸기, Riot ID 연결, 명단에서 빼기, 롤 정보 새로고침을 할 수 있어요.',
+    '롤 내전 탭의 명단은 오늘 할 사람을 고르는 데만 써요. 제목 옆 "명단 관리" 버튼을 누르면 선수 명단 탭으로 가요.',
+  ] },
   { v: '1.6.0', d: '2026-10-22', items: [
     '롤 1:1: 롤 내전 탭 안에 "1:1" 탭이 생겼어요. 이름을 눌러 두 명을 고르고, 이긴 사람 버튼만 누르면 기록돼요.',
     '규칙(자유·퍼블·100CS·첫 타워)을 골라 두면 기록에 같이 남아요.',
