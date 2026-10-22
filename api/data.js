@@ -6,7 +6,7 @@ const url = process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL;
 const token = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN;
 const redis = globalThis.__redis ?? (url && token ? new Redis({ url, token }) : null);
 
-const K = { players: 'lol:players', matches: 'lol:matches', ver: 'lol:ver', riot: 'lol:riot', riotLock: 'lol:riot:lock', riotRest: 'lol:riot:rest', riotGames: 'lol:riot:games', rooms: 'lol:rooms', hostSeen: 'lol:hostseen', nicks: 'lol:nicks', duels: 'lol:duels', mvp: 'lol:mvp' };
+const K = { players: 'lol:players', matches: 'lol:matches', ver: 'lol:ver', riot: 'lol:riot', riotLock: 'lol:riot:lock', riotRest: 'lol:riot:rest', riotGames: 'lol:riot:games', rooms: 'lol:rooms', hostSeen: 'lol:hostseen', nicks: 'lol:nicks', duels: 'lol:duels', mvp: 'lol:mvp', seasons: 'lol:seasons' };
 // 방마다 따로인 것: 오늘 할 사람(정렬 집합), 팀 배치, 지금 보고 있는 사람(정렬 집합, 점수 = 마지막 신호 시각)
 const RK = { sel: r => `lol:room:${r}:sel`, cur: r => `lol:room:${r}:cur`, seen: r => `lol:room:${r}:seen` };
 const MAX_MATCHES = 5000;
@@ -246,11 +246,14 @@ async function dropMvp(mid) {
 const PEN_ALL = '진 팀 전체';
 const cleanPenalty = (p, losers) => (p && typeof p === 'object' && typeof p.what === 'string' && p.what.trim() && (losers.includes(p.who) || p.who === PEN_ALL)
   ? { who: p.who, what: p.what.trim().slice(0, 40), t: Number(p.t) || Date.now(), round: Number(p.round) || 0 } : undefined);
+// 시즌: 시즌 2부터 시작한 시각(ms)을 순서대로 남겨요. 시작 전 기록은 모두 시즌 1이에요.
+// 판은 지우거나 고치지 않고, 화면이 판 시각으로 시즌을 나눠서 MMR·티어·전적을 새로 세요.
+const readSeasons = async () => ((await redis.get(K.seasons)) || []).map(Number).filter(t => t > 0).sort((a, b) => a - b);
 async function readState(room) {
-  const [players, matches, ver, riot, rooms, duels, mvp] = await Promise.all([readPlayers(), readMatches(), redis.get(K.ver), readRiot(), readRooms(), readDuels(), readMvp()]);
+  const [players, matches, ver, riot, rooms, duels, mvp, seasons] = await Promise.all([readPlayers(), readMatches(), redis.get(K.ver), readRiot(), readRooms(), readDuels(), readMvp(), readSeasons()]);
   const r = rooms.find(x => x.id === room);
   const roomState = r ? { id: r.id, selected: await readSelected(r.id), current: (await redis.get(RK.cur(r.id))) || null } : null;
-  return { players, matches, duels, mvp, riot, rooms, room: roomState, ver: Number(ver) || 0, ably: ABLY_NS };
+  return { players, matches, duels, mvp, riot, rooms, seasons, room: roomState, ver: Number(ver) || 0, ably: ABLY_NS };
 }
 // 지금 보고 있다는 신호(15초마다). 멤버는 "기기id|닉네임"이고, 방장이면 방장 신호 시각도 남겨요.
 async function heartbeat(room, me, nick, claimsHost) {
@@ -374,7 +377,7 @@ export default async function handler(req, res) {
     const room = rooms.find(r => r.id === cleanId(b.room)), isHost = r => !!r && !!me && r.hostId === me;
     const notHost = () => res.status(423).json({ error: 'not_host' });
     // 명단·Riot ID·기록 삭제는 모든 방이 같이 쓰는 거라 어느 방이든 방장인 사람만 바꿀 수 있어요.
-    const rosterAction = ['addPlayers', 'removePlayer', 'renamePlayer', 'setRiot', 'deleteMatch', 'addDuel', 'deleteDuel', 'importBackup'].includes(b.action);
+    const rosterAction = ['addPlayers', 'removePlayer', 'renamePlayer', 'setRiot', 'deleteMatch', 'addDuel', 'deleteDuel', 'importBackup', 'startSeason'].includes(b.action);
     if (rosterAction && !rooms.some(isHost)) return notHost();
     // 그 방의 오늘 할 사람·팀 배치·승패는 그 방 방장만
     if (['select', 'current', 'addMatch', 'giveHost', 'closeRoom'].includes(b.action)) {
@@ -534,6 +537,11 @@ export default async function handler(req, res) {
           if (rid && roster.includes(n) && !Object.hasOwn(riotNow, n)) { addR[n] = { id: rid, ...(typeof e.puuid === 'string' && { puuid: e.puuid }), at: 0, gAt: 0 }; imported.riot++; } // 시각을 0으로 둬서 곧 새로 불러와요
         }
         if (imported.riot) await redis.hset(K.riot, addR);
+        // 시즌 시작 시각도 지금 없는 것만 더해요(앞날짜는 빼요)
+        const seasons = await readSeasons(), addS = [];
+        for (const s of Array.isArray(b.seasons) ? b.seasons : []) { const t = Number(s); if (t > 0 && t <= Date.now() && !seasons.includes(t) && !addS.includes(t)) addS.push(t); }
+        imported.seasons = addS.length;
+        if (addS.length) await redis.set(K.seasons, [...seasons, ...addS].sort((x, y) => x - y));
         if (!Object.values(imported).some(Boolean)) dup = true;
         break;
       }
@@ -606,6 +614,15 @@ export default async function handler(req, res) {
         id = 'd' + now.toString(36) + Math.random().toString(36).slice(2, 6);
         await redis.hset(K.duels, { [id]: { t: now, a, b: bb, w, rule } });
         notify = `⚔️ 1:1 **${w}** 승리 vs ${w === a ? bb : a}${rule !== '자유' ? ` (${rule})` : ''}`;
+        break;
+      }
+      case 'startSeason': {
+        // 새 시즌: 지금 시각을 남겨요. 지금 시즌에 내전·1:1이 한 판도 없으면 막아요(두 번 눌러서 빈 시즌이 생기지 않게).
+        const [seasons, matches, duels] = await Promise.all([readSeasons(), readMatches(), readDuels()]);
+        const from = seasons.at(-1) || 0, now = Date.now();
+        if (!matches.some(m => m.t >= from) && !duels.some(d => d.t >= from)) return res.status(409).json({ error: 'season_empty' });
+        await redis.set(K.seasons, [...seasons, now]);
+        notify = `🏁 **시즌 ${seasons.length + 2} 시작** · 내전·1:1 MMR이 모두 1000점에서 다시 시작해요`;
         break;
       }
       case 'deleteDuel': {

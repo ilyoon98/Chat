@@ -330,6 +330,10 @@ td.num, th.num { text-align: right; }
 /* 기록: 날짜별로 묶고, 판마다 1팀·2팀 카드를 나란히. 이긴 팀은 팀 색 테두리와 왕관, 진 팀은 흐리게 */
 .log { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
 .log .mday { margin-top: 8px; font-weight: 800; font-size: 14px; color: var(--muted); } .log .mday:first-child { margin-top: 0; }
+/* 시즌이 바뀐 자리: 가운데 금색 글자 + 양옆 줄 */
+.log .mseason { display: flex; align-items: center; gap: 10px; margin: 6px 0; font-weight: 800; font-size: 14px; color: var(--gold); }
+.log .mseason::before, .log .mseason::after { content: ''; flex: 1; height: 1px; background: var(--line); }
+.log .mseason small { color: var(--muted); font-weight: 500; font-variant-numeric: tabular-nums; }
 .match { border: 1px solid var(--line); border-radius: 12px; background: var(--sunk); padding: 10px; }
 .mhead { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 13px; color: var(--muted); }
 .mhead time { font-weight: 700; color: var(--ink); font-variant-numeric: tabular-nums; } .mhead .btn { margin-left: auto; }
@@ -526,16 +530,16 @@ body.gated { overflow: hidden; }
   <!-- 전적 -->
   <section id="p-stats" role="tabpanel" hidden>
     <div class="card">
-      <h2>선수별 전적 <span class="r"><span id="statsMeta"></span> · <label>기간 <select class="period"><option value="all">전체</option><option value="30">최근 30일</option><option value="7">최근 7일</option><option value="1">최근 24시간</option></select></label></span></h2>
+      <h2>선수별 전적 <span class="r"><span id="statsMeta"></span> · <label hidden>시즌 <select class="season"></select></label> <label>기간 <select class="period"><option value="all">전체</option><option value="30">최근 30일</option><option value="7">최근 7일</option><option value="1">최근 24시간</option></select></label></span></h2>
       <div id="statsBox"></div>
-      <p class="note">MMR은 1000점에서 시작해 강한 팀을 이기면 많이 올라요. 내전 티어는 그 MMR 순위를 롤 티어 분포에 맞춘 거예요.<br>솔랭·주 라인·모스트는 Riot ID를 연결한 사람만 나와요. 이름에 마우스를 올리면(폰은 누르면) 자세히 보여요.</p>
+      <p class="note">MMR은 1000점에서 시작해 강한 팀을 이기면 많이 올라요. 내전 티어는 그 MMR 순위를 롤 티어 분포에 맞춘 거예요.<br>방장이 기록 탭에서 새 시즌을 시작하면 모두 1000점에서 다시 시작해요. 지난 시즌은 "시즌"에서 골라 그대로 볼 수 있어요.<br>솔랭·주 라인·모스트는 Riot ID를 연결한 사람만 나와요. 이름에 마우스를 올리면(폰은 누르면) 자세히 보여요.</p>
     </div>
   </section>
 
   <!-- 분석 -->
   <section id="p-analysis" role="tabpanel" hidden>
     <div class="card">
-      <h2>한눈에 보기 <span class="r"><label>기간 <select class="period"><option value="all">전체</option><option value="30">최근 30일</option><option value="7">최근 7일</option><option value="1">최근 24시간</option></select></label> <label>최소 판수 <select id="minG"><option>1</option><option>2</option><option selected>3</option><option>5</option></select></label></span></h2>
+      <h2>한눈에 보기 <span class="r"><label hidden>시즌 <select class="season"></select></label> <label>기간 <select class="period"><option value="all">전체</option><option value="30">최근 30일</option><option value="7">최근 7일</option><option value="1">최근 24시간</option></select></label> <label>최소 판수 <select id="minG"><option>1</option><option>2</option><option selected>3</option><option>5</option></select></label></span></h2>
       <div id="hlBox"></div>
     </div>
     <div class="card">
@@ -553,7 +557,7 @@ body.gated { overflow: hidden; }
   <!-- 기록 -->
   <section id="p-log" role="tabpanel" hidden>
     <div class="card">
-      <h2>경기 기록 <span class="r"><span id="logMeta"></span> <button class="btn ghost small" id="backup">백업 받기</button> <button class="btn ghost small" id="restore" hidden>백업 불러오기</button><input type="file" id="restoreFile" accept=".json,application/json" hidden></span></h2>
+      <h2>경기 기록 <span class="r"><span id="logMeta"></span> <button class="btn ghost small" id="seasonStart" hidden title="내전·1:1 MMR을 모두 1000점에서 다시 시작해요. 지난 시즌 기록은 그대로 남아요."></button> <button class="btn ghost small" id="backup">백업 받기</button> <button class="btn ghost small" id="restore" hidden>백업 불러오기</button><input type="file" id="restoreFile" accept=".json,application/json" hidden></span></h2>
       <ul class="log" id="logBox"></ul>
     </div>
   </section>
@@ -571,9 +575,9 @@ body.gated { overflow: hidden; }
       <div class="chips" id="duelPick"></div>
     </div>
     <div class="card">
-      <h2>1:1 순위 <span class="r" id="duelRankMeta"></span></h2>
+      <h2>1:1 순위 <span class="r"><span id="duelRankMeta"></span> <label hidden>시즌 <select class="season"></select></label></span></h2>
       <div id="duelRank"></div>
-      <p class="note">1:1 MMR은 내전 MMR과 따로예요. 1000점에서 시작해서, 높은 사람을 이기면 많이 오르고 낮은 사람에게 지면 많이 내려가요.</p>
+      <p class="note">1:1 MMR은 내전 MMR과 따로예요. 1000점에서 시작해서, 높은 사람을 이기면 많이 오르고 낮은 사람에게 지면 많이 내려가요. 새 시즌이 시작되면 1:1 MMR도 1000점에서 다시 시작해요.</p>
     </div>
     <div class="card">
       <h2>최근 1:1 <span class="r" id="duelLogMeta"></span></h2>
@@ -628,7 +632,7 @@ async function copyText(text) {
 
 // ---------- 상태 ----------
 // current·selected는 지금 들어가 있는 방(room)의 팀 배치·오늘 할 사람이에요. presence = 이 방을 보고 있는 사람들.
-const S = { players: [], matches: [], duels: [], mvp: {}, current: null, selected: new Set(), riot: {}, rooms: [], room: null, presence: [], mode: 'random', editing: false, editTarget: null, period: 'all', capMethod: 'top', draft: null };
+const S = { players: [], matches: [], duels: [], mvp: {}, seasons: [], current: null, selected: new Set(), riot: {}, rooms: [], room: null, presence: [], mode: 'random', editing: false, editTarget: null, period: 'all', season: 'cur', capMethod: 'top', draft: null };
 const LS = 'lol-naejeon-v1';
 // 이 기기를 구분하는 id와 닉네임. 로그인 없이 방장을 가려요.
 const ME = (() => {
@@ -647,6 +651,7 @@ function loadLocal() {
     if (Array.isArray(s.matches)) S.matches = s.matches.filter(validMatch);
     if (Array.isArray(s.duels)) S.duels = s.duels.filter(validDuel);
     if (s.mvp && typeof s.mvp === 'object') S.mvp = s.mvp;
+    if (Array.isArray(s.seasons)) S.seasons = cleanSeasons(s.seasons);
     if (s.riot && typeof s.riot === 'object') S.riot = s.riot;
     if (typeof s.room === 'string') S.room = s.room;
     if (['balance', 'draft'].includes(s.mode)) S.mode = s.mode;
@@ -656,7 +661,7 @@ function loadLocal() {
   if (q) S.room = q;
 }
 function saveLocal() {
-  try { localStorage.setItem(LS, JSON.stringify({ room: S.room, mode: S.mode, capMethod: S.capMethod, players: S.players, matches: S.matches, duels: S.duels, mvp: S.mvp, riot: S.riot })); } catch {}
+  try { localStorage.setItem(LS, JSON.stringify({ room: S.room, mode: S.mode, capMethod: S.capMethod, players: S.players, matches: S.matches, duels: S.duels, mvp: S.mvp, seasons: S.seasons, riot: S.riot })); } catch {}
 }
 // ---------- 방장 ----------
 const curRoom = () => S.rooms.find(r => r.id === S.room) || null;
@@ -678,6 +683,7 @@ function validMatch(m) {
     && m.blue.every(x => typeof x === 'string') && m.red.every(x => typeof x === 'string');
 }
 const validDuel = d => d && typeof d.t === 'number' && typeof d.a === 'string' && typeof d.b === 'string' && (d.w === d.a || d.w === d.b);
+const cleanSeasons = a => a.map(Number).filter(t => t > 0).sort((x, y) => x - y);
 
 // ---------- 서버 저장 (/api/data) ----------
 let status = 'connecting', pin = '', ver = null, writes = 0;
@@ -710,7 +716,8 @@ async function api(action, body, quiet) {
       const e = (await res.json().catch(() => ({}))).error;
       if (!quiet) toast({ full: '기록이 너무 많아요. 오래된 기록을 지워 주세요.', rooms_full: '방은 10개까지 만들 수 있어요. 안 쓰는 방을 닫아 주세요.',
         host_busy: '지금 방장이 있어요. 방장이 넘겨줘야 해요.', not_host: '방장만 바꿀 수 있어요.', no_room: '그 방이 없어요. 닫혔을 수 있어요.',
-        no_match: '그 판 기록이 없어요. 지워졌을 수 있어요.', mvp_closed: 'MVP 투표는 기록하고 하루 안에만 할 수 있어요.' }[e] || '저장에 실패했어요.');
+        no_match: '그 판 기록이 없어요. 지워졌을 수 있어요.', mvp_closed: 'MVP 투표는 기록하고 하루 안에만 할 수 있어요.',
+        season_empty: '이번 시즌엔 아직 기록한 판이 없어요. 한 판 이상 하고 새 시즌을 시작해 주세요.' }[e] || '저장에 실패했어요.');
       throw new Error(e || String(res.status));
     }
     if (res.status === 424) { const e = (await res.json().catch(() => ({}))).error; if (!quiet) toast(RIOT_ERR[e] || RIOT_ERR.riot_down); throw new Error(e); }
@@ -727,6 +734,7 @@ function applyServer(d) {
   if (Array.isArray(d.matches)) S.matches = d.matches.filter(validMatch);
   if (Array.isArray(d.duels)) S.duels = d.duels.filter(validDuel);
   if (d.mvp && typeof d.mvp === 'object') S.mvp = d.mvp;
+  if (Array.isArray(d.seasons)) S.seasons = cleanSeasons(d.seasons);
   if (d.riot && typeof d.riot === 'object') S.riot = d.riot;
   if (d.ably) connectAbly(d.ably);
   if (Array.isArray(d.rooms)) {
@@ -856,6 +864,28 @@ function computeStats(players, matches) {
 const pairs = (o, name) => Object.entries(o).filter(([k]) => k.split('\u0001')[0] === name).map(([k, v]) => ({ other: k.split('\u0001')[1], ...v }));
 const mmrOf = (st, n) => st.P[n]?.mmr ?? 1000;
 
+// ---------- 시즌 ----------
+// S.seasons = 시즌 2부터 시작한 시각들. 판 기록은 그대로 두고, 판 시각으로 몇 시즌 판인지 나눠요.
+// 시즌마다 내전·1:1 MMR은 1000점에서 다시 시작해요. 티어·팀 섞기·이 방 기록·MVP 횟수도 지금 시즌 판만 세요.
+const seasonOf = t => 1 + S.seasons.filter(s => s <= t).length;
+const curSeason = () => S.seasons.length + 1;
+const seasonMatches = (n = curSeason()) => S.matches.filter(m => seasonOf(m.t) === n);
+const seasonDuels = (n = curSeason()) => S.duels.filter(d => seasonOf(d.t) === n);
+// 전적·분석·1:1 순위에서 고른 시즌: 'cur'(지금 시즌, 새 시즌이 시작되면 따라가요) / 지난 시즌 번호 / 'all'(전체 → null)
+const viewSeason = () => S.season === 'all' ? null : S.season === 'cur' ? curSeason() : Math.min(Number(S.season), curSeason());
+const viewMatches = () => { const n = viewSeason(); return n ? seasonMatches(n) : S.matches; };
+const viewDuels = () => { const n = viewSeason(); return n ? seasonDuels(n) : S.duels; };
+// 시즌 고르기 칸: 시즌이 둘 이상일 때만 보여요. 목록은 시즌 수가 바뀔 때만 다시 만들어서, 열어 둔 칸이 닫히지 않게 해요.
+function renderSeasonPick() {
+  const cur = curSeason();
+  if (S.season !== 'all' && !(Number(S.season) < cur)) S.season = 'cur';
+  const opts = Array.from({ length: cur }, (_, i) => cur - i).map(n => `<option value="${n === cur ? 'cur' : n}">시즌 ${n}${n === cur ? ' (지금)' : ''}</option>`).join('') + '<option value="all">전체</option>';
+  document.querySelectorAll('select.season').forEach(s => {
+    if (s.dataset.n !== String(cur)) { s.innerHTML = opts; s.dataset.n = cur; }
+    s.value = S.season; s.closest('label').hidden = cur === 1;
+  });
+}
+
 // ---------- 티어 ----------
 // 롤 솔로랭크 티어별 누적 인원. 우리끼리 MMR 순위가 상위 몇 %인지를 이 분포에 맞춰 티어를 붙여요.
 const TIERS = [
@@ -873,7 +903,7 @@ const EMBLEM = { // [날개, 보석]
   다이아몬드: ['#8b5cf6', '#a78bfa'], 에메랄드: ['#1fa64c', '#2cc760'], 플래티넘: ['#56b4e4', '#7cc6ee'],
   골드: ['#d98a2b', '#e9a347'], 실버: ['#8c9ea8', '#a9b8c0'], 브론즈: ['#9a5a3c', '#b36a46'], 아이언: ['#5d5d66', '#73737d'],
 };
-// 1판 이상 한 사람만, 전체 기간 MMR로 순위를 매겨요. 같은 MMR은 같은 티어.
+// 1판 이상 한 사람만, 넘겨받은 판(보통 지금 시즌 전체)의 MMR로 순위를 매겨요. 같은 MMR은 같은 티어.
 function tierMap(st) {
   const ranked = Object.values(st.P).filter(p => p.g), total = TIERS.at(-1)[1], out = {};
   for (const p of ranked) {
@@ -962,14 +992,16 @@ const mastIcons = p => (S.riot[p]?.mast || []).map(([c, lv, pts]) => champIcon(c
 // 이름이 보이는 곳(명단·오늘 할 사람·팀·팀장 뽑기·전적·이 방 기록·분석)에 data-card="이름"을 붙여 두면,
 // 마우스를 올리거나 키보드로 고르면 내전 기록과 롤 정보를 카드로 보여줘요. 폰은 표에서 이름을 누르면 열려요.
 function playerCard(p) {
-  const st = computeStats(S.players, S.matches), s = st.P[p], T = tierMap(st)[p], x = computeStats([], roomMatches()).P[p];
-  const r = S.riot[p], wl = (w, l) => `<span class="w">${w}승</span> <span class="l">${l}패</span>`;
-  const rows = [['내전', s?.g ? `${wl(s.w, s.g - s.w)} · <b>${pct(s.w, s.g)}%</b> · MMR ${Math.round(s.mmr)}` : '아직 기록 없음']];
+  const st = computeStats(S.players, seasonMatches()), s = st.P[p], T = tierMap(st)[p], x = computeStats([], roomMatches()).P[p];
+  const r = S.riot[p], wl = (w, l) => `<span class="w">${w}승</span> <span class="l">${l}패</span>`, many = S.seasons.length > 0;
+  const rows = [[many ? `내전 시즌 ${curSeason()}` : '내전', s?.g ? `${wl(s.w, s.g - s.w)} · <b>${pct(s.w, s.g)}%</b> · MMR ${Math.round(s.mmr)}` : '아직 기록 없음']];
+  const all = many && computeStats([], S.matches).P[p]; // 시즌이 나뉘었으면 지난 시즌까지 합친 승패도
+  if (all?.g > (s?.g || 0)) rows.push(['내전 통산', `${wl(all.w, all.g - all.w)} · ${pct(all.w, all.g)}%`]);
   if (x?.g) rows.push(['이 방', wl(x.w, x.g - x.w)]);
-  const du = duelStats(S.duels).P[p];
+  const du = duelStats(seasonDuels()).P[p];
   if (du?.g) rows.push(['1:1', `${wl(du.w, du.g - du.w)} · MMR ${Math.round(du.mmr)}`]);
   // 내전에서 라인을 정해 뛴 판: '탑 3승 1패 · 미드 1승 2패' (많이 한 라인부터)
-  const mv = mvpCounts(S.matches)[p];
+  const mv = mvpCounts(seasonMatches())[p];
   if (mv) rows.push(['MVP', `⭐ ${mv}번`]);
   const nl = Object.entries(naeLanes()[p] || {}).sort((a, b) => b[1][0] - a[1][0]);
   if (nl.length) rows.push(['내전 라인', `<span class="lanes">${nl.map(([k, [g, w]]) => `<span>${laneIcon(k)}<b>${LANE[k]}</b> ${wl(w, g - w)}</span>`).join('')}</span>`]);
@@ -1042,7 +1074,7 @@ async function linkRiot(name, riotId) {
 
 // ---------- 명단 ----------
 function renderRoster() {
-  const sel = S.selected, players = S.players, T = tierMap(computeStats(players, S.matches)), host = isHost(), roster = canRoster();
+  const sel = S.selected, players = S.players, T = tierMap(computeStats(players, seasonMatches())), host = isHost(), roster = canRoster();
   // 이름 오른쪽 표시: 명단에선 ↓(아래로 넣기), 오늘 할 사람에선 ✕(빼기), 편집 중엔 ✎. 바꿀 수 없는 사람(구경)에겐 표시 없이 보여만 줘요.
   // 명단 칩은 골라도 그 자리에 그대로 두고 흐리게 ✓만 바꿔요. 칩이 빠지면 줄이 바뀌면서 아래가 들썩였거든요.
   // where: 'edit'(선수 명단 탭에서 고치기) / 'roster'(내전 탭 명단) / 'today'(오늘 할 사람)
@@ -1220,9 +1252,10 @@ function renderTeams(shuffling) {
   if (drag?.on || coinBusy || capSpin || penSpin) return; // 끌거나 동전·룰렛이 도는 동안엔 다시 그리지 않아요. 끝나면 새로 그려요.
   if (document.activeElement?.id === 'penInput') return; // 벌칙 목록을 적는 중이면 칸이 날아가지 않게 그대로 둬요
   if (S.draft) return renderDraft();
-  const box = $('#teamsBox'), c = S.current, st = computeStats(S.players, S.matches);
+  // MMR은 지금 시즌 기준이에요. 기록된 판이 새 시즌 전 판이면(기록 뒤에 시즌이 바뀜) 그 판 시즌 기준으로 보여줘요.
+  const box = $('#teamsBox'), c = S.current, rec = recordedMatch(), sm = seasonMatches(rec ? seasonOf(rec.t) : curSeason()), st = computeStats(S.players, sm);
   if (!c || !c.blue.length && !c.red.length) { box.innerHTML = '<p class="empty">사람을 고르고 팀 섞기를 누르면 1팀(블루)과 2팀(레드)이 여기에 나와요.</p>'; return; }
-  const rec = recordedMatch(), host = isHost(), hostNick = curRoom()?.hostNick || '방장';
+  const host = isHost(), hostNick = curRoom()?.hostNick || '방장';
   const reveal = !shuffling && S.fx === 'reveal'; if (reveal) S.fx = null;
   const recId = rec?.id ?? null, celebrate = !shuffling && fxRec !== undefined && !!recId && recId !== fxRec;
   if (!shuffling) fxRec = recId;
@@ -1233,7 +1266,7 @@ function renderTeams(shuffling) {
   const swapBtn = (p, side) => rec || shuffling || !host ? ''
     : `<button class="swap" data-swap="${esc(p)}" data-side="${side}" title="상대 팀으로" aria-label="${esc(p)} ${side === 'blue' ? '2팀' : '1팀'}으로 보내기">${side === 'blue' ? '→' : '←'}</button>`;
   // 결과를 기록했으면 그 판 전(before)과 후(st)의 MMR을 같이 보여줘요: 'MMR 985 → 997 +12'
-  const before = rec && computeStats(S.players, S.matches.filter(m => m !== rec));
+  const before = rec && computeStats(S.players, sm.filter(m => m !== rec));
   const mmrMove = p => { const a = Math.round(mmrOf(before, p)), b = Math.round(mmrOf(st, p)), d = b - a;
     return `MMR ${a} → <b>${b}</b> <span class="${d >= 0 ? 'up' : 'down'}">${d >= 0 ? '+' : ''}${d}</span>`; };
   // 라인: 방장은 바로 바꿀 수 있는 칸(기록 전), 구경하는 사람·기록 뒤엔 아이콘+글자만
@@ -1273,7 +1306,7 @@ function renderTeams(shuffling) {
   if (spinPen) runPenSpin(pen, rec);
 }
 const TEAM = { blue: '1팀 블루', red: '2팀 레드' };
-// 기록된 판에 뛴 사람 중 3연승·3연패 이상(전체 기록 기준)을 결과 아래에 한 줄로 알려 줘요: '🔥 다다 4연승 · 🧊 가 3연패'
+// 기록된 판에 뛴 사람 중 3연승·3연패 이상(그 시즌 기록 기준)을 결과 아래에 한 줄로 알려 줘요: '🔥 다다 4연승 · 🧊 가 3연패'
 function streakNote(rec, st) {
   const out = [];
   for (const p of [...rec[rec.win], ...rec[rec.win === 'blue' ? 'red' : 'blue']]) {
@@ -1387,7 +1420,7 @@ $('#shuffle').onclick = () => {
   const names = S.players.filter(p => S.selected.has(p)); if (names.length < 2) return;
   if (S.mode === 'draft') return startDraft(names);
   S.draft = null;
-  const st = computeStats(S.players, S.matches), btn = $('#shuffle'); btn.disabled = true;
+  const st = computeStats(S.players, seasonMatches()), btn = $('#shuffle'); btn.disabled = true;
   let k = 0; const frames = reduceMotion ? 0 : 12, d = S;
   const tick = () => {
     d.current = makeTeams(names, k < frames ? 'random' : S.mode, st);
@@ -1547,7 +1580,7 @@ const isFull = (d, s) => teamLen(d, s) >= draftSize(d);
 const draftPool = d => d.names.filter(p => p !== d.cap.blue && p !== d.cap.red && !d.picks.blue.includes(p) && !d.picks.red.includes(p));
 // 고른 방법으로 팀장 둘을 정해요. 둘 중 누가 1팀일지는 무작위. 랜덤은 누를 때마다 다시 뽑아요.
 function pickCaps(d) {
-  const st = computeStats(S.players, S.matches), byMmr = [...d.names].sort((a, b) => mmrOf(st, b) - mmrOf(st, a));
+  const st = computeStats(S.players, seasonMatches()), byMmr = [...d.names].sort((a, b) => mmrOf(st, b) - mmrOf(st, a));
   const two = d.method === 'bottom' ? byMmr.slice(-2) : d.method === 'random' ? shuffle(d.names).slice(0, 2) : byMmr.slice(0, 2);
   const [a, b] = rnd(2) ? two : [two[1], two[0]];
   d.cap = { blue: a, red: b };
@@ -1633,7 +1666,7 @@ function flyIn(from, li, html) {
   ], { duration: 560, easing: 'cubic-bezier(.3, .7, .3, 1)' }).finished.then(() => { g.remove(); land(); }, () => { g.remove(); land(); });
 }
 function renderDraft() {
-  const d = S.draft, box = $('#teamsBox'), st = computeStats(S.players, S.matches), T = tierMap(st);
+  const d = S.draft, box = $('#teamsBox'), st = computeStats(S.players, seasonMatches()), T = tierMap(st);
   const byMmr = [...d.names].sort((a, b) => mmrOf(st, b) - mmrOf(st, a));
   const rec = p => { const s = st.P[p]; return s?.g ? `${pct(s.w, s.g)}% · MMR ${Math.round(s.mmr)}` : '첫 판'; };
   const info = p => { const riot = [soloText(p, true), laneText(p, true)].filter(Boolean).join(' · '); return rec(p) + (riot ? ' · ' + riot : ''); };
@@ -1683,13 +1716,17 @@ function renderDraft() {
 }
 
 // ---------- 전적 탭 ----------
-// '이 방' = 지금 들어가 있는 방에서 기록한 판들이에요(판마다 방 id가 남아요). 전적·분석·기록 탭은 모든 방을 합친 전체 기준이에요.
-const roomMatches = () => S.room ? S.matches.filter(m => m.room === S.room) : [];
+// '이 방' = 지금 들어가 있는 방에서 지금 시즌에 기록한 판들이에요(판마다 방 id가 남아요). 전적·분석·기록 탭은 모든 방을 합친 전체 기준이에요.
+const roomMatches = () => S.room ? seasonMatches().filter(m => m.room === S.room) : [];
+// 전적·분석: 고른 시즌 안에서 고른 기간(최근 며칠)만
 function periodMatches() {
   const from = S.period === 'all' ? 0 : Date.now() - Number(S.period) * 864e5;
-  return S.matches.filter(m => m.t >= from);
+  return viewMatches().filter(m => m.t >= from);
 }
 const NO_PERIOD = '<p class="empty">이 기간에는 기록된 경기가 없어요. 기간을 넓혀 보세요.</p>';
+// 판이 없을 때 안내: 기간 때문인지, 새 시즌이라 아직 없는 건지, 기록이 아예 없는 건지
+const noMatches = () => viewMatches().length ? NO_PERIOD : S.matches.length
+  ? `<p class="empty">시즌 ${viewSeason()}에는 아직 기록된 경기가 없어요. 위 "시즌"에서 지난 시즌이나 전체를 골라 볼 수 있어요.</p>` : emptyStats();
 function streak(form) {
   if (!form.length) return '';
   const last = form.at(-1); let n = 0;
@@ -1698,10 +1735,10 @@ function streak(form) {
 }
 let sortKey = 'rate';
 function renderStats() {
-  const { players } = S, matches = periodMatches(), st = computeStats(players, matches), T = tierMap(computeStats(players, S.matches));
+  const { players } = S, matches = periodMatches(), st = computeStats(players, matches), T = tierMap(computeStats(players, viewMatches()));
   $('#statsMeta').textContent = `총 ${matches.length}판`;
   const rows = Object.values(st.P).filter(p => p.g || players.includes(p.name));
-  if (!matches.length) { $('#statsBox').innerHTML = S.matches.length ? NO_PERIOD : emptyStats(); return; }
+  if (!matches.length) { $('#statsBox').innerHTML = noMatches(); return; }
   const key = { rate: p => p.g ? p.w / p.g + p.g * 1e-4 : -1, g: p => p.g, mmr: p => p.mmr, name: p => 0 }[sortKey];
   rows.sort((a, b) => sortKey === 'name' ? a.name.localeCompare(b.name, 'ko') : key(b) - key(a));
   const th = (k, label, cls = '') => `<th class="${cls}"><button data-sort="${k}" aria-pressed="${sortKey === k}">${label}</button></th>`;
@@ -1722,7 +1759,7 @@ $('#statsBox').addEventListener('click', e => { const b = e.target.closest('butt
 function renderSession() {
   const ms = roomMatches(), card = $('#sessionCard');
   card.hidden = !ms.length; if (!ms.length) return;
-  const st = computeStats([], ms), T = tierMap(computeStats(S.players, S.matches)), mv = mvpCounts(ms);
+  const st = computeStats([], ms), T = tierMap(computeStats(S.players, seasonMatches())), mv = mvpCounts(ms);
   const rows = Object.values(st.P).sort((a, b) => b.w - a.w || (a.g - a.w) - (b.g - b.w) || a.name.localeCompare(b.name, 'ko'));
   const d = new Date(Math.min(...ms.map(m => m.t))), p2 = n => String(n).padStart(2, '0');
   $('#sessionMeta').textContent = `${ms.length}판 · ${d.getMonth() + 1}/${d.getDate()} ${p2(d.getHours())}:${p2(d.getMinutes())}부터`;
@@ -1754,7 +1791,7 @@ let focus = null;
 const bar = r => `<span class="track"><i style="width:${Math.round(r * 100)}%;background:${r >= .5 ? 'var(--good)' : 'var(--bad)'}"></i></span>`;
 function renderAnalysis() {
   const { players } = S, matches = periodMatches(), st = computeStats(players, matches), minG = +$('#minG').value;
-  if (!matches.length) { $('#hlBox').innerHTML = S.matches.length ? NO_PERIOD : emptyStats(); $('#pickPlayer').innerHTML = ''; $('#playerBox').innerHTML = ''; $('#matrixBox').innerHTML = ''; return; }
+  if (!matches.length) { $('#hlBox').innerHTML = noMatches(); $('#pickPlayer').innerHTML = ''; $('#playerBox').innerHTML = ''; $('#matrixBox').innerHTML = ''; return; }
   const active = Object.values(st.P).filter(p => p.g).sort((a, b) => b.g - a.g);
   const allPairs = (o, filt) => Object.entries(o).map(([k, v]) => { const [a, b] = k.split('\u0001'); return { a, b, ...v, r: v.w / v.g }; }).filter(x => x.g >= minG && filt(x));
   const duos = allPairs(st.duo, x => x.a < x.b).sort((x, y) => y.r - x.r || y.g - x.g);
@@ -1801,11 +1838,15 @@ $('#pickPlayer').addEventListener('click', e => { const b = e.target.closest('[d
 $('#minG').onchange = renderAnalysis;
 
 // ---------- 기록 탭 ----------
-let confirmId = null;
+let confirmId = null, seasonConfirm = false;
 function renderLog() {
-  const ms = [...S.matches].sort((a, b) => b.t - a.t), T = tierMap(computeStats(S.players, S.matches));
-  $('#logMeta').textContent = `총 ${ms.length}판`;
+  const ms = [...S.matches].sort((a, b) => b.t - a.t), T = tierMap(computeStats(S.players, seasonMatches()));
+  $('#logMeta').textContent = `총 ${ms.length}판${S.seasons.length ? ` · 지금 시즌 ${curSeason()}` : ''}`;
   $('#restore').hidden = !canRoster();
+  // 새 시즌 시작(방장): 한 번 누르면 3초 동안 "정말 시작"으로 바뀌고, 그때 한 번 더 눌러야 시작해요.
+  const sb = $('#seasonStart'); sb.hidden = !canRoster();
+  sb.textContent = seasonConfirm ? `정말 시즌 ${curSeason() + 1} 시작` : `🏁 시즌 ${curSeason() + 1} 시작`;
+  sb.style.cssText = seasonConfirm ? 'color:var(--bad);border-color:var(--bad)' : '';
   const p2 = n => String(n).padStart(2, '0'), day = t => { const d = new Date(t); return `${d.getMonth() + 1}월 ${d.getDate()}일 ${'일월화수목금토'[d.getDay()]}요일`; };
   const counts = {}; for (const m of ms) counts[day(m.t)] = (counts[day(m.t)] || 0) + 1;
   // 팀 카드: 이긴 팀은 왕관 + '승리', 진 팀은 흐리게 '패배'. 이름에 마우스를 올리면 선수 카드가 떠요.
@@ -1813,8 +1854,12 @@ function renderLog() {
     return `<div class="mteam ${side} ${won ? 'won' : 'lost'}"><div class="mt-h">${won ? '<span class="crown" aria-hidden="true">👑</span>' : ''}${TEAM[side]}<small>${won ? '승리' : '패배'}</small></div>
       <ul>${m[side].map(p => `<li data-card="${esc(p)}">${tierIcon(T[p])}${esc(p)}${mvp.includes(p) ? ' <span class="mvptag" title="MVP">⭐</span>' : ''}</li>`).join('')}</ul></div>`; };
   let last = '';
-  $('#logBox').innerHTML = ms.length ? ms.map(m => {
-    const d = day(m.t), head = d !== last ? `<li class="mday">${d} · ${counts[d]}판</li>` : ''; last = d;
+  // 시즌이 바뀐 자리에 '🏁 시즌 N 시작' 줄을 끼워요. 같은 시각이면 판이 위(새 시즌)예요.
+  const rows = [...ms.map(m => ({ m, t: m.t })), ...S.seasons.map((t, i) => ({ s: i + 2, t }))].sort((a, b) => b.t - a.t || (a.m ? -1 : 1));
+  const mark = ({ s, t }) => { const d = new Date(t); return `<li class="mseason">🏁 시즌 ${s} 시작 <small>${d.getMonth() + 1}/${d.getDate()} ${p2(d.getHours())}:${p2(d.getMinutes())}</small></li>`; };
+  $('#logBox').innerHTML = ms.length ? rows.map(x => {
+    if (!x.m) return mark(x);
+    const m = x.m, d = day(m.t), head = d !== last ? `<li class="mday">${d} · ${counts[d]}판</li>` : ''; last = d;
     const t = new Date(m.t), room = S.rooms.find(r => r.id === m.room);
     return `${head}<li class="match"><div class="mhead"><time>${p2(t.getHours())}:${p2(t.getMinutes())}</time>${room ? `<span>· ${esc(room.name)}</span>` : ''}
       <button class="btn ghost small" data-shot="match" data-id="${esc(m.id)}">이미지</button>
@@ -1832,16 +1877,28 @@ $('#logBox').addEventListener('click', async e => {
   confirmId = null; try { await deleteMatch(id); toast('경기 기록을 지웠어요.'); } catch {}
   renderAll();
 });
+$('#seasonStart').onclick = async () => {
+  if (!canRoster()) return toast('새 시즌은 방장만 시작할 수 있어요.');
+  const n = curSeason() + 1;
+  if (!seasonConfirm) {
+    seasonConfirm = true; renderLog(); toast(`한 번 더 누르면 시즌 ${n} 시작! 내전·1:1 MMR이 모두 1000점에서 다시 시작해요.`);
+    clearTimeout(renderLog.s); renderLog.s = setTimeout(() => { seasonConfirm = false; renderLog(); }, 3000); return;
+  }
+  seasonConfirm = false; clearTimeout(renderLog.s);
+  try { await api('startSeason', {}); S.season = 'cur'; sfx('done'); toast(`시즌 ${curSeason()} 시작! 지난 시즌은 전적·분석의 "시즌"에서 볼 수 있어요.`); } catch {}
+  renderAll();
+};
 
-// ---------- 기간 필터 · 백업 ----------
+// ---------- 시즌 · 기간 필터 · 백업 ----------
 document.addEventListener('change', e => {
+  if (e.target.matches('select.season')) { S.season = e.target.value; renderSeasonPick(); renderStats(); renderAnalysis(); renderDuel(); return; }
   if (!e.target.matches('select.period')) return;
   S.period = e.target.value;
   document.querySelectorAll('select.period').forEach(s => s.value = S.period);
   renderStats(); renderAnalysis();
 });
 $('#backup').onclick = () => {
-  const blob = new Blob([JSON.stringify({ exportedAt: new Date().toISOString(), players: S.players, matches: S.matches, duels: S.duels, mvp: S.mvp, riot: S.riot }, null, 2)], { type: 'application/json' });
+  const blob = new Blob([JSON.stringify({ exportedAt: new Date().toISOString(), players: S.players, matches: S.matches, duels: S.duels, mvp: S.mvp, seasons: S.seasons, riot: S.riot }, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob); a.download = `lol-naejeon-backup-${new Date().toISOString().slice(0, 10)}.json`; a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
@@ -1856,10 +1913,11 @@ $('#restoreFile').onchange = async e => {
   const ms = Array.isArray(d?.matches) ? d.matches.filter(validMatch) : [], ds = Array.isArray(d?.duels) ? d.duels.filter(validDuel) : [];
   if (!ps.length && !ms.length && !ds.length) return toast('불러올 기록이 없는 파일이에요. 기록 탭 "백업 받기"로 받은 .json 파일을 골라 주세요.');
   const when = d.exportedAt && !isNaN(new Date(d.exportedAt)) ? ` (${new Date(d.exportedAt).toLocaleString('ko-KR')} 백업)` : '';
-  if (!confirm(`백업 파일${when}\n선수 ${ps.length}명 · 내전 ${ms.length}판 · 1:1 ${ds.length}판\n\n지금 기록에 없는 것만 더해요. 지금 있는 기록은 지우거나 덮어쓰지 않아요.\n백업한 뒤에 일부러 지운 기록도 이 파일에 있으면 다시 들어와요. 불러올까요?`)) return;
+  const ss = Array.isArray(d.seasons) ? cleanSeasons(d.seasons) : [];
+  if (!confirm(`백업 파일${when}\n선수 ${ps.length}명 · 내전 ${ms.length}판 · 1:1 ${ds.length}판${ss.length ? ` · 시즌 ${ss.length + 1}까지` : ''}\n\n지금 기록에 없는 것만 더해요. 지금 있는 기록은 지우거나 덮어쓰지 않아요.\n백업한 뒤에 일부러 지운 기록도 이 파일에 있으면 다시 들어와요. 불러올까요?`)) return;
   try {
-    const r = await api('importBackup', { players: ps, matches: ms, duels: ds, riot: d.riot }), x = r.imported || {};
-    toast(r.dup ? '이미 다 들어 있는 기록이라 더할 게 없었어요.' : `불러왔어요: 선수 ${x.players}명 · 내전 ${x.matches}판 · 1:1 ${x.duels}판${x.riot ? ` · Riot ID ${x.riot}명` : ''}`);
+    const r = await api('importBackup', { players: ps, matches: ms, duels: ds, seasons: ss, riot: d.riot }), x = r.imported || {};
+    toast(r.dup ? '이미 다 들어 있는 기록이라 더할 게 없었어요.' : `불러왔어요: 선수 ${x.players}명 · 내전 ${x.matches}판 · 1:1 ${x.duels}판${x.riot ? ` · Riot ID ${x.riot}명` : ''}${x.seasons ? ` · 시즌 시작 ${x.seasons}개` : ''}`);
   } catch {}
   renderAll();
 };
@@ -2036,7 +2094,8 @@ const DUEL_RULES = ['자유', '퍼블', '100CS', '첫 타워'];
 function renderDuel() {
   if (!S.players.includes(DUEL.a)) DUEL.a = null;
   if (!S.players.includes(DUEL.b)) DUEL.b = null;
-  const { P, H } = duelStats(S.duels), can = canRoster(), { a, b } = DUEL;
+  // 붙기 칸·맞대결은 지금 시즌, 순위표는 고른 시즌(기본은 지금 시즌) 기준이에요.
+  const { P, H } = duelStats(seasonDuels()), can = canRoster(), { a, b } = DUEL;
   const slot = (p, side) => p ? `<div class="duel-slot ${side}" data-card="${esc(p)}"><b>${esc(p)}</b><small>${P[p]?.g ? `1:1 ${P[p].w}승 ${P[p].g - P[p].w}패 · MMR ${Math.round(P[p].mmr)}` : '1:1 첫 판'}</small></div>`
     : `<div class="duel-slot empty"><b>?</b><small>아래에서 골라요</small></div>`;
   const h = a && b ? H[a + '\u0001' + b] : null;
@@ -2050,9 +2109,10 @@ function renderDuel() {
     || '<span class="empty">명단이 비어 있어요. "선수 명단" 탭에서 이름을 넣어 주세요.</span>';
   $('#duelMeta').textContent = `총 ${S.duels.length}판`;
   // 순위: 1:1 MMR 높은 순(판이 있는 사람만)
-  const rows = Object.values(P).filter(x => x.g).sort((x, y) => y.mmr - x.mmr || y.w - x.w);
+  const RP = viewSeason() === curSeason() ? P : duelStats(viewDuels()).P;
+  const rows = Object.values(RP).filter(x => x.g).sort((x, y) => y.mmr - x.mmr || y.w - x.w);
   $('#duelRankMeta').textContent = rows.length ? `${rows.length}명` : '';
-  $('#duelRank').innerHTML = !rows.length ? '<p class="empty">아직 1:1 기록이 없어요. 위에서 두 명을 골라 붙여 보세요.</p>'
+  $('#duelRank').innerHTML = !rows.length ? `<p class="empty">${S.duels.length ? `시즌 ${viewSeason()}에는 아직 1:1 기록이 없어요.` : '아직 1:1 기록이 없어요. 위에서 두 명을 골라 붙여 보세요.'}</p>`
     : `<div class="tbl-wrap"><table><thead><tr><th></th><th>선수</th><th class="num">판</th><th class="num">승-패</th><th>승률</th><th class="num">1:1 MMR</th><th>최근 5판</th></tr></thead><tbody>${
       rows.map((x, i) => `<tr><td class="rank">${i + 1}</td><td><b data-card="${esc(x.name)}">${esc(x.name)}</b></td><td class="num">${x.g}</td><td class="num">${x.w}-${x.g - x.w}</td>
         <td><div class="rate"><span style="width:38px;text-align:right">${pct(x.w, x.g)}%</span>${bar(x.w / x.g)}</div></td><td class="num">${Math.round(x.mmr)}</td>
@@ -2090,7 +2150,7 @@ $('#g-duel').addEventListener('click', async e => {
   if (del && needRoster() && confirm('이 1:1 기록을 지울까요?')) { try { await api('deleteDuel', { id: del.dataset.duelDel }); toast('1:1 기록을 지웠어요.'); } catch {} renderAll(); }
 });
 
-function renderAll() { syncPresence(); renderRoomBar(); renderRoster(); renderTeams(); renderSession(); renderStats(); renderAnalysis(); renderLog(); renderFive(); renderDuel(); }
+function renderAll() { syncPresence(); renderSeasonPick(); renderRoomBar(); renderRoster(); renderTeams(); renderSession(); renderStats(); renderAnalysis(); renderLog(); renderFive(); renderDuel(); }
 
 // 닉네임이 없으면 입장 화면부터. 정하면 바로 방 신호를 보내서 '구경 중'에 이름이 떠요.
 function showGate(on) {
@@ -2167,10 +2227,11 @@ function shotPill({ g, T }, s, x, y, fill, color, left) { // 알약 글자: x = 
   T(s, xr - w / 2, y + 9, { s: 24, w: 800, c: color, a: 'center' });
 }
 
-// 내전 한 판: 양 팀 선수(라인 순서) · 선수별 MMR 변화. MMR은 그 판 바로 전후로 다시 계산해요(예전 판도 그때 기준).
+// 내전 한 판: 양 팀 선수(라인 순서) · 선수별 MMR 변화. MMR은 그 판 시즌 안에서 바로 전후로 다시 계산해요(예전 판도 그때 기준).
 async function matchShot(m) {
-  const ord = [...S.matches].sort((a, b) => a.t - b.t), i = ord.indexOf(m);
-  const before = computeStats([], ord.slice(0, i)), after = computeStats([], ord.slice(0, i + 1));
+  const ord = [...S.matches].sort((a, b) => a.t - b.t), i = ord.indexOf(m), sn = seasonOf(m.t);
+  const so = ord.filter(x => seasonOf(x.t) === sn), j = so.indexOf(m);
+  const before = computeStats([], so.slice(0, j)), after = computeStats([], so.slice(0, j + 1));
   const L = m.lanes || {}, hasLane = [...m.blue, ...m.red].some(p => L[p]), rank = p => L[p] ? LANES.indexOf(L[p]) : 9;
   const rows = side => [...m[side]].sort((a, b) => rank(a) - rank(b)).map(p => { const a = Math.round(mmrOf(before, p)), b = Math.round(mmrOf(after, p)); return { p, lane: L[p] ? LANE[L[p]] : '', b, d: b - a }; });
   const avg = (st, side) => Math.round(m[side].reduce((s, p) => s + mmrOf(st, p), 0) / (m[side].length || 1));
@@ -2205,13 +2266,13 @@ async function matchShot(m) {
     g.globalAlpha = 1;
   });
   if (pen) T(penText, W / 2, top + panelH + 64, { s: 30, w: 700, c: SHOT.bad, a: 'center', max: W - P * 2, min: 20 });
-  shotFooter(k, H, `${i + 1}번째 내전`);
+  shotFooter(k, H, S.seasons.length ? `시즌 ${sn} · ${j + 1}번째 내전` : `${i + 1}번째 내전`);
   return k.cv;
 }
 
 // 1:1 한 판: 누가 누구를 이겼는지 · 규칙 · 1:1 MMR 변화 · 그때까지 맞대결 전적. 왼쪽(파랑)·오른쪽(빨강)은 기록할 때 자리 그대로예요.
 async function duelShot(d) {
-  const ord = [...S.duels].sort((x, y) => x.t - y.t), i = ord.indexOf(d);
+  const sn = seasonOf(d.t), ord = S.duels.filter(x => seasonOf(x.t) === sn).sort((x, y) => x.t - y.t), i = ord.indexOf(d); // 1:1 MMR도 그 판 시즌 안에서
   const before = duelStats(ord.slice(0, i)).P, after = duelStats(ord.slice(0, i + 1));
   const loser = d.w === d.a ? d.b : d.a, h = after.H[d.w + '\u0001' + loser] || [1, 1], side = d.w === d.a ? 'blue' : 'red';
   const sub = shotWhen(d.t), W = SHOT_W, P = SHOT_P, gap = 96, colW = (W - P * 2 - gap) / 2, top = 408, sh = 232, H = top + sh + 236;
@@ -2230,7 +2291,7 @@ async function duelShot(d) {
   });
   T('VS', W / 2, top + sh / 2 + 16, { s: 44, w: 800, c: SHOT.gold, a: 'center' });
   T(h2h, W / 2, top + sh + 72, { s: 28, w: 700, a: 'center', max: W - P * 2 });
-  shotFooter(k, H, `${i + 1}번째 1:1`);
+  shotFooter(k, H, S.seasons.length ? `시즌 ${sn} · ${i + 1}번째 1:1` : `${i + 1}번째 1:1`);
   return k.cv;
 }
 
@@ -2274,6 +2335,12 @@ document.addEventListener('click', e => {
 // ---------- 버전 · 패치노트 ----------
 // 커밋해서 올릴 때마다 맨 위에 새 항목을 더해요(규칙은 CLAUDE.md). 오른쪽 위 버전은 맨 위 항목이에요.
 const NOTES = [
+  { v: '1.12.0', d: '2026-10-22', items: [
+    '시즌: 방장이 기록 탭에서 "🏁 시즌 2 시작"을 누르고, 3초 안에 "정말 시즌 2 시작"을 한 번 더 누르면 그때부터 새 시즌이에요. 내전 MMR과 1:1 MMR이 모두 1000점에서 다시 시작해요.',
+    '새 시즌에는 티어·전적·분석·실력 밸런스·팀장 뽑기·이 방 기록·MVP 횟수도 새 시즌 판만 세요. 지금까지 한 판은 모두 시즌 1이에요.',
+    '지난 시즌은 그대로 남아요. 전적·분석·1:1 순위 위의 "시즌"에서 지난 시즌이나 전체를 골라 볼 수 있어요. 기록 탭 목록에는 시즌이 바뀐 자리에 "🏁 시즌 N 시작" 줄이 들어가요. 지운 판은 없어요.',
+    '지금 시즌에 아직 한 판도 없으면 새 시즌을 시작할 수 없어요(두 번 눌러서 빈 시즌이 생기지 않게). 백업 받기·불러오기에도 시즌이 같이 들어가요.',
+  ] },
   { v: '1.11.0', d: '2026-10-22', items: [
     '결과 이미지에 MVP와 벌칙도 나와요. 투표 1등은 이름 앞에 ⭐, 벌칙 룰렛을 돌렸으면 팀 칸 아래에 "🎡 벌칙 · 누구 → 무엇"이 들어가요. 투표가 끝난 뒤에 만들면 MVP까지 담겨요.',
   ] },
