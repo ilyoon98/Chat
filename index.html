@@ -112,7 +112,9 @@ td .tier { margin-right: 6px; }
 .pchip .pc-top b { overflow: hidden; text-overflow: ellipsis; }
 .pool .chip.pchip small { margin-left: 0; text-align: left; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
 .qi { display: inline-flex; align-items: center; gap: 2px; margin-left: 2px; flex: none; } .qi .tier { width: 16px; height: 16px; margin: 0; }
-.cap span { font-family: var(--display); font-weight: 800; font-size: 17px; } .cap select { width: 100%; min-width: 0; font-weight: 700; }
+.cap span { font-family: var(--display); font-weight: 800; font-size: 17px; }
+.cap .roll { display: block; padding: 6px 10px; border-radius: 8px; background: rgba(0, 0, 0, .22); font-size: 22px; font-weight: 800; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cap .roll.landed { animation: pop .5s cubic-bezier(.2, .9, .3, 1.5) both; background: rgba(255, 255, 255, .22); box-shadow: 0 0 0 2px #fff, 0 0 22px rgba(255, 255, 255, .5); } .cap select { width: 100%; min-width: 0; font-weight: 700; }
 .draft-order { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; padding: 14px; border-radius: 12px; background: var(--sunk); border: 1px solid var(--line); }
 .draft-order-r { display: grid; gap: 8px; flex: 1 1 220px; }
 .coin-res { margin: 0; font-family: var(--display); font-weight: 800; font-size: 20px; }
@@ -1053,7 +1055,7 @@ function burst(el, side, big) {
 // 승리는 새 기록이 생기면(내가 눌렀든 다른 화면에서 왔든) 한 번 축하해요. 처음 열었을 때 이미 있던 기록은 축하하지 않아요.
 let fxRec;
 function renderTeams(shuffling) {
-  if (drag?.on || coinBusy) return; // 끌거나 동전이 도는 동안엔 다시 그리지 않아요. 끝나면 새로 그려요.
+  if (drag?.on || coinBusy || capSpin) return; // 끌거나 동전·룰렛이 도는 동안엔 다시 그리지 않아요. 끝나면 새로 그려요.
   if (S.draft) return renderDraft();
   const box = $('#teamsBox'), c = S.current, st = computeStats(S.players, S.matches);
   if (!c || !c.blue.length && !c.red.length) { box.innerHTML = '<p class="empty">사람을 고르고 팀 섞기를 누르면 1팀(블루)과 2팀(레드)이 여기에 나와요.</p>'; return; }
@@ -1209,7 +1211,31 @@ $('#teamsBox').addEventListener('contextmenu', e => { if (e.target.closest('[dat
 // 3) 차례인 팀장이 원하는 만큼 뽑고 '넘기기'를 누르면 상대 차례예요. 팀이 다 차면 알아서 넘어가요.
 // 뽑는 동안 화면이 들썩이지 않게: 팀 칸은 빈 자리까지 다 그려 두고, 남은 사람 칸은 뽑힌 사람도 흐리게 자리를 지켜요.
 // 뽑는 과정은 이 기기에서만 진행돼요. 끝나면 팀 배치가 저장돼서 다른 사람 화면에도 나와요.
-let coinBusy = false;
+let coinBusy = false, capSpin = null;
+// 팀장 룰렛: 팀장 칸 이름이 차르르륵 돌다가 점점 느려지며 정해진 팀장에서 멈춰요(두 칸이 조금 엇갈려 멈춰요).
+// 방법(1·2위·꼴찌·랜덤)으로 팀장은 먼저 정해 두고, 룰렛은 보여주기예요. 움직임 줄이기 설정이면 바로 보여줘요.
+function spinCaps(d) {
+  if (reduceMotion || d.names.length < 3) return renderTeams();
+  clearTimeout(capSpin?.timer);
+  capSpin = { d };
+  renderDraft(); // renderTeams는 도는 동안 막혀 있어서, 룰렛 칸은 여기서 직접 그려요
+  const els = { blue: $('#rollBlue'), red: $('#rollRed') }, stopAt = { blue: 16, red: 20 };
+  let k = 0, last = {};
+  const step = () => {
+    if (capSpin?.d !== d || S.draft !== d) return;
+    k++;
+    for (const side of ['blue', 'red']) {
+      const el = els[side]; if (!el) continue;
+      if (k < stopAt[side]) {
+        let n; do n = d.names[rnd(d.names.length)]; while (d.names.length > 2 && n === last[side]);
+        last[side] = n; el.textContent = n;
+      } else if (k === stopAt[side]) { el.textContent = d.cap[side]; el.classList.add('landed'); }
+    }
+    if (k >= stopAt.red) { capSpin.timer = setTimeout(() => { capSpin = null; renderTeams(); }, 700); return; }
+    capSpin.timer = setTimeout(step, 40 + k * k * 0.6); // 처음엔 빠르게, 점점 느려져요(1팀 1.5초, 2팀 2.5초쯤)
+  };
+  step();
+}
 const other = side => side === 'blue' ? 'red' : 'blue';
 const CAP_METHODS = { top: 'MMR 1·2위', bottom: 'MMR 꼴찌 둘', random: '랜덤' };
 const draftSize = d => Math.ceil(d.names.length / 2); // 한 팀 최대 인원(팀장 포함)
@@ -1226,6 +1252,7 @@ function pickCaps(d) {
 function startDraft(names) {
   S.draft = { names, method: S.capMethod, picks: { blue: [], red: [] }, history: [], first: null, coin: null, turn: null };
   pickCaps(S.draft);
+  return spinCaps(S.draft);
   renderTeams(); // 화면은 그대로 두고(아래로 끌어내리지 않아요), 팀 칸 자리에 뽑기 화면이 나와요
 }
 // 차례인 팀에 넣어요(끌어서 놓아도 차례인 팀만). 그 팀이 다 차면 상대에게 차례가 넘어가요.
@@ -1262,7 +1289,9 @@ function coinFlip() {
 function draftClick(e) {
   const d = S.draft, t = e.target;
   const m = t.closest('[data-method]');
-  if (m) { d.method = S.capMethod = m.dataset.method; saveLocal(); pickCaps(d); return renderTeams(); }
+  if (m) { if (capSpin) return; d.method = S.capMethod = m.dataset.method; saveLocal(); pickCaps(d); return spinCaps(d); }
+  if (t.id === 'draftCancel') { clearTimeout(capSpin?.timer); capSpin = null; S.draft = null; return renderTeams(); }
+  if (capSpin) return; // 룰렛이 멈출 때까지 기다려요
   if (t.id === 'flip') return coinFlip();
   if (t.closest('[data-first]')) { d.first = d.turn = t.closest('[data-first]').dataset.first; d.coin = null; d.byCoin = false; return renderTeams(); }
   if (t.id === 'passTurn') { // 넘기기: 상대 팀이 아직 덜 찼으면 상대 차례로
@@ -1311,7 +1340,8 @@ function renderDraft() {
     box.innerHTML = `<div class="draft">${head}
       <div class="draft-order"><div class="draft-order-r"><b>① 팀장 정하기</b>
         <div class="seg" role="group" aria-label="팀장 정하는 방법">${Object.entries(CAP_METHODS).map(([k, label]) => `<button data-method="${k}" aria-pressed="${d.method === k}">${label}</button>`).join('')}</div>
-        <div class="draft-caps"><label class="cap blue"><span>1팀 팀장</span>${sel('blue')}</label><label class="cap red"><span>2팀 팀장</span>${sel('red')}</label></div>
+        <div class="draft-caps">${capSpin ? `<div class="cap blue"><span>1팀 팀장</span><b class="roll" id="rollBlue">?</b></div><div class="cap red"><span>2팀 팀장</span><b class="roll" id="rollRed">?</b></div>`
+          : `<label class="cap blue"><span>1팀 팀장</span>${sel('blue')}</label><label class="cap red"><span>2팀 팀장</span>${sel('red')}</label>`}</div>
         <p class="note" style="margin:0">${d.method === 'random' ? '랜덤을 다시 누르면 다시 뽑아요. ' : ''}다른 사람이 하고 싶으면 칸을 눌러서 바꿔요.</p></div></div>
       <div class="draft-order">${coin}<div class="draft-order-r"><b>② 누가 먼저 뽑을까요?</b>
         <div class="row"><button class="btn gold" id="flip"${d.flipping ? ' disabled' : ''}>동전 던지기</button><button class="btn ghost small" data-first="blue">1팀 먼저</button><button class="btn ghost small" data-first="red">2팀 먼저</button></div>
@@ -1579,6 +1609,9 @@ $('#gateForm').addEventListener('submit', async e => {
 // ---------- 버전 · 패치노트 ----------
 // 커밋해서 올릴 때마다 맨 위에 새 항목을 더해요(규칙은 CLAUDE.md). 오른쪽 위 버전은 맨 위 항목이에요.
 const NOTES = [
+  { v: '1.2.1', d: '2026-10-22', items: [
+    '팀장 룰렛: 팀장 뽑기를 시작하거나 팀장 정하는 방법을 누르면, 팀장 칸 이름이 차르르륵 돌다가 점점 느려지며 멈춰요. 1팀이 먼저, 2팀이 조금 뒤에 멈춰요.',
+  ] },
   { v: '1.2.0', d: '2026-10-22', items: [
     '팀장 뽑기: 팀장 정하는 방법을 고를 수 있어요 — MMR 1·2위 / MMR 꼴찌 둘 / 랜덤(다시 누르면 다시 뽑아요). 직접 바꾸는 것도 돼요.',
     '팀장 뽑기: 뽑는 순서를 정하지 않아요. 동전으로 먼저 뽑을 팀을 정하면, 차례인 팀장이 원하는 만큼 뽑고 "넘기기"를 눌러요. 팀이 다 차면 알아서 넘어가요.',
