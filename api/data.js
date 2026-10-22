@@ -118,7 +118,13 @@ async function heartbeat(room, me, nick, claimsHost) {
   const key = RK.seen(room), now = Date.now();
   await redis.zadd(key, { score: now, member: `${me}|${nick}` });
   await redis.zremrangebyscore(key, 0, now - HOST_AWAY);
-  if (claimsHost && parse(await redis.hget(K.rooms, room))?.hostId === me) await redis.hset(K.hostSeen, { [room]: now });
+  if (claimsHost) {
+    const r = parse(await redis.hget(K.rooms, room));
+    if (r?.hostId === me) {
+      await redis.hset(K.hostSeen, { [room]: now });
+      if (r.hostNick !== nick) await redis.hset(K.rooms, { [room]: { ...r, hostNick: nick } }); // 방장이 닉네임을 바꿨으면 방 탭에도
+    }
+  }
   const raw = await redis.zrange(key, 0, -1, { withScores: true }), seen = new Map();
   for (let i = 0; i < raw.length; i += 2) {
     const [id, ...n] = String(raw[i]).split('|'), at = Number(raw[i + 1]);

@@ -1150,8 +1150,11 @@ if (TABS.includes(location.hash.slice(1))) showTab(location.hash.slice(1));
 
 // ---------- 방 ----------
 // 방 탭 + 방장/구경 중인 사람 + 방장 버튼(넘기기·닫기·링크 복사). 닉네임이 없으면 먼저 닉네임부터 받아요.
-function renderRoomBar() {
+function renderRoomBar(force) {
   const box = $('#roomBar'), r = curRoom(), host = isHost();
+  // 닉네임을 적거나 '방장 넘겨줄 사람'을 고르는 중이면 다시 그리지 않아요. 그리면 칸이 새로 생기면서 포커스가 풀려요.
+  const a = document.activeElement;
+  if (!force && a && box.contains(a) && a.matches('input, select')) return;
   $('#meBox').innerHTML = ME.nick && !S.nickEditing ? `나: <b>${esc(ME.nick)}</b> <button class="linkbtn" id="nickEdit">바꾸기</button>` : '';
   if (!ME.nick || S.nickEditing) {
     box.innerHTML = `<form class="add" id="nickForm"><input id="nickInput" type="text" maxlength="16" placeholder="내 닉네임 (방장·구경할 때 보여요)" value="${esc(ME.nick)}" autocomplete="off" aria-label="내 닉네임"><button class="btn" type="submit">저장</button></form>
@@ -1175,11 +1178,12 @@ function renderRoomBar() {
 $('#roomCard').addEventListener('submit', e => {
   e.preventDefault();
   const v = $('#nickInput').value.trim().slice(0, 16); if (!v) return;
-  ME.nick = v; saveMe(); S.nickEditing = false; renderAll(); pull(true);
+  ME.nick = v; saveMe(); S.nickEditing = false; renderRoomBar(true); renderAll(); pull(true);
 });
 $('#roomCard').addEventListener('click', async e => {
-  const t = e.target, r = curRoom();
-  if (t.id === 'nickEdit') { S.nickEditing = true; renderRoomBar(); $('#nickInput')?.focus(); return; }
+  const t = e.target.closest('button'), r = curRoom();
+  if (!t || t.form) return; // 입력칸·선택 상자를 누른 건 그대로 둬요. 닉네임 저장 버튼은 submit에서 처리해요.
+  if (t.id === 'nickEdit') { S.nickEditing = true; renderRoomBar(true); $('#nickInput')?.focus(); return; }
   const tab = t.closest('[data-room]'); if (tab) return enterRoom(tab.dataset.room);
   try {
     if (t.id === 'newRoom') {
