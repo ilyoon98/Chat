@@ -1,0 +1,3 @@
+# vercel deploy로 올릴 때 빼는 파일 (로컬 테스트 데이터·비밀값)
+.dev-data*.json
+.env*
