@@ -399,6 +399,8 @@ function applyServer(d) {
   if (Array.isArray(d.players)) S.players = d.players.filter(p => typeof p === 'string');
   if (Array.isArray(d.matches)) S.matches = d.matches.filter(validMatch);
   if (d.current && Array.isArray(d.current.blue) && Array.isArray(d.current.red) && (!S.current || (d.current.t || 0) > (S.current.t || 0))) S.current = d.current;
+  // 오늘 할 사람: 내가 누른 게 아직 저장 중이면 화면에 보이는 내 선택을 그대로 둬요 (끝나면 syncSelect가 맞춰요)
+  if (Array.isArray(d.selected) && !selPending) S.selected = new Set(d.selected.filter(p => typeof p === 'string'));
 }
 async function pull() {
   const w = writes;
@@ -515,13 +517,27 @@ $('#roster').addEventListener('click', async e => {
     S.editTarget = S.editTarget === name ? null : name; renderRoster();
     if (S.editTarget) $('#renameInput')?.focus();
   } else {
-    S.selected.has(name) ? S.selected.delete(name) : S.selected.add(name); saveLocal(); renderRoster();
+    const on = !S.selected.has(name);
+    on ? S.selected.add(name) : S.selected.delete(name); renderRoster(); syncSelect([name], on);
   }
 });
 $('#today').addEventListener('click', e => {
   const b = e.target.closest('button[data-i]'); if (!b) return;
-  S.selected.delete(S.players[+b.dataset.i]); saveLocal(); renderRoster();
+  const name = S.players[+b.dataset.i];
+  S.selected.delete(name); renderRoster(); syncSelect([name], false);
 });
+// 오늘 할 사람은 서버에 저장해서 모두의 화면에 같이 보여요. 화면은 바로 바꾸고, 서버 답이 오면 맞춰요.
+let selPending = 0;
+async function syncSelect(names, on) {
+  if (!names.length) return;
+  saveLocal(); selPending++;
+  let d = null;
+  try { d = await api('select', { names, on }); } catch {}
+  if (--selPending) return; // 연달아 누른 게 남아 있으면 마지막 답에서 맞춰요
+  if (!d) { ver = null; await pull(); } // 저장 실패: 서버 상태로 되돌려요
+  else if (d.ver === ver && Array.isArray(d.selected)) S.selected = new Set(d.selected);
+  saveLocal(); renderRoster();
+}
 $('#editBox').addEventListener('submit', async e => {
   e.preventDefault();
   const from = S.editTarget, to = $('#renameInput').value.trim().slice(0, 16);
@@ -552,8 +568,8 @@ $('#addForm').addEventListener('submit', e => {
   $('#addInput').value = ''; renderAll(); toast(`${names.length}명을 명단에 넣었어요. ↓를 누르면 오늘 할 사람으로 내려가요.`);
   rosterAction('addPlayers', { names });
 });
-$('#selAll').onclick = () => { S.players.forEach(p => S.selected.add(p)); saveLocal(); renderRoster(); };
-$('#selNone').onclick = () => { S.selected.clear(); saveLocal(); renderRoster(); };
+$('#selAll').onclick = () => { const add = S.players.filter(p => !S.selected.has(p)); add.forEach(p => S.selected.add(p)); renderRoster(); syncSelect(add, true); };
+$('#selNone').onclick = () => { const off = [...S.selected]; S.selected.clear(); renderRoster(); syncSelect(off, false); };
 $('#editToggle').onclick = () => { S.editing = !S.editing; S.editTarget = null; renderRoster(); };
 
 // ---------- 팀 섞기 ----------

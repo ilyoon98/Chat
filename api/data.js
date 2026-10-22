@@ -5,7 +5,7 @@ const url = process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL;
 const token = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN;
 const redis = globalThis.__redis ?? (url && token ? new Redis({ url, token }) : null);
 
-const K = { players: 'lol:players', matches: 'lol:matches', current: 'lol:current', ver: 'lol:ver' };
+const K = { players: 'lol:players', matches: 'lol:matches', current: 'lol:current', ver: 'lol:ver', selected: 'lol:selected' };
 const MAX_MATCHES = 5000;
 const MAX_PLAYERS = 60;
 
@@ -13,6 +13,7 @@ const cleanName = v => (typeof v === 'string' && v.trim() ? v.trim().slice(0, 16
 const cleanNames = (a, max) => (Array.isArray(a) ? [...new Set(a.map(cleanName).filter(Boolean))].slice(0, max) : null);
 const bad = res => res.status(400).json({ error: 'bad_request' });
 const readPlayers = async () => (await redis.get(K.players)) || [];
+const readSelected = async () => (await redis.get(K.selected)) || []; // 오늘 할 사람 (고른 순서대로)
 async function readMatches() {
   const hash = await redis.hgetall(K.matches);
   return Object.entries(hash || {})
@@ -20,8 +21,8 @@ async function readMatches() {
     .sort((a, b) => a.t - b.t);
 }
 async function readState() {
-  const [players, matches, current, ver] = await Promise.all([readPlayers(), readMatches(), redis.get(K.current), redis.get(K.ver)]);
-  return { players, matches, current: current || null, ver: Number(ver) || 0 };
+  const [players, matches, current, ver, selected] = await Promise.all([readPlayers(), readMatches(), redis.get(K.current), redis.get(K.ver), readSelected()]);
+  return { players, matches, current: current || null, selected, ver: Number(ver) || 0 };
 }
 
 // RECORD_PIN 환경변수를 넣으면 기록·수정할 때 비밀번호가 필요해요. 안 넣으면 누구나 기록 가능.
@@ -64,6 +65,15 @@ export default async function handler(req, res) {
         const name = cleanName(b.name);
         if (!name) return bad(res);
         await redis.set(K.players, (await readPlayers()).filter(p => p !== name));
+        await redis.set(K.selected, (await readSelected()).filter(p => p !== name));
+        break;
+      }
+      case 'select': {
+        // 오늘 할 사람 넣기/빼기. 목록을 통째로 덮어쓰지 않고 누른 사람만 바꿔서, 여럿이 동시에 눌러도 안 지워져요.
+        const names = cleanNames(b.names, MAX_PLAYERS);
+        if (!names?.length) return bad(res);
+        const sel = await readSelected();
+        await redis.set(K.selected, b.on === false ? sel.filter(p => !names.includes(p)) : [...sel, ...names.filter(p => !sel.includes(p))]);
         break;
       }
       case 'renamePlayer': {
@@ -86,6 +96,8 @@ export default async function handler(req, res) {
         }
         if (Object.keys(changed).length) await redis.hset(K.matches, changed);
         if (cur?.blue && cur?.red) await redis.set(K.current, swapGame(cur));
+        const sel = await readSelected();
+        if (sel.includes(from)) await redis.set(K.selected, swap(sel));
         break;
       }
       case 'addMatch': {
