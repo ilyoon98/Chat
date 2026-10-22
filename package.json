@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "node dev-server.mjs"
+    "dev": "node --env-file-if-exists=.env dev-server.mjs"
   },
   "dependencies": {
     "@upstash/redis": "^1.34.0"
