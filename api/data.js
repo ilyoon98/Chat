@@ -5,7 +5,7 @@ const url = process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL;
 const token = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN;
 const redis = globalThis.__redis ?? (url && token ? new Redis({ url, token }) : null);
 
-const K = { players: 'lol:players', matches: 'lol:matches', current: 'lol:current', ver: 'lol:ver', selected: 'lol:selected' };
+const K = { players: 'lol:players', matches: 'lol:matches', current: 'lol:current', ver: 'lol:ver', sel: 'lol:sel' };
 const MAX_MATCHES = 5000;
 const MAX_PLAYERS = 60;
 
@@ -13,7 +13,9 @@ const cleanName = v => (typeof v === 'string' && v.trim() ? v.trim().slice(0, 16
 const cleanNames = (a, max) => (Array.isArray(a) ? [...new Set(a.map(cleanName).filter(Boolean))].slice(0, max) : null);
 const bad = res => res.status(400).json({ error: 'bad_request' });
 const readPlayers = async () => (await redis.get(K.players)) || [];
-const readSelected = async () => (await redis.get(K.selected)) || []; // 오늘 할 사람 (고른 순서대로)
+// 오늘 할 사람: Redis 정렬 집합(점수 = 고른 시각)이라 고른 순서대로 나오고, 넣기·빼기가 한 명 단위로 바로 반영돼요.
+// 목록을 읽어서 고친 뒤 통째로 저장하면 동시에 누른 요청끼리 서로 덮어써서 사람이 사라졌어요.
+const readSelected = async () => (await redis.zrange(K.sel, 0, -1)).map(String);
 async function readMatches() {
   const hash = await redis.hgetall(K.matches);
   return Object.entries(hash || {})
@@ -65,15 +67,15 @@ export default async function handler(req, res) {
         const name = cleanName(b.name);
         if (!name) return bad(res);
         await redis.set(K.players, (await readPlayers()).filter(p => p !== name));
-        await redis.set(K.selected, (await readSelected()).filter(p => p !== name));
+        await redis.zrem(K.sel, name);
         break;
       }
       case 'select': {
-        // 오늘 할 사람 넣기/빼기. 목록을 통째로 덮어쓰지 않고 누른 사람만 바꿔서, 여럿이 동시에 눌러도 안 지워져요.
+        // 오늘 할 사람 넣기/빼기. 누른 사람만 넣고 빼서, 여럿이 동시에 눌러도 서로 안 지워져요.
         const names = cleanNames(b.names, MAX_PLAYERS);
         if (!names?.length) return bad(res);
-        const sel = await readSelected();
-        await redis.set(K.selected, b.on === false ? sel.filter(p => !names.includes(p)) : [...sel, ...names.filter(p => !sel.includes(p))]);
+        if (b.on === false) await redis.zrem(K.sel, ...names);
+        else { const now = Date.now(); await redis.zadd(K.sel, { nx: true }, ...names.map((member, i) => ({ score: now + i, member }))); } // 이미 있으면 순서 유지
         break;
       }
       case 'renamePlayer': {
@@ -96,8 +98,8 @@ export default async function handler(req, res) {
         }
         if (Object.keys(changed).length) await redis.hset(K.matches, changed);
         if (cur?.blue && cur?.red) await redis.set(K.current, swapGame(cur));
-        const sel = await readSelected();
-        if (sel.includes(from)) await redis.set(K.selected, swap(sel));
+        const score = await redis.zscore(K.sel, from); // 오늘 할 사람에 있었으면 같은 자리에 새 이름으로
+        if (score != null) { await redis.zadd(K.sel, { nx: true }, { score: Number(score), member: to }); await redis.zrem(K.sel, from); }
         break;
       }
       case 'addMatch': {

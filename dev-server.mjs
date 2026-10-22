@@ -1,24 +1,42 @@
 // 로컬 테스트용 서버: Redis 대신 .dev-data.json 파일에 저장해요. 서버를 껐다 켜도 기록이 남아요. (배포에는 쓰이지 않음)
-// 실행: npm run dev  →  http://localhost:3000   (PORT, DEV_DATA 환경변수로 포트와 저장 파일을 바꿀 수 있어요)
+// 실행: npm run dev  →  http://localhost:3000
+// 환경변수: PORT(포트), DEV_DATA(저장 파일), DEV_LATENCY(Redis 명령마다 늦출 ms — 실제 서버처럼 동시에 누르는 상황 시험용)
 import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { readFileSync, writeFileSync } from 'node:fs';
 
 const file = process.env.DEV_DATA || new URL('./.dev-data.json', import.meta.url);
 const kv = new Map();
+const zset = entries => Object.assign(new Map(entries), { isZ: true }); // 정렬 집합(멤버 → 점수)
 try {
-  for (const [k, v] of Object.entries(JSON.parse(readFileSync(file, 'utf8')))) kv.set(k, v?.__hash ? new Map(Object.entries(v.__hash)) : v);
+  for (const [k, v] of Object.entries(JSON.parse(readFileSync(file, 'utf8'))))
+    kv.set(k, v?.__hash ? new Map(Object.entries(v.__hash)) : v?.__zset ? zset(Object.entries(v.__zset)) : v);
 } catch {}
-const save = () => writeFileSync(file, JSON.stringify(Object.fromEntries([...kv].map(([k, v]) => [k, v instanceof Map ? { __hash: Object.fromEntries(v) } : v]))));
+const save = () => writeFileSync(file, JSON.stringify(Object.fromEntries([...kv].map(([k, v]) =>
+  [k, v instanceof Map ? { [v.isZ ? '__zset' : '__hash']: Object.fromEntries(v) } : v]))));
 
-globalThis.__redis = {
+const redis = {
   async get(k) { return kv.get(k) ?? null; },
   async set(k, v) { kv.set(k, structuredClone(v)); save(); return 'OK'; },
   async hgetall(k) { const h = kv.get(k); return h ? Object.fromEntries(h) : null; },
   async hset(k, obj) { const h = kv.get(k) ?? new Map(); for (const [f, v] of Object.entries(obj)) h.set(f, structuredClone(v)); kv.set(k, h); save(); return 1; },
   async hdel(k, f) { const n = kv.get(k)?.delete(f) ? 1 : 0; save(); return n; },
   async incr(k) { const n = (kv.get(k) ?? 0) + 1; kv.set(k, n); save(); return n; },
+  // @upstash/redis와 같은 모양: zadd(key, [opts], {score, member}, ...)
+  async zadd(k, ...args) {
+    const opts = args[0] && !('member' in args[0]) ? args.shift() : {}, z = kv.get(k) ?? zset();
+    let n = 0;
+    for (const { score, member } of args) if (!(opts.nx && z.has(member))) { if (!z.has(member)) n++; z.set(member, score); }
+    kv.set(k, z); save(); return n;
+  },
+  async zrem(k, ...members) { const z = kv.get(k); let n = 0; for (const m of members) if (z?.delete(m)) n++; save(); return n; },
+  async zrange(k) { const z = kv.get(k); return z ? [...z].sort((a, b) => a[1] - b[1]).map(([m]) => m) : []; },
+  async zscore(k, m) { return kv.get(k)?.get(m) ?? null; },
 };
+const latency = Number(process.env.DEV_LATENCY) || 0;
+globalThis.__redis = latency
+  ? Object.fromEntries(Object.entries(redis).map(([name, fn]) => [name, async (...a) => { await new Promise(r => setTimeout(r, latency)); return fn(...a); }]))
+  : redis;
 const { default: handler } = await import('./api/data.js');
 
 const port = Number(process.env.PORT) || 3000;
