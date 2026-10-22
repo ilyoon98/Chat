@@ -394,6 +394,12 @@ body.gated { overflow: hidden; }
 .draft-team.turn { animation: turnPulse 1.4s ease-in-out infinite; }
 @keyframes turnPulse { 50% { outline-color: color-mix(in srgb, var(--gold) 35%, transparent); } }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+/* ---------- 결과 이미지 ----------
+   기록됨 칸: 폰에서 버튼이 많으면 'OO 승리'를 줄이지 않고 버튼이 아랫줄로 내려가요.
+   기록 탭: '이미지' 버튼이 '삭제' 옆에 붙어요(오른쪽 끝은 삭제). 최근 1:1: 버튼 두 개를 한 줄로 */
+.rec-head b { flex: 1 0 auto; }
+.mhead [data-shot] + .btn { margin-left: 0; }
+.shot-btns { display: inline-flex; gap: 6px; }
 </style>
 </head>
 <body>
@@ -1216,7 +1222,7 @@ function renderTeams(shuffling) {
     ${both ? `<div class="odds"><div class="bar"><i class="b" style="width:${bp}%"></i><i class="r" style="width:${100 - bp}%"></i></div>
       <div class="lbl"><span>1팀 예상 승률 ${bp}%</span><span>2팀 ${100 - bp}%</span></div></div>` : ''}    ${shuffling ? '' : rec ? `
       <div class="recorded ${rec.win}${celebrate ? ' celebrate' : ''}">
-        <div class="rec-head"><span class="k">기록됨</span><b>${TEAM[rec.win]} 승리</b>${host ? '<button class="btn ghost small" id="undo">↶ 되돌리기</button>' : ''}</div>
+        <div class="rec-head"><span class="k">기록됨</span><b>${TEAM[rec.win]} 승리</b><button class="btn ghost small" data-shot="match" data-id="${esc(rec.id)}">결과 이미지</button>${host ? '<button class="btn ghost small" id="undo">↶ 되돌리기</button>' : ''}</div>
         ${host ? '<div class="rec-actions"><button class="big primary" id="reshuffle">새로 섞기</button><button class="big" id="again">같은 팀으로 한 판 더</button></div>' : ''}</div>` : !host ? '' : `
       <div class="result"><button class="win blue" data-win="blue" ${canRec ? '' : 'disabled'}>${TEAM.blue} 승리</button><button class="win red" data-win="red" ${canRec ? '' : 'disabled'}>${TEAM.red} 승리</button></div>`}`;
   if (celebrate) burst(box.querySelector('.team.' + rec.win), rec.win, true);
@@ -1654,6 +1660,7 @@ function renderLog() {
     const d = day(m.t), head = d !== last ? `<li class="mday">${d} · ${counts[d]}판</li>` : ''; last = d;
     const t = new Date(m.t), room = S.rooms.find(r => r.id === m.room);
     return `${head}<li class="match"><div class="mhead"><time>${p2(t.getHours())}:${p2(t.getMinutes())}</time>${room ? `<span>· ${esc(room.name)}</span>` : ''}
+      <button class="btn ghost small" data-shot="match" data-id="${esc(m.id)}">이미지</button>
       ${!canRoster() ? '' : `<button class="btn ghost small" data-del="${esc(m.id)}" style="${confirmId === m.id ? 'color:var(--bad);border-color:var(--bad)' : ''}">${confirmId === m.id ? '정말 삭제' : '삭제'}</button>`}</div>
       <div class="mteams">${team(m, 'blue')}${team(m, 'red')}</div></li>`;
   }).join('') : '<li><p class="empty">아직 기록이 없어요.</p></li>';
@@ -1879,7 +1886,7 @@ function renderDuel() {
   $('#duelLogMeta').textContent = S.duels.length > 30 ? '최근 30판' : '';
   $('#duelLog').innerHTML = recent.map(d => { const l = d.w === d.a ? d.b : d.a;
     return `<li><time>${when(d.t)}</time><div class="sides"><span class="won">👑 ${esc(d.w)} <span style="color:var(--muted);font-weight:500">이김 vs</span> ${esc(l)}${d.rule && d.rule !== '자유' ? `<span class="rule">${esc(d.rule)}</span>` : ''}</span></div>
-      ${can ? `<button class="btn ghost small" data-duel-del="${esc(d.id)}">삭제</button>` : '<span></span>'}</li>`; }).join('')
+      <span class="shot-btns"><button class="btn ghost small" data-shot="duel" data-id="${esc(d.id)}">이미지</button>${can ? `<button class="btn ghost small" data-duel-del="${esc(d.id)}">삭제</button>` : ''}</span></li>`; }).join('')
     || '<li style="display:block"><p class="empty">아직 기록이 없어요.</p></li>';
 }
 $('#duelPick').addEventListener('click', e => {
@@ -1919,6 +1926,157 @@ $('#gateForm').addEventListener('submit', async e => {
   const nick = await claimNick(v); showGate(false); renderAll(); pull(true);
   if (nick === v) toast(`${v}님, 반가워요!`);
 });
+
+// ---------- 결과 이미지 ----------
+// 경기 결과를 그림 한 장(PNG)으로 그려서 단톡방에 바로 올려요. 버튼에 data-shot="match"(내전) 또는 "duel"(1:1)과 data-id만 달면 여기서 받아요.
+// 폰은 공유 창(카톡으로 사진 보내기), 컴퓨터는 클립보드에 복사(단톡방에 붙여넣기), 둘 다 안 되면 PNG로 저장해요.
+// 화면이 밝은 테마여도 그림은 늘 사이트 기본색(진한 남색 바탕 · 금색 · 블루 · 레드)으로 그려요.
+const SHOT = { bg: '#0c1120', surface: '#151c2e', sunk: '#10172a', ink: '#e9edf7', muted: '#8f9ab3', line: '#263049', blue: '#4c8dff', red: '#ff5468', gold: '#d8b55b', good: '#2ec4a0', bad: '#f08a3c' };
+const SHOT_W = 1080, SHOT_P = 64;
+const shotSite = (document.querySelector('meta[property="og:url"]')?.content || location.origin).replace(/^https?:\/\/|\/$/g, '');
+const shotA = (hex, a) => hex + Math.round(a * 255).toString(16).padStart(2, '0'); // '#4c8dff' + 투명도
+const shotSign = d => d >= 0 ? `+${d}` : `−${-d}`;
+function shotWhen(t) { const d = new Date(t), p2 = n => String(n).padStart(2, '0'); return `${d.getFullYear()}년 ${d.getMonth() + 1}월 ${d.getDate()}일 ${'일월화수목금토'[d.getDay()]}요일 ${p2(d.getHours())}:${p2(d.getMinutes())}`; }
+// 그림에 쓰는 글자의 글꼴 조각을 먼저 받아 둬요(Pretendard·Black Han Sans는 글자 묶음마다 따로 받아요). 안 받으면 기본 글꼴로 그려져요.
+async function shotFonts(texts) {
+  const css = getComputedStyle(document.documentElement), F = { logo: css.getPropertyValue('--logo').trim(), body: css.getPropertyValue('--body').trim() };
+  const all = texts.join('') + '0123456789+−→·…%:';
+  try { await Promise.all([document.fonts.load(`40px ${F.logo}`, '똥겜사랑단 놀이터'), ...[600, 700, 800].map(w => document.fonts.load(`${w} 40px ${F.body}`, all))]); await document.fonts.ready; } catch {}
+  return F;
+}
+function shotRR(g, x, y, w, h, r) { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); }
+function shotCrown(g, x, y, s) { // (x, y) = 왼쪽 아래, s = 너비
+  const h = s * .7; g.fillStyle = SHOT.gold; g.beginPath();
+  g.moveTo(x, y); g.lineTo(x - s * .04, y - h * .78); g.lineTo(x + s * .28, y - h * .42); g.lineTo(x + s * .5, y - h); g.lineTo(x + s * .72, y - h * .42); g.lineTo(x + s * 1.04, y - h * .78); g.lineTo(x + s, y); g.closePath(); g.fill();
+  for (const [cx, cy] of [[x - s * .04, y - h * .78], [x + s * .5, y - h], [x + s * 1.04, y - h * .78]]) { g.beginPath(); g.arc(cx, cy, s * .07, 0, Math.PI * 2); g.fill(); }
+}
+// 바탕·사이트 이름·날짜·이긴 쪽 띠까지 그리고, 글자 쓰는 도구 T(글자, x, y, { s 크기, w 굵기, c 색, a 정렬, max 너비, min 최소 크기 })를 돌려줘요.
+async function shotStart(H, side, sub, label, title, texts) {
+  const F = await shotFonts([sub, label, title, ...texts]), W = SHOT_W, P = SHOT_P, C = SHOT[side];
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  const g = cv.getContext('2d');
+  const T = (s, x, y, o) => {
+    let size = o.s; const fam = o.f === 'logo' ? F.logo : F.body, font = () => g.font = `${o.w || 700} ${size}px ${fam}`;
+    font(); if (o.max) { while (size > (o.min || o.s) && g.measureText(s).width > o.max) { size -= 2; font(); }
+      if (g.measureText(s).width > o.max) { const ch = [...s]; while (ch.length > 1 && g.measureText(ch.join('') + '…').width > o.max) ch.pop(); s = ch.join('') + '…'; } }
+    g.fillStyle = o.c || SHOT.ink; g.textAlign = o.a || 'left'; g.textBaseline = 'alphabetic'; g.fillText(s, x, y);
+    return g.measureText(s).width;
+  };
+  g.fillStyle = SHOT.bg; g.fillRect(0, 0, W, H);
+  const glow = g.createRadialGradient(W / 2, 260, 40, W / 2, 260, 760); glow.addColorStop(0, shotA(C, .26)); glow.addColorStop(1, shotA(C, 0));
+  g.fillStyle = glow; g.fillRect(0, 0, W, H);
+  g.fillStyle = SHOT.gold; g.fillRect(0, 0, W, 10);
+  const lw = T('똥겜사랑단 ', P, 118, { s: 56, w: 400, f: 'logo' }); T('놀이터', P + lw, 118, { s: 56, w: 400, f: 'logo', c: SHOT.gold });
+  T(sub, P, 164, { s: 26, w: 600, c: SHOT.muted, max: W - P * 2 });
+  // 이긴 쪽 띠: 팀 색 바탕에 왕관 + 'OO 승리'
+  const by = 200, bh = 172; shotRR(g, P, by, W - P * 2, bh, 28); g.fillStyle = C; g.fill();
+  const shade = g.createLinearGradient(0, by, 0, by + bh); shade.addColorStop(0, 'rgba(255,255,255,.12)'); shade.addColorStop(1, 'rgba(0,0,0,.28)'); g.fillStyle = shade; g.fill();
+  T(label, W / 2, by + 50, { s: 26, w: 700, c: 'rgba(255,255,255,.85)', a: 'center' });
+  g.font = `800 84px ${F.body}`; const tw = Math.min(g.measureText(title).width, W - P * 2 - 160), cs = 70, x0 = W / 2 - (cs + 22 + tw) / 2;
+  shotCrown(g, x0, by + 132, cs);
+  T(title, x0 + cs + 22, by + 140, { s: 84, w: 800, c: '#fff', max: W - P * 2 - 160, min: 48 });
+  return { cv, g, T };
+}
+function shotFooter({ g, T }, H, left) {
+  g.fillStyle = SHOT.line; g.fillRect(SHOT_P, H - 96, SHOT_W - SHOT_P * 2, 2);
+  T(left, SHOT_P, H - 46, { s: 24, w: 600, c: SHOT.muted, max: 560 });
+  T(shotSite, SHOT_W - SHOT_P, H - 46, { s: 24, w: 700, c: SHOT.gold, a: 'right' });
+}
+function shotPill({ g, T }, s, x, y, fill, color, left) { // 알약 글자: x = 오른쪽 끝(left면 왼쪽 끝), y = 가운데
+  g.font = `800 24px ${getComputedStyle(document.documentElement).getPropertyValue('--body')}`;
+  const w = g.measureText(s).width + 32, xr = left ? x + w : x; shotRR(g, xr - w, y - 21, w, 42, 21);
+  if (fill) { g.fillStyle = fill; g.fill(); } else { g.lineWidth = 2; g.strokeStyle = SHOT.line; g.stroke(); }
+  T(s, xr - w / 2, y + 9, { s: 24, w: 800, c: color, a: 'center' });
+}
+
+// 내전 한 판: 양 팀 선수(라인 순서) · 선수별 MMR 변화. MMR은 그 판 바로 전후로 다시 계산해요(예전 판도 그때 기준).
+async function matchShot(m) {
+  const ord = [...S.matches].sort((a, b) => a.t - b.t), i = ord.indexOf(m);
+  const before = computeStats([], ord.slice(0, i)), after = computeStats([], ord.slice(0, i + 1));
+  const L = m.lanes || {}, hasLane = [...m.blue, ...m.red].some(p => L[p]), rank = p => L[p] ? LANES.indexOf(L[p]) : 9;
+  const rows = side => [...m[side]].sort((a, b) => rank(a) - rank(b)).map(p => { const a = Math.round(mmrOf(before, p)), b = Math.round(mmrOf(after, p)); return { p, lane: L[p] ? LANE[L[p]] : '', b, d: b - a }; });
+  const avg = (st, side) => Math.round(m[side].reduce((s, p) => s + mmrOf(st, p), 0) / (m[side].length || 1));
+  const day = new Date(m.t).toDateString(), nth = ord.slice(0, i + 1).filter(x => new Date(x.t).toDateString() === day).length;
+  const sub = [shotWhen(m.t), S.rooms.find(r => r.id === m.room)?.name, `이날 ${nth}번째 판`].filter(Boolean).join(' · ');
+  const n = Math.max(m.blue.length, m.red.length, 1), W = SHOT_W, P = SHOT_P, gap = 24, colW = (W - P * 2 - gap) / 2, HEAD = 108, ROW = 84;
+  const top = 408, panelH = HEAD + n * ROW + 16, H = top + panelH + 150;
+  const k = await shotStart(H, m.win, sub, '롤 내전 결과', `${TEAM[m.win]} 승리`, [...m.blue, ...m.red, TEAM.blue, TEAM.red, '승리 패배 평균 MMR 탑정글미드원딜서폿 번째 내전']), { g, T } = k;
+  ['blue', 'red'].forEach((side, j) => {
+    const x = P + j * (colW + gap), won = m.win === side, C = SHOT[side];
+    shotRR(g, x, top, colW, panelH, 24); g.fillStyle = SHOT.surface; g.fill();
+    if (won) { g.fillStyle = shotA(C, .13); g.fill(); g.lineWidth = 4; g.strokeStyle = C; } else { g.lineWidth = 2; g.strokeStyle = SHOT.line; }
+    g.stroke();
+    g.globalAlpha = won ? 1 : .78;
+    T(TEAM[side], x + 28, top + 56, { s: 36, w: 800, c: C });
+    shotPill(k, won ? '승리' : '패배', x + colW - 28, top + 44, won ? C : null, won ? '#fff' : SHOT.muted);
+    T(`평균 MMR ${avg(before, side)} → ${avg(after, side)}`, x + 28, top + 92, { s: 22, w: 600, c: SHOT.muted, max: colW - 56 });
+    rows(side).forEach((r, q) => {
+      const ry = top + HEAD + q * ROW;
+      g.fillStyle = SHOT.line; g.fillRect(x + 20, ry, colW - 40, 2);
+      let nx = x + 28;
+      if (hasLane) {
+        if (r.lane) { shotRR(g, nx, ry + 22, 74, 42, 10); g.fillStyle = SHOT.sunk; g.fill(); T(r.lane, nx + 37, ry + 51, { s: 22, w: 800, c: SHOT.gold, a: 'center' }); }
+        nx += 90;
+      }
+      T(r.p, nx, ry + 54, { s: 32, w: 700, max: x + colW - 150 - nx, min: 22 });
+      T(shotSign(r.d), x + colW - 28, ry + 44, { s: 32, w: 800, c: r.d >= 0 ? SHOT.good : SHOT.bad, a: 'right' });
+      T(`MMR ${r.b}`, x + colW - 28, ry + 70, { s: 19, w: 600, c: SHOT.muted, a: 'right' });
+    });
+    g.globalAlpha = 1;
+  });
+  shotFooter(k, H, `${i + 1}번째 내전`);
+  return k.cv;
+}
+
+// 1:1 한 판: 누가 누구를 이겼는지 · 규칙 · 1:1 MMR 변화 · 그때까지 맞대결 전적. 왼쪽(파랑)·오른쪽(빨강)은 기록할 때 자리 그대로예요.
+async function duelShot(d) {
+  const ord = [...S.duels].sort((x, y) => x.t - y.t), i = ord.indexOf(d);
+  const before = duelStats(ord.slice(0, i)).P, after = duelStats(ord.slice(0, i + 1));
+  const loser = d.w === d.a ? d.b : d.a, h = after.H[d.w + '\u0001' + loser] || [1, 1], side = d.w === d.a ? 'blue' : 'red';
+  const sub = shotWhen(d.t), W = SHOT_W, P = SHOT_P, gap = 96, colW = (W - P * 2 - gap) / 2, top = 408, sh = 232, H = top + sh + 236;
+  const h2h = `맞대결 ${d.w} ${h[1]}승 · ${loser} ${h[0] - h[1]}승`;
+  const k = await shotStart(H, side, sub, `롤 1:1 결과${d.rule && d.rule !== '자유' ? ` · ${d.rule}` : ''}`, `${d.w} 승리`, [d.a, d.b, h2h, '승리 패배 1:1 MMR VS 번째']), { g, T } = k;
+  [[d.a, 'blue'], [d.b, 'red']].forEach(([p, s], j) => {
+    const x = P + j * (colW + gap), won = p === d.w, C = SHOT[s];
+    const a = Math.round(before[p]?.mmr ?? 1000), b = Math.round(after.P[p]?.mmr ?? 1000);
+    shotRR(g, x, top, colW, sh, 24); g.fillStyle = won ? C : SHOT.surface; g.fill();
+    if (!won) { g.lineWidth = 3; g.strokeStyle = shotA(C, .7); g.stroke(); g.globalAlpha = .8; }
+    shotPill(k, won ? '승리' : '패배', x + 28, top + 50, won ? 'rgba(0,0,0,.25)' : null, won ? '#fff' : SHOT.muted, true);
+    T(shotSign(b - a), x + colW - 28, top + 62, { s: 40, w: 800, c: won ? '#fff' : SHOT.bad, a: 'right' });
+    T(p, x + 28, top + 150, { s: 52, w: 800, c: won ? '#fff' : SHOT.ink, max: colW - 56, min: 28 });
+    T(`1:1 MMR ${a} → ${b}`, x + 28, top + 200, { s: 24, w: 600, c: won ? 'rgba(255,255,255,.85)' : SHOT.muted, max: colW - 56 });
+    g.globalAlpha = 1;
+  });
+  T('VS', W / 2, top + sh / 2 + 16, { s: 44, w: 800, c: SHOT.gold, a: 'center' });
+  T(h2h, W / 2, top + sh + 72, { s: 28, w: 700, a: 'center', max: W - P * 2 });
+  shotFooter(k, H, `${i + 1}번째 1:1`);
+  return k.cv;
+}
+
+// 공유: 폰은 공유 창, 컴퓨터는 클립보드, 안 되면 저장. 클립보드는 누른 순간에 바로 맡겨야 해서(사파리) 그림은 다 그려지면 채워 넣어요.
+function shareShot(cvP, name) {
+  const blobP = cvP.then(cv => new Promise((ok, no) => cv.toBlob(b => b ? ok(b) : no(new Error('blob')), 'image/png')));
+  const file = `${name}.png`, fail = () => toast('이미지를 만들지 못했어요. 잠시 후 다시 눌러 주세요.');
+  const save = () => blobP.then(b => {
+    const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = file; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000); toast('결과 이미지를 PNG로 저장했어요.');
+  }).catch(fail);
+  const phone = matchMedia('(pointer: coarse)').matches && navigator.canShare?.({ files: [new File([''], file, { type: 'image/png' })] });
+  if (phone) return blobP.then(b => navigator.share({ files: [new File([b], file, { type: 'image/png' })] }))
+    .then(() => toast('결과 이미지를 보냈어요.'), e => e?.name === 'AbortError' ? toast('공유를 취소했어요.') : save());
+  if (navigator.clipboard?.write && window.ClipboardItem) return navigator.clipboard.write([new ClipboardItem({ 'image/png': blobP })])
+    .then(() => toast('결과 이미지를 복사했어요. 단톡방에 붙여넣으세요.'), () => save());
+  save();
+}
+// 버튼을 먼저 받아서(capture) 방장 확인 같은 다른 클릭 처리로 넘어가지 않게 해요. 구경하는 사람도 만들 수 있어요.
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-shot]'); if (!b) return;
+  e.stopPropagation();
+  const duel = b.dataset.shot === 'duel', x = (duel ? S.duels : S.matches).find(r => r.id === b.dataset.id);
+  if (!x) return toast('그 기록을 찾을 수 없어요. 지워졌을 수 있어요.');
+  const d = new Date(x.t), p2 = n => String(n).padStart(2, '0');
+  shareShot(duel ? duelShot(x) : matchShot(x), `${duel ? '1대1' : '내전'}-결과-${d.getFullYear()}${p2(d.getMonth() + 1)}${p2(d.getDate())}-${p2(d.getHours())}${p2(d.getMinutes())}`);
+}, true);
 
 // ---------- 버전 · 패치노트 ----------
 // 커밋해서 올릴 때마다 맨 위에 새 항목을 더해요(규칙은 CLAUDE.md). 오른쪽 위 버전은 맨 위 항목이에요.
