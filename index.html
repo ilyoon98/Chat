@@ -239,7 +239,18 @@ td.num, th.num { text-align: right; }
 .pcard .ph small { margin-left: auto; color: var(--muted); font-weight: 500; font-size: 12px; }
 .pcard dl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 3px 10px; margin: 0; }
 .pcard dt { color: var(--muted); white-space: nowrap; } .pcard dd { margin: 0; min-width: 0; }
-.pcard .champs { flex-wrap: wrap; gap: 4px 8px; } .pcard .champs span { display: inline-flex; gap: 4px; align-items: center; white-space: nowrap; }
+.pcard .w { color: var(--good); font-weight: 700; } .pcard .l { color: var(--bad); font-weight: 700; }
+.pcard dd .tier { width: 18px; height: 18px; margin-right: 3px; vertical-align: -4px; }
+.pcard .lanes { display: inline-flex; flex-wrap: wrap; gap: 2px 10px; } .pcard .lanes span { display: inline-flex; gap: 4px; align-items: center; white-space: nowrap; }
+.laneic { width: 16px; height: 16px; flex: none; }
+@media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) .laneic { filter: invert(.8); } }
+:root[data-theme="light"] .laneic { filter: invert(.8); }
+/* 모스트·숙련도: 아이콘 | 이름 | 판수 | 승률(숙련도는 점수) 칸을 나눠서 */
+.pcard .sec { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); }
+.pcard .sec h4 { margin: 0 0 4px; font-size: 12px; color: var(--muted); font-weight: 500; }
+.cgrid { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto auto; gap: 4px 10px; align-items: center; }
+.cgrid.m { grid-template-columns: 20px minmax(0, 1fr) auto; }
+.cgrid .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .cgrid .num { text-align: right; font-variant-numeric: tabular-nums; }
 .pcard .hint { margin: 6px 0 0; color: var(--muted); font-size: 12px; }
 .gate { position: fixed; inset: 0; z-index: 60; background: var(--bg); display: grid; place-items: center; padding: 16px; overflow-y: auto; }
 .gate-card { width: min(100%, 400px); display: grid; gap: 12px; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 24px 20px; }
@@ -310,15 +321,11 @@ body.gated { overflow: hidden; }
         <input id="addInput" type="text" placeholder="이름 추가 (쉼표로 여러 명: 철수, 영희)" autocomplete="off" maxlength="300">
         <button class="btn" type="submit">추가</button>
       </form>
-      <div class="row" style="margin-top:10px">
-        <button class="btn ghost small" id="selAll">전체 선택</button>
-        <button class="btn ghost small" id="selNone">선택 해제</button>
-      </div>
       <p class="note" id="rosterNote"></p>
     </div>
 
     <div class="card" id="playCard">
-      <h2>오늘 할 사람 <span class="r" id="selCount"></span></h2>
+      <h2>오늘 할 사람 <span class="r"><span id="selCount"></span> <button class="btn ghost small" id="selNone">선택 해제</button></span></h2>
       <div class="chips today" id="today"></div>
       <div class="row" id="shuffleRow">
         <div class="seg" role="group" aria-label="섞는 방식">
@@ -672,10 +679,19 @@ function soloText(p, short) {
 // 주 라인·모스트는 최근 협곡 20판(솔랭·자랭·일반)으로 서버가 세어 둬요: n(판 수), lanes, most [[챔피언, 판, 승]], q [솔랭, 자랭, 일반]
 const LANE = { TOP: '탑', JUNGLE: '정글', MIDDLE: '미드', BOTTOM: '원딜', UTILITY: '서폿' };
 // '미드 60% · 정글 25%' (두 번째 라인은 25% 이상일 때만). short면 '미드·정글'.
+const laneTop = p => { const r = S.riot[p]; return !r?.n ? [] : Object.entries(r.lanes || {}).sort((a, b) => b[1] - a[1]).filter(([, n], i) => i === 0 || (i === 1 && n / r.n >= .25)); };
 function laneText(p, short) {
-  const r = S.riot[p]; if (!r?.n) return '';
-  const top = Object.entries(r.lanes || {}).sort((a, b) => b[1] - a[1]).filter(([, n], i) => i === 0 || (i === 1 && n / r.n >= .25));
-  return top.map(([k, n]) => short ? LANE[k] : `${LANE[k]} ${pct(n, r.n)}%`).join(short ? '·' : ' · ');
+  const r = S.riot[p];
+  return laneTop(p).map(([k, n]) => short ? LANE[k] : `${LANE[k]} ${pct(n, r.n)}%`).join(short ? '·' : ' · ');
+}
+// 라인 아이콘은 CommunityDragon(롤 클라이언트 이미지를 모아 둔 곳)의 포지션 아이콘을 써요.
+const LANE_IC = 'https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-clash/global/default/assets/images/position-selector/positions/icon-position-';
+const LANE_FILE = { TOP: 'top', JUNGLE: 'jungle', MIDDLE: 'middle', BOTTOM: 'bottom', UTILITY: 'utility' };
+const laneIcon = k => `<img class="laneic" src="${LANE_IC}${LANE_FILE[k]}.png" alt="" width="16" height="16" loading="lazy">`;
+// 솔랭 티어 엠블럼: 내전 티어와 같은 모양에 실제 솔랭 티어 색을 입혀요. 언랭이면 없음.
+function soloIcon(p) {
+  const s = S.riot[p]?.solo, c = s && EMBLEM[RIOT_TIER[s.tier]];
+  return c ? `<svg class="tier" style="--w:${c[0]};--g:${c[1]}" aria-hidden="true"><use href="#emblem"/></svg>` : '';
 }
 // 챔피언 이름·아이콘은 Data Dragon(라이엇 공식 CDN, 키 필요 없음)에서 받아요. 같은 버전이면 이 기기에 저장해 둔 걸 써요.
 const DD = 'https://ddragon.leagueoflegends.com';
@@ -707,18 +723,22 @@ const mastIcons = p => (S.riot[p]?.mast || []).map(([c, lv, pts]) => champIcon(c
 // 마우스를 올리거나 키보드로 고르면 내전 기록과 롤 정보를 카드로 보여줘요. 폰은 표에서 이름을 누르면 열려요.
 function playerCard(p) {
   const st = computeStats(S.players, S.matches), s = st.P[p], T = tierMap(st)[p], x = computeStats([], roomMatches()).P[p];
-  const r = S.riot[p], item = (c, text) => `<span>${champIcon(c)}${esc(champName(c))} ${text}</span>`;
-  const rows = [['내전', s?.g ? `${s.g}판 ${s.w}승 ${s.g - s.w}패 · <b>${pct(s.w, s.g)}%</b> · MMR ${Math.round(s.mmr)}` : '아직 기록 없음']];
-  if (x?.g) rows.push(['이 방', `${x.w}승 ${x.g - x.w}패`]);
+  const r = S.riot[p], wl = (w, l) => `<span class="w">${w}승</span> <span class="l">${l}패</span>`;
+  const rows = [['내전', s?.g ? `${wl(s.w, s.g - s.w)} · <b>${pct(s.w, s.g)}%</b> · MMR ${Math.round(s.mmr)}` : '아직 기록 없음']];
+  if (x?.g) rows.push(['이 방', wl(x.w, x.g - x.w)]);
   if (r) {
-    rows.push(['솔랭', `<b>${esc(soloText(p))}</b>${r.solo ? ` · ${r.solo.w}승 ${r.solo.l}패` : ''}`]);
-    if (r.n) rows.push(['주 라인', `<b>${esc(laneText(p))}</b> · 최근 ${r.n}판`]);
-    if (r.most?.length) rows.push(['모스트', `<span class="champs">${r.most.map(([c, g, w]) => item(c, `${g}판 ${pct(w, g)}%`)).join('')}</span>`]);
-    if (r.mast?.length) rows.push(['숙련도', `<span class="champs">${r.mast.map(([c, , pts]) => item(c, `${man(pts)}점`)).join('')}</span>`]);
+    rows.push(['솔랭', `${soloIcon(p)}<b>${esc(soloText(p))}</b>${r.solo ? ` · ${wl(r.solo.w, r.solo.l)}` : ''}`]);
+    if (r.n) rows.push(['주 라인', `<span class="lanes">${laneTop(p).map(([k, n]) => `<span>${laneIcon(k)}<b>${LANE[k]}</b> ${pct(n, r.n)}%</span>`).join('')}</span>`]);
   }
-  return `<div class="ph">${tierIcon(T)}${esc(p)}<small>${T ? esc(T.name) : ''}</small></div>
-    <dl>${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl>
-    <p class="hint">${r ? `${esc(r.id)} · ${ago(r.at)} 불러옴${r.gAt ? '' : ' · 최근 판 불러오는 중'}` : 'Riot ID를 연결하면 솔랭·주 라인·모스트도 보여요 (명단 편집)'}</p>`;
+  // 모스트·숙련도는 칸을 나눈 표로: 아이콘 | 이름 | 판수 | 승률, 숙련도는 아이콘 | 이름 | 점수
+  const cname = c => `<span class="nm">${esc(champName(c))}</span>`;
+  const most = r?.most?.length ? `<div class="sec"><h4>모스트</h4><div class="cgrid">${r.most.map(([c, g, w]) =>
+    `${champIcon(c) || "<span></span>"}${cname(c)}<span class="num">${g}판</span><span class="num ${pct(w, g) >= 50 ? 'w' : 'l'}">${pct(w, g)}%</span>`).join('')}</div></div>` : '';
+  const mast = r?.mast?.length ? `<div class="sec"><h4>숙련도</h4><div class="cgrid m">${r.mast.map(([c, , pts]) =>
+    `${champIcon(c) || "<span></span>"}${cname(c)}<span class="num">${man(pts)}점</span>`).join('')}</div></div>` : '';
+  return `<div class="ph">${tierIcon(T)}${esc(p)}<small>${T ? `내전 ${esc(T.name)}` : ''}</small></div>
+    <dl>${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl>${most}${mast}
+    <p class="hint">${r ? esc(r.id) + (r.gAt ? '' : ' · 최근 판 불러오는 중') : 'Riot ID를 연결하면 솔랭·주 라인·모스트도 보여요 (명단 편집)'}</p>`;
 }
 let cardFor = null, cardTimer;
 function showCard(el) {
@@ -783,7 +803,6 @@ function renderRoster() {
   };
   if (!roster) S.editing = false;
   $('#addForm').hidden = !roster; $('#editToggle').hidden = !roster || S.editing;
-  $('#selAll').hidden = $('#selNone').hidden = !host;
   $('#shuffleRow').hidden = $('#modeNote').hidden = !host;
   $('#playCard').hidden = !S.room;
   // 위에서 아래로: 명단에서 누른 사람은 아래 '오늘 할 사람' 칸으로 내려가요(고른 순서대로). 편집할 땐 명단 전체를 보여요.
@@ -796,6 +815,7 @@ function renderRoster() {
   const n = today.length;
   $('#selCount').textContent = `${n}명` + (n >= 2 ? ` · ${Math.ceil(n / 2)} 대 ${Math.floor(n / 2)}` : '');
   $('#shuffle').disabled = n < 2;
+  $('#selNone').hidden = !host || !n; // 오늘 할 사람이 있을 때만, 방장에게만
   // 편집 중엔 위에 금색 띠(무엇을 하는지 + 편집 끝), 아니면 제목 옆 '명단 편집' 버튼
   $('#editBar').innerHTML = S.editing ? `<div class="editbar"><span class="msg"><b>✎ 명단 편집 중</b> · 고칠 사람을 누르세요</span>
     ${Object.keys(S.riot).length ? '<button class="btn ghost small" id="riotRefresh">롤 정보 새로고침</button>' : ''}<button class="btn gold" id="editDone">편집 끝</button></div>` : '';
@@ -892,7 +912,6 @@ $('#addForm').addEventListener('submit', e => {
   $('#addInput').value = ''; renderAll(); toast(`${names.length}명을 명단에 넣었어요. ↓를 누르면 오늘 할 사람으로 내려가요.`);
   rosterAction('addPlayers', { names });
 });
-$('#selAll').onclick = () => { if (!needHost()) return; const add = S.players.filter(p => !S.selected.has(p)); add.forEach(p => S.selected.add(p)); renderRoster(); syncSelect(add, true); };
 $('#selNone').onclick = () => { if (!needHost()) return; const off = [...S.selected]; S.selected.clear(); renderRoster(); syncSelect(off, false); };
 $('#editToggle').onclick = () => { if (!S.editing && !needRoster()) return; S.editing = !S.editing; S.editTarget = null; renderRoster(); };
 
