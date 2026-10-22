@@ -356,6 +356,7 @@ body.gated { overflow: hidden; }
 </div>
 <div class="toast" id="toast" hidden></div>
 
+<script src="https://cdn.jsdelivr.net/npm/ably@2.29.0/build/ably.min.js" id="ablyLib" async></script>
 <script>
 const $ = s => document.querySelector(s);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -465,6 +466,7 @@ function applyServer(d) {
   if (Array.isArray(d.players)) S.players = d.players.filter(p => typeof p === 'string');
   if (Array.isArray(d.matches)) S.matches = d.matches.filter(validMatch);
   if (d.riot && typeof d.riot === 'object') S.riot = d.riot;
+  if (d.ably) connectAbly(d.ably);
   if (Array.isArray(d.rooms)) {
     S.rooms = d.rooms;
     if (S.room && !d.rooms.some(r => r.id === S.room)) { leaveRoom(); return; } // 들어가 있던 방이 닫혔어요
@@ -476,24 +478,63 @@ function applyServer(d) {
   // 오늘 할 사람: 내가 누른 게 아직 저장 중이면 화면에 보이는 내 선택을 그대로 둬요 (끝나면 syncSelect가 맞춰요)
   if (Array.isArray(rs.selected) && !selPending) S.selected = new Set(rs.selected.filter(p => typeof p === 'string'));
 }
-// 5초마다 새 기록을 확인하고, 세 번에 한 번(15초)은 "이 방을 보고 있어요" 신호도 같이 보내요.
+// ---------- 실시간 (Ably) ----------
+// 서버가 Ably를 쓰면(d.ably = 채널 앞이름) 연결해요. 방장이 뭔가 바꾸면 서버가 '바뀜' 신호를 쏘고, 그때만 새로 받아 가요.
+// 방에 누가 보고 있는지도 Ably가 알려 줘요(presence). 연결이 안 되면 예전처럼 5초마다 물어봐요.
+let rt = null, rtNs = null, rtRoom = null, rtNick = null;
+const live = () => rt?.connection.state === 'connected';
+function connectAbly(ns) {
+  if (rt) return;
+  if (!window.Ably) { $('#ablyLib').addEventListener('load', () => connectAbly(ns), { once: true }); return; } // 라이브러리를 못 받으면 계속 물어보기로
+  rtNs = ns;
+  rt = new Ably.Realtime({ authUrl: `/api/data?ably=token&me=${ME.id}`, clientId: ME.id });
+  rt.channels.get(`${ns}:all`).subscribe('changed', m => { if (m.data?.ver !== ver) pull(); });
+  let wasLive = false;
+  rt.connection.on(ch => {
+    if (ch.current === 'connected') { syncPresence(); if (wasLive) pull(); wasLive = true; } // 끊겼다 다시 붙으면 그 사이 바뀐 걸 받아요
+    if (ch.current === 'connected' || ch.previous === 'connected') startSync.reschedule?.(); // 확인 간격이 바뀌어요
+  });
+}
+// 지금 들어가 있는 방 채널에 '보고 있어요'(닉네임)를 올리고, 다른 사람이 들어오고 나갈 때마다 목록을 새로 그려요.
+function syncPresence() {
+  if (!rt) return;
+  const want = S.room && ME.nick ? S.room : null, chan = r => rt.channels.get(`${rtNs}:room:${r}`);
+  if (rtRoom !== want) {
+    if (rtRoom) { const old = chan(rtRoom); old.presence.unsubscribe(); old.presence.leave().catch(() => {}); old.detach().catch(() => {}); }
+    rtRoom = want; rtNick = null; S.presence = [];
+    if (!want) return;
+    chan(want).presence.subscribe(async () => {
+      const ms = await chan(want).presence.get().catch(() => null);
+      if (!ms || rtRoom !== want) return;
+      S.presence = ms.sort((a, b) => a.timestamp - b.timestamp).map(m => ({ id: m.clientId, nick: String(m.data?.nick || '?') }));
+      renderRoomBar();
+    });
+  }
+  if (rtRoom && rtNick !== ME.nick) { const p = chan(rtRoom).presence; (rtNick ? p.update({ nick: ME.nick }) : p.enter({ nick: ME.nick })).catch(() => {}); rtNick = ME.nick; }
+}
+
+// Ably가 안 될 때: 5초마다 새 기록을 확인하고, 세 번에 한 번(15초)은 "이 방을 보고 있어요" 신호도 같이 보내요.
 // 화면을 한동안 안 만지면 확인 간격을 늘려서 무료 사용량(Upstash·Vercel)을 아껴요. 만지면 바로 확인하고 5초로 돌아와요.
+// Ably가 연결돼 있으면 신호가 오니까 2분마다(혹시 놓친 게 있을까 봐) 한 번만 확인해요.
 const POLL = [[5 * 6e4, 5e3], [30 * 6e4, 30e3], [Infinity, 5 * 6e4]]; // [안 만진 지 이만큼까지, 이 간격으로 확인]
+const LIVE_POLL = 2 * 6e4;
 let pulls = 0, lastInput = Date.now();
-const pollGap = () => POLL.find(([idle]) => Date.now() - lastInput < idle)[1];
+const idleGap = () => POLL.find(([idle]) => Date.now() - lastInput < idle)[1];
+const pollGap = () => live() ? Math.max(LIVE_POLL, idleGap()) : idleGap();
 async function pull(beat) {
   const w = writes, q = new URLSearchParams();
   if (ver != null) q.set('v', ver);
   if (S.room) q.set('room', S.room);
-  // 느리게 확인하는 동안은 '자리 비움'이라 보고 있다는 신호를 안 보내요. 방장은 자리를 지키도록 매번 보내요(10분 끊기면 방장 자리가 비어요).
-  const idle = pollGap() > POLL[0][1];
-  if (S.room && ME.nick && (beat || (idle ? isHost() : pulls++ % 3 === 0))) { q.set('hb', 1); q.set('me', ME.id); q.set('nick', ME.nick); if (isHost()) q.set('host', 1); }
+  // 보고 있다는 신호: Ably가 연결돼 있으면 방장만(방장 자리 지키기, 10분 끊기면 비어요) 보내요.
+  // 느리게 확인하는 동안은 '자리 비움'이라 안 보내고, 방장은 자리를 지키도록 매번 보내요.
+  const idle = idleGap() > POLL[0][1];
+  if (S.room && ME.nick && (beat || (live() || idle ? isHost() : pulls++ % 3 === 0))) { q.set('hb', 1); q.set('me', ME.id); q.set('nick', ME.nick); if (isHost()) q.set('host', 1); }
   try {
     const res = await fetch('/api/data?' + q, { cache: 'no-store' });
     if (res.status === 503) return setBadge('nodb');
     if (!res.ok) throw new Error(String(res.status));
     const d = await res.json();
-    if (d.presence) { S.presence = d.presence; renderRoomBar(); }
+    if (d.presence && !live()) { S.presence = d.presence; renderRoomBar(); } // Ably가 연결돼 있으면 보고 있는 사람은 Ably가 알려 줘요
     if (d.same) return setBadge('online');
     if (w !== writes) return; // 받는 사이에 저장한 게 있으면 이 응답은 낡았어요
     applyServer(d); saveLocal(); renderAll();
@@ -524,9 +565,9 @@ async function addMatch(m) { const d = await api('addMatch', { match: m }); retu
 async function deleteMatch(id) { await api('deleteMatch', { id }); }
 function startSync() {
   let timer;
-  const schedule = () => { clearTimeout(timer); timer = setTimeout(() => { if (document.visibilityState === 'visible') pull(); schedule(); }, pollGap()); };
+  const schedule = startSync.reschedule = () => { clearTimeout(timer); timer = setTimeout(() => { if (document.visibilityState === 'visible') pull(); schedule(); }, pollGap()); };
   // 느리게 확인하던 중에 다시 만지면 바로 확인해서, 그 사이 바뀐 걸 기다리지 않고 보여줘요.
-  const wake = () => { const was = pollGap(); lastInput = Date.now(); if (was > POLL[0][1]) { pull(true); schedule(); } };
+  const wake = () => { const was = idleGap(); lastInput = Date.now(); if (was > POLL[0][1]) { pull(true); schedule(); } };
   for (const ev of ['pointerdown', 'pointermove', 'keydown', 'wheel', 'touchstart']) addEventListener(ev, wake, { passive: true });
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { lastInput = Date.now(); pull(true); schedule(); } });
   pull(); schedule();
@@ -1285,7 +1326,8 @@ $('#roomCard').addEventListener('click', async e => {
   renderAll();
 });
 
-function renderAll() { renderRoomBar(); renderRoster(); renderTeams(); renderSession(); renderStats(); renderAnalysis(); renderLog(); }
+// 방을 옮기거나 닉네임을 바꾸면 화면을 다시 그리니까, 여기서 Ably '보고 있어요'도 같이 맞춰요(바뀐 게 없으면 아무것도 안 해요).
+function renderAll() { syncPresence(); renderRoomBar(); renderRoster(); renderTeams(); renderSession(); renderStats(); renderAnalysis(); renderLog(); }
 
 // 닉네임이 없으면 입장 화면부터. 정하면 바로 방 신호를 보내서 '구경 중'에 이름이 떠요.
 function showGate(on) {

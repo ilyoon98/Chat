@@ -1,4 +1,5 @@
 import { Redis } from '@upstash/redis';
+import { createHmac, randomBytes } from 'node:crypto';
 
 // Vercel Marketplace의 Upstash Redis를 연결하면 아래 환경변수가 자동으로 들어와요.
 const url = process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL;
@@ -176,7 +177,7 @@ async function readState(room) {
   const [players, matches, ver, riot, rooms] = await Promise.all([readPlayers(), readMatches(), redis.get(K.ver), readRiot(), readRooms()]);
   const r = rooms.find(x => x.id === room);
   const roomState = r ? { id: r.id, selected: await readSelected(r.id), current: (await redis.get(RK.cur(r.id))) || null } : null;
-  return { players, matches, riot, rooms, room: roomState, ver: Number(ver) || 0 };
+  return { players, matches, riot, rooms, room: roomState, ver: Number(ver) || 0, ably: ABLY_NS };
 }
 // 지금 보고 있다는 신호(15초마다). 멤버는 "기기id|닉네임"이고, 방장이면 방장 신호 시각도 남겨요.
 async function heartbeat(room, me, nick, claimsHost) {
@@ -198,6 +199,32 @@ async function heartbeat(room, me, nick, claimsHost) {
   return [...seen.values()].sort((a, b) => a.at - b.at).map(({ id, nick }) => ({ id, nick }));
 }
 
+// ---------- Ably (바뀌면 신호 쏘기 · 보고 있는 사람) ----------
+// ABLY_API_KEY가 있으면 기록이 바뀔 때마다 '바뀜' 신호를 쏴요. 화면들은 계속 물어보지 않고 신호가 올 때만 새로 받아 가요.
+// 채널 이름 앞에 배포 환경을 붙여서, 내 컴퓨터에서 시험한 신호가 실제 사이트로 가지 않게 해요.
+const ABLY_KEY = process.env.ABLY_API_KEY;
+const ABLY_NS = ABLY_KEY ? `ddong-${process.env.VERCEL_ENV || 'local'}` : null;
+async function ablyPublish(ver) {
+  if (!ABLY_KEY) return;
+  try {
+    const r = await fetch(`https://rest.ably.io/channels/${encodeURIComponent(`${ABLY_NS}:all`)}/messages`, {
+      method: 'POST',
+      headers: { authorization: 'Basic ' + Buffer.from(ABLY_KEY).toString('base64'), 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'changed', data: { ver } }),
+    });
+    if (!r.ok) console.error('ably publish', r.status, await r.text());
+  } catch (e) { console.error('ably publish', e); } // 신호가 실패해도 저장은 끝났어요. 화면은 2분마다 직접 확인해요.
+}
+// 화면에 주는 Ably 토큰 요청(1시간, 끝나면 화면이 다시 받아요). 이 기기 id로만 쓸 수 있고,
+// 전체 채널은 듣기만, 방 채널은 듣기·'보고 있어요' 표시만 돼요. 키 자체는 서버에만 있어요.
+function ablyTokenRequest(clientId) {
+  const [keyName, secret] = ABLY_KEY.split(':');
+  const capability = JSON.stringify({ [`${ABLY_NS}:all`]: ['subscribe'], [`${ABLY_NS}:room:*`]: ['presence', 'subscribe'] });
+  const tr = { keyName, ttl: 36e5, capability, clientId, timestamp: Date.now(), nonce: randomBytes(8).toString('hex') };
+  tr.mac = createHmac('sha256', secret).update([tr.keyName, tr.ttl, tr.capability, tr.clientId, tr.timestamp, tr.nonce, ''].join('\n')).digest('base64');
+  return tr;
+}
+
 // RECORD_PIN 환경변수를 넣으면 기록·수정할 때 비밀번호가 필요해요. 안 넣으면 누구나 기록 가능.
 function pinOk(req) {
   const pin = process.env.RECORD_PIN;
@@ -212,9 +239,14 @@ export default async function handler(req, res) {
   if (!redis) return res.status(503).json({ error: 'no_db' });
   try {
     if (req.method === 'GET') {
-      // 화면은 5초마다 물어봐요. 바뀐 게 없으면 Redis 명령 1번으로 끝내서 무료 한도를 아껴요.
-      // 15초마다 한 번은 hb=1로 '보고 있어요' 신호를 같이 보내고, 그 방에 지금 누가 있는지 받아 가요.
+      // Ably가 켜져 있으면 화면은 '바뀜' 신호가 올 때와 2분마다 한 번만 물어봐요. 꺼져 있으면 5초마다 물어봐요.
+      // 바뀐 게 없으면 Redis 명령 1번으로 끝내서 무료 한도를 아껴요.
+      // hb=1이면 '보고 있어요' 신호예요(Ably를 쓰면 방장 자리 지키기용으로 방장만 보내요).
       const q = new URL(req.url, 'http://local').searchParams, v = q.get('v'), room = cleanId(q.get('room'));
+      if (q.get('ably') === 'token') {
+        const me = cleanId(q.get('me'));
+        return ABLY_KEY && me ? res.status(200).json(ablyTokenRequest(me)) : bad(res);
+      }
       const me = cleanId(q.get('me')), nick = cleanName(q.get('nick'));
       const presence = q.get('hb') && room && me && nick ? await heartbeat(room, me, nick, q.get('host') === '1') : undefined;
       if (v !== null) {
@@ -387,8 +419,10 @@ export default async function handler(req, res) {
       default:
         return bad(res);
     }
-    if (!dup) await redis.incr(K.ver);
-    return res.status(200).json({ id, dup, refreshed, more, ...(await readState(roomId)) });
+    // 바뀌었으면 버전을 올리고 Ably로 '바뀜' 신호를 쏴요(새 상태를 읽는 동안 같이).
+    const newVer = dup ? null : await redis.incr(K.ver);
+    const [state] = await Promise.all([readState(roomId), newVer != null && ablyPublish(newVer)]);
+    return res.status(200).json({ id, dup, refreshed, more, ...state });
   } catch (e) {
     if (e instanceof RiotError) return res.status(424).json({ error: e.code });
     console.error(e);
