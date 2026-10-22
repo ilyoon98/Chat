@@ -7,7 +7,7 @@
 <!-- 탭 아이콘 · 링크 붙였을 때 미리보기(카톡·디스코드는 이미지 주소가 https://로 시작해야 보여요) -->
 <meta name="description" content="우리끼리 하는 게임 기록을 모아 두는 곳이에요.">
 <meta name="theme-color" content="#0c1120">
-<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/favicon.svg?v=2" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="똥겜사랑단 놀이터">
@@ -1625,6 +1625,9 @@ $('#gateForm').addEventListener('submit', async e => {
 // ---------- 버전 · 패치노트 ----------
 // 커밋해서 올릴 때마다 맨 위에 새 항목을 더해요(규칙은 CLAUDE.md). 오른쪽 위 버전은 맨 위 항목이에요.
 const NOTES = [
+  { v: '1.3.2', d: '2026-10-22', items: [
+    '탭 아이콘을 노란 바탕에 D 두 개 겹친 모양으로 바꿨어요. 탭이 여러 개 열려 있어도 금방 찾을 수 있어요.',
+  ] },
   { v: '1.3.1', d: '2026-10-22', items: [
     '게임 탭 이름을 "롤 내전 기록"에서 "롤 내전"으로 줄였어요.',
     '내전·전적·분석·기록 탭 오른쪽에 생기던 스크롤바를 없앴어요.',

@@ -54,8 +54,9 @@ http.createServer(async (req, res) => {
     return handler(req, res);
   }
   // 아이콘·미리보기 이미지
-  const image = { '/favicon.svg': 'image/svg+xml', '/apple-touch-icon.png': 'image/png', '/og.png': 'image/png' }[req.url];
-  if (image) { res.setHeader('content-type', image); return res.end(await readFile(new URL('.' + req.url, import.meta.url))); }
+  const path = req.url.split('?')[0]; // favicon.svg?v=2처럼 뒤에 붙은 건 빼고 봐요
+  const image = { '/favicon.svg': 'image/svg+xml', '/apple-touch-icon.png': 'image/png', '/og.png': 'image/png' }[path];
+  if (image) { res.setHeader('content-type', image); return res.end(await readFile(new URL('.' + path, import.meta.url))); }
   res.setHeader('content-type', 'text/html; charset=utf-8');
   res.end(await readFile(new URL('./index.html', import.meta.url)));
 }).listen(port, () => console.log(`http://localhost:${port}`));
