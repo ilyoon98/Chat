@@ -474,8 +474,6 @@ body.gated { overflow: hidden; }
 .tmopt { display: flex; flex-direction: column; gap: 4px; }
 .tg { font-size: 15px; line-height: 1; padding: 5px 7px; border-radius: 8px; border: 1px solid var(--line); background: var(--sunk); cursor: pointer; opacity: .45; }
 .tg.on { opacity: 1; border-color: var(--gold); background: color-mix(in srgb, var(--gold) 22%, var(--surface)); }
-.tm-h { margin: 16px 0 8px; font-size: 13px; color: var(--muted); }
-.tm-objs { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; }
 @media (max-width: 520px) { .tmrow { grid-template-columns: 48px minmax(0, 1fr) minmax(0, 1fr) auto; gap: 6px; } .tml b { font-size: 13px; } .tmbtn { padding: 9px 8px; } }
 /* 토너먼트 대진표: 라운드마다 한 칸(가로로 넘기기), 판마다 두 줄(누르면 그쪽이 이겨요) */
 .tform { display: grid; grid-template-columns: auto minmax(0, 1fr) auto minmax(0, 1fr); gap: 8px 10px; align-items: center; }
@@ -720,7 +718,8 @@ li.match.picked { outline: 2px solid var(--bad); outline-offset: -2px; }
     <div id="tournList"></div>
   </section>
 
-  <!-- 인게임 타이머: 게임하는 동안 옆에 켜 두는 보드. 상대 스펠·오브젝트 시간을 같은 보드를 연 친구들과 같이 봐요. -->
+  <!-- 인게임 타이머: 게임하는 동안 옆에 켜 두는 보드. 상대 스펠 시간을 같은 보드를 연 친구들과 같이 봐요.
+       드래곤·바론 같은 오브젝트 시간은 게임 안에서도 보여서 뺐어요(v1.22.1). -->
   <section class="game" id="g-timer" role="tabpanel" aria-labelledby="game-timer" hidden>
     <div class="card">
       <h2>인게임 타이머 <span class="r" id="tmClock"></span></h2>
@@ -728,8 +727,6 @@ li.match.picked { outline: 2px solid var(--bad); outline-offset: -2px; }
       <p class="note" id="tmNote"></p>
       <div class="row tm-top" id="tmTop"></div>
       <div id="tmRows"></div>
-      <h3 class="tm-h">오브젝트</h3>
-      <div class="tm-objs" id="tmObjs"></div>
     </div>
   </section>
 
@@ -2596,7 +2593,6 @@ function renderAll() { syncPresence(); renderSeasonPick(); renderRoomBar(); rend
 const SPELLS = { flash: ['점멸', '플', 300], tp: ['순간이동', '텔', 360], ignite: ['점화', '점화', 180], exhaust: ['탈진', '탈진', 240], cleanse: ['정화', '정화', 240],
   heal: ['회복', '힐', 240], barrier: ['방어막', '베리어', 180], ghost: ['유체화', '유체', 240], smite: ['강타', '강타', 90] };
 const LANE_SPELLS = { TOP: ['flash', 'tp'], JUNGLE: ['flash', 'smite'], MIDDLE: ['flash', 'ignite'], BOTTOM: ['flash', 'heal'], UTILITY: ['flash', 'exhaust'] };
-const OBJS = { drake: ['드래곤', 300], baron: ['바론', 360], elder: ['장로', 360], inhib: ['억제기', 300] };
 const nowS = () => Date.now() + (S.skew || 0);
 const mmss = sec => `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, '0')}`;
 const cdOf = (sp, row) => Math.round(SPELLS[sp][2] * 100 / (100 + (row.b ? 10 : 0) + (row.c ? 18 : 0)));
@@ -2620,7 +2616,7 @@ function renderTimer() {
   if (document.activeElement?.closest?.('#g-timer select, #g-timer input')) return; // 고르거나 적는 중엔 그대로 둬요
   const side = tmSide(), bd = tmBoard(), now = nowS();
   document.querySelectorAll('#tmBoard [data-tb]').forEach(b => b.setAttribute('aria-pressed', b.dataset.tb === side));
-  if (!S.room) { $('#tmNote').textContent = '맨 위 방 줄에서 방에 먼저 들어가 주세요. 같은 방에서 같은 보드를 연 친구들과 타이머를 같이 봐요.'; $('#tmTop').innerHTML = $('#tmRows').innerHTML = $('#tmObjs').innerHTML = ''; return; }
+  if (!S.room) { $('#tmNote').textContent = '맨 위 방 줄에서 방에 먼저 들어가 주세요. 같은 방에서 같은 보드를 연 친구들과 타이머를 같이 봐요.'; $('#tmTop').innerHTML = $('#tmRows').innerHTML = ''; return; }
   $('#tmNote').textContent = side === 'solo' ? '솔랭·일반: 같이 큐 돌리는 친구들끼리 상대 스펠을 같이 봐요.' : `${TEAM[side]} 보드: 우리 팀끼리 상대 팀 스펠을 같이 봐요. 상대 팀은 자기 보드를 따로 써요.`;
   const start = Number(bd.start) || 0;
   $('#tmTop').innerHTML = (start ? `<button class="btn small" id="tmCopy">채팅용 복사</button><label class="note" style="margin:0">게임 시간 맞추기 <input id="tmSet" type="text" inputmode="numeric" placeholder="12:30"></label>`
@@ -2633,10 +2629,6 @@ function renderTimer() {
       return `<div class="tms"><button class="tmbtn${cd ? ' cd' : ''}" data-tms="${L}|${k}" aria-label="${LANE[L]} ${SPELLS[sp][0]} ${cd ? '쿨 취소' : '썼어요'}"><span>${SPELLS[sp][0]}</span><span class="tt" data-end="${cd ? end : 0}">${cd ? mmss((end - now) / 1000) : '준비'}</span></button>`
         + `<select class="tmsel" data-tmsel="${L}|${k}" aria-label="${LANE[L]} ${k + 1}번째 스펠">${Object.entries(SPELLS).map(([id, [nm]]) => `<option value="${id}"${id === sp ? ' selected' : ''}>${nm}</option>`).join('')}</select></div>`;
     }).join('')}<div class="tmopt"><button class="tg${row.b ? ' on' : ''}" data-tmb="${L}" title="신발(명석함의 아이오니아 장화): 스펠 가속 10" aria-pressed="${row.b}">👟</button><button class="tg${row.c ? ' on' : ''}" data-tmc="${L}" title="우주적 통찰력: 스펠 가속 18" aria-pressed="${row.c}">🔭</button></div></div>`;
-  }).join('');
-  $('#tmObjs').innerHTML = Object.entries(OBJS).map(([k, [nm, sec]]) => {
-    const end = Number(bd['o:' + k]) || 0, cd = end > now;
-    return `<button class="tmbtn${cd ? ' cd' : ''}" data-tmo="${k}" aria-label="${nm} ${cd ? '타이머 취소' : `잡았어요(${mmss(sec)} 뒤 다시 나와요)`}"><span>${nm}</span><span class="tt" data-end="${cd ? end : 0}">${cd ? mmss((end - now) / 1000) : mmss(sec)}</span></button>`;
   }).join('');
   tmTick();
 }
@@ -2651,7 +2643,6 @@ function tmTick() {
   // 끝난 타이머 알림: 돌고 있는 걸 본 적 있으면 얼마나 늦게 깨어났든 한 번, 처음 보는 거면 끝난 지 15초 안일 때만(열자마자 옛 알림이 우르르 안 오게)
   const due = (key, end) => { if (!end) return false; if (end > now) { tmSeen.add(key); return false; } if (tmFired.has(key) || !(tmSeen.has(key) || now - end < 15e3)) return false; tmFired.add(key); return true; };
   for (const L of LANES) { const row = tmRow(L, bd); row.e.forEach((end, k) => { if (due(`${side}|${L}|${k}|${end}`, end) && open) { sfx('land'); toast(`${LANE[L]} ${SPELLS[row.s[k]][0]} 돌아왔어요!`); } }); }
-  for (const k of Object.keys(OBJS)) { const end = Number(bd['o:' + k]) || 0; if (due(`${side}|o|${k}|${end}`, end) && open) { sfx('win'); toast(`${OBJS[k][0]} 다시 나왔어요!`); } }
   if (done) renderTimer();
 }
 setInterval(tmTick, 1000);
@@ -2681,11 +2672,6 @@ $('#g-timer').addEventListener('click', async e => {
     tmLocal('r:' + L, next); renderTimer();
     return tmSend({ op: 'row', lane: L, s: next.s, b: next.b, c: next.c });
   }
-  if (t.dataset.tmo) {
-    const k = t.dataset.tmo, cd = (Number(tmBoard()['o:' + k]) || 0) > now, dur = cd ? null : OBJS[k][1];
-    tmLocal('o:' + k, dur ? now + dur * 1000 : undefined); sfx(dur ? 'on' : 'off'); renderTimer();
-    return tmSend({ op: 'obj', key: k, dur });
-  }
   if (t.id === 'tmStart') { tmLocal('start', now); sfx('done'); renderTimer(); return tmSend({ op: 'start', offset: 0 }); }
   if (t.id === 'tmReset') {
     if (!tmResetConfirm) { tmResetConfirm = true; renderTimer(); clearTimeout(renderTimer.t); renderTimer.t = setTimeout(() => { tmResetConfirm = false; renderTimer(); }, 3000); return; }
@@ -2696,7 +2682,6 @@ $('#g-timer').addEventListener('click', async e => {
     // 롤 채팅에 붙여 넣는 글: '탑 플 23:45 / 원딜 힐 21:10' (스펠이 돌아오는 게임 시간)
     const bd = tmBoard(), start = Number(bd.start) || 0, out = [];
     for (const L of LANES) { const row = tmRow(L, bd); row.e.forEach((end, k) => { if (end > now) out.push([end, `${LANE[L]} ${SPELLS[row.s[k]][1]} ${mmss((end - start) / 1000)}`]); }); }
-    for (const [k, [nm]] of Object.entries(OBJS)) { const end = Number(bd['o:' + k]) || 0; if (end > now) out.push([end, `${nm} ${mmss((end - start) / 1000)}`]); }
     if (!out.length) return toast('돌고 있는 타이머가 없어요.');
     return copyText(out.sort((a, b) => a[0] - b[0]).map(x => x[1]).join(' / '));
   }
@@ -3013,6 +2998,9 @@ document.addEventListener('click', e => {
 // ---------- 버전 · 패치노트 ----------
 // 커밋해서 올릴 때마다 맨 위에 새 항목을 더해요(규칙은 CLAUDE.md). 오른쪽 위 버전은 맨 위 항목이에요.
 const NOTES = [
+  { v: '1.22.1', d: '2026-10-23', items: [
+    '인게임 타이머에서 드래곤·바론·장로·억제기 칸을 뺐어요. 오브젝트 시간은 게임 안에서도 보여서, 게임이 안 알려 주는 상대 스펠 쿨타임만 남겼어요.',
+  ] },
   { v: '1.22.0', d: '2026-10-23', items: [
     '방이 맨 위로 올라왔어요. 게임 탭 위 한 줄에 "🏠 방 이름 · 👑 방장 · 구경 n명"이 보이고, 누르면 펼쳐서 방을 바꾸거나 만들어요. 롤 내전·인게임 타이머·토너먼트 어느 탭에서든 같은 방을 써요.',
     '롤 1:1과 토너먼트는 방장이 아니어도 닉네임만 정하면 누구나 기록하고 만들 수 있어요. 토너먼트 결과·지우기는 만든 사람과 방장이 하고, 1:1 기록은 기록한 사람과 방장이 지울 수 있어요.',

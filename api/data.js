@@ -10,9 +10,10 @@ const K = { players: 'lol:players', matches: 'lol:matches', ver: 'lol:ver', riot
 // 방마다 따로인 것: 오늘 할 사람(정렬 집합), 팀 배치, 지금 보고 있는 사람(정렬 집합, 점수 = 마지막 신호 시각)
 const RK = { sel: r => `lol:room:${r}:sel`, cur: r => `lol:room:${r}:cur`, seen: r => `lol:room:${r}:seen`, board: (r, s) => `lol:room:${r}:board:${s}`, bver: r => `lol:room:${r}:bver` };
 // 인게임 타이머 보드: 방마다 블루팀·레드팀·솔랭(우리끼리) 셋. 해시 필드 'start'(게임 0초 시각), 'r:라인'({ s: [스펠 둘], b: 신발, c: 우주적 통찰력 }),
-// 'e:라인:칸'(그 스펠이 돌아오는 시각, 0이면 준비), 'o:오브젝트'(끝나는 시각). 바뀌면 그 방 보드 버전(bver)만 올려요.
+// 'e:라인:칸'(그 스펠이 돌아오는 시각, 0이면 준비). 바뀌면 그 방 보드 버전(bver)만 올려요.
+// (오브젝트 타이머 'o:…'는 v1.22.1에서 뺐어요. 게임 안에서도 보여서요. 예전 보드에 남은 값은 화면이 안 읽어요.)
 const BOARD_SIDES = ['blue', 'red', 'solo'], BOARD_LANES = ['TOP', 'JUNGLE', 'MIDDLE', 'BOTTOM', 'UTILITY'];
-const BOARD_SPELLS = ['flash', 'tp', 'ignite', 'exhaust', 'cleanse', 'heal', 'barrier', 'ghost', 'smite'], BOARD_OBJS = ['drake', 'baron', 'elder', 'inhib'];
+const BOARD_SPELLS = ['flash', 'tp', 'ignite', 'exhaust', 'cleanse', 'heal', 'barrier', 'ghost', 'smite'];
 const MAX_MATCHES = 5000;
 const MAX_PLAYERS = 60;
 const MAX_ROOMS = 10;
@@ -609,7 +610,7 @@ export default async function handler(req, res) {
         break;
       }
       case 'board': {
-        // 인게임 타이머(누구나): 게임하면서 상대 스펠·오브젝트 시간을 같은 보드를 연 친구들과 같이 봐요.
+        // 인게임 타이머(누구나): 게임하면서 상대 스펠 시간을 같은 보드를 연 친구들과 같이 봐요.
         // 끝나는 시각은 서버 시계로 정해요(폰마다 시계가 조금씩 달라도 같게 보이게). dur은 초.
         if (!room) return res.status(404).json({ error: 'no_room' });
         const side = BOARD_SIDES.includes(b.side) ? b.side : null, now = Date.now(), dur = b.dur == null ? null : Number(b.dur);
@@ -621,9 +622,6 @@ export default async function handler(req, res) {
           if (off == null) await redis.hdel(key, 'start');
           else if (off >= 0 && off <= 7200) await redis.hset(key, { start: now - off * 1000 });
           else return bad(res);
-        } else if (b.op === 'obj') {
-          if (!BOARD_OBJS.includes(b.key)) return bad(res);
-          if (dur == null) await redis.hdel(key, 'o:' + b.key); else await redis.hset(key, { ['o:' + b.key]: now + dur * 1000 });
         } else if (b.op === 'row') {
           // 라인 설정(스펠 둘·신발·통찰)은 'r:라인', 스펠 칸마다 끝나는 시각은 'e:라인:칸' 따로 둬서 같은 라인을 동시에 눌러도 안 지워져요
           if (!BOARD_LANES.includes(b.lane) || !(Array.isArray(b.s) && b.s.length === 2 && b.s.every(x => BOARD_SPELLS.includes(x)))) return bad(res);

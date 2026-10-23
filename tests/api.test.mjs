@@ -330,10 +330,12 @@ test('1:1 기록은 기록한 사람과 방장만 지워요', async () => {
 test('인게임 타이머는 누구나 쓰고, 그 방 버전만 올려요', async () => {
   const room = await setup();
   const before = (await get(`room=${room}`)).body;
-  const r = await post({ action: 'board', room, side: 'blue', op: 'obj', key: 'baron', dur: 360 }, OTHER);
+  const r = await post({ action: 'board', room, side: 'blue', op: 'spell', lane: 'MIDDLE', slot: 0, dur: 300 }, OTHER);
   assert.equal(r.status, 200);
   assert.equal(r.body.ver, before.ver);
-  assert.ok(r.body.room.boards.blue['o:baron'] > Date.now());
+  assert.ok(r.body.room.boards.blue['e:MIDDLE:0'] > Date.now());
+  // 오브젝트 타이머는 뺐어요
+  assert.equal((await post({ action: 'board', room, side: 'blue', op: 'obj', key: 'baron', dur: 360 }, OTHER)).status, 400);
 });
 
 test('RECORD_PIN을 걸면 기록은 비밀번호가 필요하고, 투표·예측·타이머는 그대로 돼요', async () => {
