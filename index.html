@@ -70,7 +70,11 @@ h1 em { font-style: normal; color: var(--gold); }
 .rooms { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
 /* 방 줄: 접으면 '🏠 일윤의 방 · 👑 일윤 · 구경 3명' 한 줄 */
 .card.roomstrip { padding: 0; }
-.rs-sum { width: 100%; display: flex; align-items: center; gap: 8px; padding: 12px 16px; font: inherit; font-size: 15px; color: var(--ink); background: none; border: 0; border-radius: 14px; cursor: pointer; text-align: left; }
+.rs-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; padding: 6px 12px 6px 4px; }
+.rs-sum { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 8px; padding: 6px 12px; font: inherit; font-size: 15px; color: var(--ink); background: none; border: 0; border-radius: 14px; cursor: pointer; text-align: left; }
+.rs-sum:disabled { cursor: default; } .rs-sum:disabled .rs-arrow { display: none; }
+.rs-actions { display: flex; gap: 6px; margin-left: auto; } .rs-actions:empty { display: none; }
+#rsActions .btn { font-family: var(--body); font-size: 13.5px; font-weight: 700; padding: 7px 12px; }
 .rs-sum small { color: var(--muted); font-size: 13px; font-weight: 500; }
 .rs-sum .rs-arrow { margin-left: auto; color: var(--muted); transition: transform .15s; }
 .rs-sum[aria-expanded=true] .rs-arrow { transform: rotate(180deg); }
@@ -626,11 +630,12 @@ li.match.picked { outline: 2px solid var(--bad); outline-offset: -2px; }
   </dialog>
 
   <!-- 방: 모든 게임 탭이 같이 써요. 롤 내전의 오늘 할 사람·팀 배치와 인게임 타이머 보드가 방마다 따로예요.
-       방에 들어가 있으면 한 줄로 접혀 있고, 누르면 펼쳐서 방 바꾸기·만들기·방장 넘기기·닫기를 해요. -->
+       방에 안 들어가 있으면 접힌 한 줄 옆에 '+ 방 만들기'·'방 들어가기' 버튼이 있고, '방 들어가기'를 누르면 열린 방 목록이 펼쳐져요.
+       방에 들어가 있으면 다른 방은 안 보이고, 펼치면 내 방 정보와 '방 나가기'가 나와요(옮기려면 나간 뒤 다시 들어가요). -->
   <div class="card roomstrip" id="roomCard">
-    <button class="rs-sum" id="roomToggle" type="button" aria-expanded="true" aria-controls="roomPanel"><span id="rsText">방</span><span class="rs-arrow" aria-hidden="true">▾</span></button>
-    <div id="roomPanel">
-      <h2>방 <span class="r" id="meBox"></span></h2>
+    <div class="rs-row"><button class="rs-sum" id="roomToggle" type="button" aria-expanded="false" aria-controls="roomPanel"><span id="rsText">방</span><span class="rs-arrow" aria-hidden="true">▾</span></button><span class="rs-actions" id="rsActions"></span></div>
+    <div id="roomPanel" hidden>
+      <h2><span id="rpTitle">방</span> <span class="r" id="meBox"></span></h2>
       <div id="roomBar"></div>
     </div>
   </div>
@@ -1102,7 +1107,7 @@ function enterRoom(id) {
   saveLocal(); renderAll(); pull(true);
 }
 function leaveRoom() {
-  S.roomOpen = null; S.room = null; S.current = null; S.selected = new Set(); S.draft = null; S.presence = []; S.boards = {}; S.pick = null; pickSeen = undefined; S.meal = null; mealSeen = undefined; mealShown = null; bver = null;
+  S.roomOpen = false; S.room = null; S.current = null; S.selected = new Set(); S.draft = null; S.presence = []; S.boards = {}; S.pick = null; pickSeen = undefined; S.meal = null; mealSeen = undefined; mealShown = null; bver = null;
   history.replaceState(null, '', location.pathname + location.hash); saveLocal();
 }
 // 명단은 바로 화면에 반영하고, 서버가 거절하면 서버 상태로 되돌려요.
@@ -2482,14 +2487,16 @@ $('#restoreFile').onchange = async e => {
 
 // ---------- 방 ----------
 // 방 탭 + 방장/구경 중인 사람 + 방장 버튼(넘기기·닫기·링크 복사). 닉네임이 없으면 먼저 닉네임부터 받아요.
-// 같이 하기 탭에서 방 카드가 보일 땐(방이 없음) 위 방 줄은 접어 둬요. 같은 칸이 두 번 보이지 않게.
-const roomOpen = () => S.roomOpen ?? (!(ME.nick && curRoom()) && !(CAT[CUR_GAME] === 'play' && !S.room));
+// 방 줄은 기본으로 접혀 있어요. 펼치는 건 직접 누를 때만: 방 안에선 한 줄을 눌러서, 방 밖에선 '방 들어가기'(목록)·닉네임 정하기로.
+const roomOpen = () => !!S.roomOpen;
 function renderRoomSum() {
   const r = curRoom(), open = roomOpen(), viewers = r ? S.presence.filter(p => p.id !== r.hostId).length : 0;
-  $('#roomToggle').setAttribute('aria-expanded', open); $('#roomPanel').hidden = !open;
+  $('#roomToggle').setAttribute('aria-expanded', open); $('#roomToggle').disabled = !r; $('#roomPanel').hidden = !open;
   $('#rsText').innerHTML = !ME.nick ? '👤 <b>닉네임을 정하면</b> <small>방을 만들거나 들어갈 수 있어요</small>'
-    : !r ? `🏠 <b>${S.rooms.length ? `열린 방 ${S.rooms.length}개` : '아직 방이 없어요'}</b> <small>${S.rooms.length ? '골라서 들어가요' : '새 방을 만들면 방장이 돼요'}</small>`
+    : !r ? '🏠 <b>방에 안 들어가 있어요</b>'
     : `🏠 <b>${esc(r.name)}</b> <small>· ${isHost() ? '👑 내가 방장' : r.hostAlive ? `👑 ${esc(r.hostNick)}` : '방장 없음'} · 구경 ${viewers}명</small>`;
+  $('#rsActions').innerHTML = r ? '' : !ME.nick ? `<button class="btn small" id="rsNick" aria-expanded="${open}">닉네임 정하기</button>`
+    : `<button class="btn gold small" id="newRoom">+ 방 만들기</button><button class="btn ghost small" id="rsJoin" aria-expanded="${open}">방 들어가기${S.rooms.length ? ` (${S.rooms.length})` : ''}</button>`;
 }
 function renderRoomBar(force) {
   renderRoomSum();
@@ -2503,19 +2510,24 @@ function renderRoomBar(force) {
       <p class="note">닉네임을 정하면 방을 만들거나(방장) 다른 방을 구경할 수 있어요.</p>`;
     return;
   }
-  const tabs = S.rooms.map(x => `<button class="room${x.id === S.room ? ' on' : ''}" data-room="${x.id}">${esc(x.name)}<small>${x.hostAlive ? `👑 ${esc(x.hostNick)}${x.hostId === ME.id ? '(나)' : ''}` : '방장 없음'}</small></button>`).join('');
+  $('#rpTitle').textContent = r ? '내 방' : '열린 방';
+  // 방 밖: 열린 방 목록(들어가기). 방 안: 내 방 정보만(다른 방은 안 보여요).
+  if (!r) {
+    box.innerHTML = S.rooms.length ? `<div class="rooms">${S.rooms.map(x => `<button class="room" data-room="${x.id}">${esc(x.name)}<small>${x.hostAlive ? `👑 ${esc(x.hostNick)}${x.hostId === ME.id ? '(나)' : ''}` : '방장 없음'} · 들어가기</small></button>`).join('')}</div><p class="note">방을 누르면 들어가요. 방장이 아니면 구경하면서 참가 신청·예측·투표를 할 수 있어요.</p>`
+      : '<p class="note">아직 열린 방이 없어요. 옆의 "+ 방 만들기"를 누르면 내가 방장이 돼요.</p>';
+    return;
+  }
   let info;
-  if (!S.rooms.length) info = '<p class="note">아직 방이 없어요. 새 방을 만들면 내가 방장이 돼서 오늘 할 사람·팀·승패를 정할 수 있어요.</p>';
-  else if (!r) info = '<p class="note">들어갈 방을 골라 주세요. 방장이 아니면 구경만 할 수 있어요.</p>';
-  else {
+  {
     const viewers = S.presence.filter(p => p.id !== r.hostId), others = viewers.filter(p => p.id !== ME.id);
     info = `<div class="room-info">
       <p><b>${host ? '내가 방장이에요' : r.hostAlive ? `방장: ${esc(r.hostNick)}` : '방장 자리가 비었어요'}</b>${!host && !r.hostAlive ? ' <button class="btn small" id="claimHost">방장 하기</button>' : ''}</p>
       <p class="note" style="margin:0">구경 중 ${viewers.length}명${viewers.length ? ' · ' + viewers.map(v => esc(v.nick) + (v.id === ME.id ? '(나)' : '')).join(', ') : ''}</p>
       <div class="row">${host && others.length ? `<select id="giveTo" aria-label="방장 넘겨줄 사람">${others.map(v => `<option value="${v.id}">${esc(v.nick)}</option>`).join('')}</select><button class="btn ghost small" id="giveHost">방장 넘기기</button>` : ''}
-        <button class="btn ghost small" id="copyRoom">방 링크 복사</button>${host ? '<button class="btn ghost small" id="closeRoom">방 닫기</button>' : ''}</div></div>`;
+        <button class="btn ghost small" id="copyRoom">방 링크 복사</button>${host ? '<button class="btn ghost small" id="closeRoom">방 닫기</button>' : ''}<button class="btn ghost small" id="leaveRoomBtn">방 나가기</button></div>
+      <p class="note" style="margin:0">다른 방으로 옮기려면 방 나가기를 누른 뒤 "방 들어가기"에서 골라요.</p></div>`;
   }
-  box.innerHTML = `<div class="rooms">${tabs}<button class="room new" id="newRoom">+ 새 방</button></div>${info}`;
+  box.innerHTML = info;
 }
 // 닉네임은 서버에 맡겨 둬서 다른 사람이 쓰고 있으면 뒤에 번호가 붙어요('일윤' → '일윤 2').
 // 서버에 못 닿으면 적은 그대로 써요. 열 때마다 한 번 다시 맡겨서, 30일 넘게 안 쓴 닉네임만 다른 사람이 가져갈 수 있어요.
@@ -2529,14 +2541,16 @@ async function claimNick(v) {
 $('#roomCard').addEventListener('submit', async e => {
   e.preventDefault();
   const v = $('#nickInput').value.trim().slice(0, 16); if (!v) return;
-  S.nickEditing = false; await claimNick(v); renderRoomBar(true); renderAll(); pull(true);
+  S.nickEditing = false; S.roomOpen = false; await claimNick(v); renderRoomBar(true); renderAll(); pull(true); // 닉네임을 정하면 접고 옆 버튼(만들기·들어가기)을 보여줘요
 });
 $('#roomCard').addEventListener('click', async e => {
   const t = e.target.closest('button'), r = curRoom();
   if (!t || t.form) return; // 입력칸·선택 상자를 누른 건 그대로 둬요. 닉네임 저장 버튼은 submit에서 처리해요.
-  if (t.id === 'roomToggle') { S.roomOpen = !roomOpen(); return renderRoomBar(true); }
+  if (t.id === 'roomToggle' || t.id === 'rsJoin') { S.roomOpen = !roomOpen(); return renderRoomBar(true); }
+  if (t.id === 'rsNick') { S.roomOpen = true; renderRoomBar(true); $('#nickInput')?.focus(); return; }
+  if (t.id === 'leaveRoomBtn') { leaveRoom(); S.roomOpen = false; toast('방에서 나왔어요. 다른 방은 "방 들어가기"에서 골라요.'); return renderAll(); }
   if (t.id === 'nickEdit') { S.nickEditing = true; renderRoomBar(true); $('#nickInput')?.focus(); return; }
-  const tab = t.closest('[data-room]'); if (tab) { S.roomOpen = null; enterRoom(tab.dataset.room); return renderRoomBar(true); } // 방을 고르면(지금 방이어도) 다시 한 줄로 접혀요
+  const tab = t.closest('[data-room]'); if (tab) { S.roomOpen = false; enterRoom(tab.dataset.room); return renderRoomBar(true); } // 방에 들어가면 다시 한 줄로 접혀요
   try {
     if (t.id === 'newRoom') {
       const d = await api('createRoom', { nick: ME.nick });
@@ -2664,7 +2678,7 @@ function renderGate() {
 }
 $('#playGate').addEventListener('click', async e => {
   const t = e.target.closest('button'); if (!t || t.form) return;
-  const r = t.closest('[data-room]'); if (r) { S.roomOpen = null; enterRoom(r.dataset.room); return renderAll(); }
+  const r = t.closest('[data-room]'); if (r) { S.roomOpen = false; enterRoom(r.dataset.room); return renderAll(); }
   if (t.id !== 'pgNew') return;
   t.disabled = true;
   try { const d = await api('createRoom', { nick: ME.nick }); S.roomOpen = true; enterRoom(d.id); toast('방을 만들었어요. 내가 방장이에요. 맨 위 방 줄에서 방 링크를 복사해 카톡에 보내 보세요.'); } catch { t.disabled = false; }
@@ -3462,6 +3476,10 @@ document.addEventListener('click', e => {
 // ---------- 버전 · 패치노트 ----------
 // 커밋해서 올릴 때마다 맨 위에 새 항목을 더해요(규칙은 CLAUDE.md). 오른쪽 위 버전은 맨 위 항목이에요.
 const NOTES = [
+  { v: '1.28.0', d: '2026-10-23', items: [
+    '맨 위 방 줄이 바뀌었어요. 방에 안 들어가 있으면 접힌 한 줄 옆에 "+ 방 만들기"와 "방 들어가기" 버튼이 있어요. 방 만들기는 바로 만들어지고, 방 들어가기를 누르면 열린 방 목록이 펼쳐져요.',
+    '방에 들어가 있으면 다른 방은 보이지 않아요. 한 줄을 누르면 내 방 정보(방장·구경 중인 사람·링크 복사)와 "방 나가기"가 나와요. 다른 방으로 옮기려면 나간 뒤 다시 들어가요.',
+  ] },
   { v: '1.27.3', d: '2026-10-23', items: [
     '기록 지우기를 방장 말고도 할 수 있어요. 닉네임만 정하면 누구나 내전 기록(한 판·여러 판)과 1:1 기록을 지울 수 있어요. 방이 다 닫혀도 지울 수 있게 바꿨어요. 실수하지 않게 지금처럼 두 번 눌러야 지워져요.',
     '전체 기록 초기화·백업 불러오기·새 시즌은 그대로 방장만 할 수 있어요.',
