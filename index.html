@@ -394,14 +394,21 @@ td.num, th.num { text-align: right; }
 .prows { list-style: none; margin: 0 0 12px; padding: 0; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
 .prows > li + li { border-top: 1px solid var(--line); }
 .prows > li.on { background: var(--sunk); }
-.prow-btn { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 2px 12px; padding: 10px 14px; background: none; border: 0; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+.prow-btn { width: 100%; display: grid; grid-template-columns: 24px minmax(0, 1fr) auto auto; align-items: center; gap: 2px 10px; padding: 10px 14px 10px 10px; background: none; border: 0; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+.prow-rank { grid-column: 1; grid-row: 1 / span 2; text-align: center; font-family: var(--display); font-weight: 800; font-size: 15px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.prow-rank.m0 { color: #e9c25b; } .prow-rank.m1 { color: #c4ccd6; } .prow-rank.m2 { color: #d0915c; }
+.prow-name b { font-size: 16px; }
+.prow-rec .pct { font-weight: 800; } .prow-rec .pct.w { color: var(--good); } .prow-rec .pct.l { color: var(--bad); }
+.prow-sub .riot { color: var(--ink); opacity: .75; }
+.rsort { display: inline-flex; } .rsort button { padding: 6px 10px; font-size: 13px; }
+#rosterTools { justify-content: space-between; }
 .prow-btn:hover { background: var(--sunk); }
-.prow-name { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.prow-name { grid-column: 2; display: flex; align-items: center; gap: 6px; min-width: 0; }
 .prow-name b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.prow-sub { grid-column: 1; font-size: 12.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.prow-rec { grid-column: 2; grid-row: 1 / span 2; font-size: 13px; color: var(--muted); text-align: right; line-height: 1.35; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.prow-sub { grid-column: 2; font-size: 12.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.prow-rec { grid-column: 3; grid-row: 1 / span 2; font-size: 13px; color: var(--muted); text-align: right; line-height: 1.35; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .prow-rec b { color: var(--ink); }
-.prow-edit { grid-column: 3; grid-row: 1 / span 2; color: var(--muted); }
+.prow-edit { grid-column: 4; grid-row: 1 / span 2; color: var(--muted); }
 .prows > li .editpanel { margin: 0 10px 10px; }
 .editpanel { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px 10px; align-items: center; padding: 14px; margin-bottom: 12px; border: 1px solid var(--gold); border-radius: 12px; background: var(--sunk); }
 .editpanel .ep-head { grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: center; font-weight: 700; font-size: 16px; }
@@ -507,6 +514,14 @@ body.gated { overflow: hidden; }
 .bm button.lose span { text-decoration: line-through; }
 .bm .tbd { color: var(--muted); font-style: italic; }
 .tfoot { display: flex; justify-content: flex-end; margin-top: 10px; }
+/* 지금 할 판: 롤 1:1처럼 두 쪽을 크게 마주 보게, 아래 버튼으로 이긴 쪽을 골라요 */
+.tnext { display: grid; gap: 12px; margin-bottom: 14px; }
+.tnext-h { margin: 0; font-size: 13px; font-weight: 700; color: var(--muted); }
+.tvs { display: grid; gap: 10px; padding: 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--sunk); }
+.tvs.first { border-color: var(--gold); background: color-mix(in srgb, var(--gold) 8%, var(--sunk)); }
+.tvs-h { display: flex; justify-content: space-between; font-size: 13px; color: var(--muted); } .tvs-h b { color: var(--ink); }
+.tvs .result { margin-top: 0; }
+.tvs .duel-slot small { white-space: normal; }
 /* 승부 예측 · MMR 그래프 · 참가 신청 */
 .pred { display: grid; gap: 8px; margin-top: 12px; padding: 10px 12px; border-radius: 12px; border: 1px dashed var(--line); }
 .pred.done { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
@@ -1023,7 +1038,7 @@ function enterRoom(id) {
   saveLocal(); renderAll(); pull(true);
 }
 function leaveRoom() {
-  S.roomOpen = null; S.room = null; S.current = null; S.selected = new Set(); S.draft = null; S.presence = []; S.boards = {}; S.pick = null; pickSeen = undefined; bver = null;
+  S.roomOpen = null; S.room = null; S.current = null; S.selected = new Set(); S.draft = null; S.presence = []; S.boards = loadSoloBoards(); S.pick = null; pickSeen = undefined; bver = null;
   history.replaceState(null, '', location.pathname + location.hash); saveLocal();
 }
 // 명단은 바로 화면에 반영하고, 서버가 거절하면 서버 상태로 되돌려요.
@@ -1317,15 +1332,19 @@ function renderRoster() {
   const rn = rosterSel?.size || 0;
   $('#rosterTools').innerHTML = !players.length ? '' : rosterSel
     ? `<span class="note" style="margin:0"><b>${rn}명</b> 골랐어요</span><button class="btn ghost small" id="rsAll">전체 고르기</button><button class="btn small warn" id="rsDel"${rn ? '' : ' disabled'}>${rosterDelConfirm ? `정말 ${rn}명 빼기` : `고른 ${rn}명 빼기`}</button><button class="btn ghost small" id="rsOff">끝내기</button>`
-    : '<button class="btn ghost small" id="rsOn">☑ 여러 명 고르기</button>';
+    : `<div class="seg rsort" role="group" aria-label="정렬">${Object.entries(RSORTS).map(([k, label]) => `<button type="button" data-rsort="${k}" aria-pressed="${RSORT === k}">${label}</button>`).join('')}</div><button class="btn ghost small" id="rsOn">☑ 여러 명 고르기</button>`;
   // 이름·Riot ID를 적는 중이면 목록과 고치는 칸을 다시 그리지 않아요(다른 사람이 바꿔서 새로 받아도 적던 글자가 안 날아가게).
   const typing = !!S.editTarget && $('#editBox').contains(document.activeElement);
   if (!typing) $('#rosterEdit').after($('#editBox'));
   if (!typing) $('#rosterEdit').innerHTML = !players.length ? '<p class="empty">아직 명단이 없어요. 위 칸에 친구들 이름을 쉼표로 한 번에 넣어 주세요.</p>'
-    : `<ol class="prows">${players.map((p, i) => { const s = st0.P[p], r = S.riot[p], on = S.editTarget === p, picked = !!rosterSel?.has(p);
-      return `<li${on ? ' class="on"' : picked ? ' class="picked"' : ''}><button class="prow-btn" type="button" data-i="${i}" data-card="${esc(p)}" aria-${rosterSel ? `pressed="${picked}"` : `expanded="${on}"`} aria-label="${esc(p)} ${rosterSel ? '고르기' : '고치기'}">`
-        + `<span class="prow-name">${rosterSel ? `<input type="checkbox" tabindex="-1" aria-hidden="true"${picked ? ' checked' : ''}>` : ''}${tierIcon(T[p])}<b>${esc(p)}</b>${quick(p)}</span><span class="prow-sub">${r ? esc(r.id) : 'Riot ID 없음'}</span>`
-        + `<span class="prow-rec">${s?.g ? `<b>${s.w}승 ${s.g - s.w}패</b><br>MMR ${Math.round(s.mmr)}` : '기록 없음'}</span><span class="prow-edit" aria-hidden="true">✎</span></button></li>`; }).join('')}</ol>`;
+    : `<ol class="prows">${rosterOrder(players, st0).map((p, k) => { const s = st0.P[p], r = S.riot[p], on = S.editTarget === p, picked = !!rosterSel?.has(p);
+      // 순위 번호는 MMR·승률·판수로 줄 세웠을 때만, 이번 시즌 판이 있는 사람만 붙여요
+      const rank = ['mmr', 'rate', 'g'].includes(RSORT) && s?.g ? k + 1 : '';
+      const sub = [T[p] ? `내전 ${T[p].name}` : '이번 시즌 내전 기록 없음', r && soloText(p) ? `솔랭 ${soloText(p, true)}` : '', r ? `<span class="riot">${esc(r.id)}</span>` : ''].filter(Boolean).join(' · ');
+      return `<li${on ? ' class="on"' : picked ? ' class="picked"' : ''}><button class="prow-btn" type="button" data-i="${players.indexOf(p)}" data-card="${esc(p)}" aria-${rosterSel ? `pressed="${picked}"` : `expanded="${on}"`} aria-label="${esc(p)} ${rosterSel ? '고르기' : '고치기'}">`
+        + `<span class="prow-rank${rank && rank <= 3 ? ` m${rank - 1}` : ''}">${rank}</span>`
+        + `<span class="prow-name">${rosterSel ? `<input type="checkbox" tabindex="-1" aria-hidden="true"${picked ? ' checked' : ''}>` : ''}${tierIcon(T[p])}<b>${esc(p)}</b>${quick(p)}</span><span class="prow-sub">${sub}</span>`
+        + `<span class="prow-rec">${s?.g ? `<b>${s.w}승 ${s.g - s.w}패</b> <span class="pct ${s.w / s.g >= .5 ? 'w' : 'l'}">${pct(s.w, s.g)}%</span><br>MMR ${Math.round(s.mmr)}` : '기록 없음'}</span><span class="prow-edit" aria-hidden="true">✎</span></button></li>`; }).join('')}</ol>`;
   $('#rosterEditCount').textContent = players.length ? `${players.length}명` : '';
   $('#riotRefresh').hidden = !Object.keys(S.riot).length;
   $('#rosterEditNote').textContent = '누구나 고칠 수 있어요. 줄을 누르면 이름 바꾸기·Riot ID 연결·명단에서 빼기를 할 수 있어요. 이미 있는 이름으로 바꾸면 두 사람 전적이 하나로 합쳐져요. 이 명단을 롤 내전·1:1·롤 5인 큐가 같이 써요.';
@@ -1368,9 +1387,21 @@ $('#rosterEdit').addEventListener('click', e => {
   S.editTarget = S.editTarget === name ? null : name; renderRoster();
   if (S.editTarget) $('#renameInput')?.focus();
 });
+// 선수 명단 정렬(이 기기에 기억): MMR·승률·판수는 이번 시즌 판이 있는 사람이 위로, 추가순은 넣은 순서 그대로
+const RSORTS = { mmr: 'MMR', rate: '승률', g: '판수', name: '이름', added: '추가순' };
+let RSORT = 'mmr'; try { const v = localStorage.getItem(LS + ':rsort'); if (v in RSORTS) RSORT = v; } catch {}
+function rosterOrder(players, st) {
+  const P = p => st.P[p], has = p => (P(p)?.g ? 1 : 0), ko = (a, b) => a.localeCompare(b, 'ko');
+  const by = { mmr: (a, b) => has(b) - has(a) || (P(b)?.mmr ?? 0) - (P(a)?.mmr ?? 0) || ko(a, b),
+    rate: (a, b) => has(b) - has(a) || (has(a) && P(b).w / P(b).g - P(a).w / P(a).g) || (P(b)?.g ?? 0) - (P(a)?.g ?? 0) || ko(a, b),
+    g: (a, b) => (P(b)?.g ?? 0) - (P(a)?.g ?? 0) || ko(a, b), name: ko }[RSORT];
+  return by ? [...players].sort(by) : players;
+}
 // 여러 명 고르기 → 고른 사람 한 번에 빼기(누구나). '빼기'는 3초 안에 한 번 더 눌러야 돼요.
 let rosterSel = null, rosterDelConfirm = false;
 $('#rosterTools').addEventListener('click', async e => {
+  const so = e.target.closest('[data-rsort]');
+  if (so) { RSORT = so.dataset.rsort; try { localStorage.setItem(LS + ':rsort', RSORT); } catch {} return renderRoster(); }
   const id = e.target.id; if (!id) return;
   if (id === 'rsOn') { rosterSel = new Set(); S.editTarget = null; }
   if (id === 'rsOff') { rosterSel = null; rosterDelConfirm = false; }
@@ -2758,8 +2789,7 @@ function renderTimer() {
   if (document.activeElement?.closest?.('#g-timer select, #g-timer input')) return; // 고르거나 적는 중엔 그대로 둬요
   const side = tmSide(), bd = tmBoard(), now = nowS();
   document.querySelectorAll('#tmBoard [data-tb]').forEach(b => b.setAttribute('aria-pressed', b.dataset.tb === side));
-  if (!S.room) { $('#tmNote').textContent = '맨 위 방 줄에서 방에 먼저 들어가 주세요. 같은 방에서 같은 보드를 연 친구들과 타이머를 같이 봐요.'; $('#tmTop').innerHTML = $('#tmRows').innerHTML = ''; return; }
-  $('#tmNote').textContent = side === 'solo' ? '솔랭·일반: 같이 큐 돌리는 친구들끼리 상대 스펠을 같이 봐요.' : `${TEAM[side]} 보드: 우리 팀끼리 상대 팀 스펠을 같이 봐요. 상대 팀은 자기 보드를 따로 써요.`;
+  $('#tmNote').textContent = !S.room ? '방 없이 쓰는 중이라 이 폰에서만 보여요. 맨 위 방 줄에서 방에 들어가면 같은 보드를 연 친구들과 같이 봐요.' : side === 'solo' ? '솔랭·일반: 같이 큐 돌리는 친구들끼리 상대 스펠을 같이 봐요.' : `${TEAM[side]} 보드: 우리 팀끼리 상대 팀 스펠을 같이 봐요. 상대 팀은 자기 보드를 따로 써요.`;
   const start = Number(bd.start) || 0;
   $('#tmTop').innerHTML = (start ? `<button class="btn small" id="tmCopy">채팅용 복사</button><label class="note" style="margin:0">게임 시간 맞추기 <input id="tmSet" type="text" inputmode="numeric" placeholder="12:30"></label>`
     : '<button class="btn gold small" id="tmStart">⏱ 게임 시작</button><span class="note" style="margin:0">로딩 끝나고 게임이 시작될 때 눌러요(늦었으면 시작하고 시간을 맞춰요)</span>')
@@ -2788,7 +2818,11 @@ function tmTick() {
   if (done) renderTimer();
 }
 setInterval(tmTick, 1000);
+// 방이 없으면 이 기기에만 저장해요(새로 고쳐도 남게). 방에 들어가면 서버 보드를 써요.
+const saveSoloBoards = () => { try { localStorage.setItem(LS + ':boards', JSON.stringify(S.boards)); } catch {} };
+const loadSoloBoards = () => { try { const b = JSON.parse(localStorage.getItem(LS + ':boards') || '{}'); return b && typeof b === 'object' ? b : {}; } catch { return {}; } };
 async function tmSend(body) {
+  if (!S.room) { saveSoloBoards(); return renderTimer(); }
   try { await api('board', { side: tmSide(), ...body }, true); } catch { ver = null; await pull(); }
   renderTimer();
 }
@@ -2801,7 +2835,6 @@ $('#tmBoard').addEventListener('click', e => {
 });
 $('#g-timer').addEventListener('click', async e => {
   const t = e.target.closest('button'); if (!t) return;
-  if (!S.room) return toast('맨 위 방 줄에서 방에 먼저 들어가 주세요.');
   const now = nowS();
   if (t.dataset.tms) {
     const [L, k] = t.dataset.tms.split('|'), row = tmRow(L), cd = (Number(row.e[+k]) || 0) > now, dur = cd ? null : cdOf(row.s[+k], row);
@@ -2848,6 +2881,19 @@ const TN = { mode: 1, pick: new Set() };
 let tournDel = null;
 const roundName = n => (n === 2 ? '결승' : n === 4 ? '4강' : `${n}강`);
 const entLabel = e => e.join('·');
+// 지금 할 판: 두 쪽이 다 정해졌고 아직 승자가 없는 판들(앞 라운드부터). 맨 앞 판은 금색으로 '지금 판'.
+// 만든 사람·방장은 아래 버튼으로 이긴 쪽을 골라요. 대진표 칸을 눌러도 똑같아요(같은 쪽을 다시 누르면 풀려요).
+function tnext(T, can) {
+  const open = T.rounds.flatMap((rd, r) => rd.map((m, i) => ({ m, r, i }))).filter(({ m }) => m.a != null && m.b != null && !m.w);
+  if (!open.length) return '';
+  const side = (e, cls) => `<div class="duel-slot ${cls}"><b>${esc(T.ents[e].length > 1 ? `${T.ents[e][0]} 팀` : T.ents[e][0])}</b>${T.ents[e].length > 1 ? `<small>${esc(entLabel(T.ents[e]))}</small>` : ''}</div>`;
+  const btn = (x, s, label) => `<button class="win ${s === 'a' ? 'blue' : 'red'}" data-tw="${esc(T.id)}|${x.r}|${x.i}|${s}">${esc(label)} 승리</button>`;
+  const name = e => (T.ents[e].length > 1 ? `${T.ents[e][0]} 팀` : T.ents[e][0]);
+  return `<div class="tnext"><p class="tnext-h">⚔️ 지금 할 판 ${open.length}개${can ? ' · 이긴 쪽을 눌러 주세요' : ' · 결과는 만든 사람이나 방장이 눌러요'}</p>${open.map((x, k) =>
+    `<div class="tvs${k === 0 ? ' first' : ''}"><div class="tvs-h"><b>${k === 0 ? '지금 판' : '다음'}</b><span>${roundName(T.rounds[x.r].length * 2)} ${x.i + 1}경기</span></div>
+      <div class="duel-vs">${side(x.m.a, 'a')}<span class="vs">VS</span>${side(x.m.b, 'b')}</div>
+      ${can ? `<div class="result">${btn(x, 'a', name(x.m.a))}${btn(x, 'b', name(x.m.b))}</div>` : ''}</div>`).join('')}</div>`;
+}
 function renderTourn() {
   $('#tMakeBox').hidden = !ME.nick; $('#tNoHost').hidden = !!ME.nick;
   for (const n of [...TN.pick]) if (!S.players.includes(n)) TN.pick.delete(n);
@@ -2868,7 +2914,7 @@ function renderTourn() {
       return `<button class="${cls}" data-tw="${esc(T.id)}|${r}|${i}|${side}"${live ? '' : ' disabled'}><span>${esc(entLabel(T.ents[e]))}</span>${m.w === side ? '<b>승</b>' : ''}</button>`;
     };
     return `<div class="card tourn"><h2>${champ ? '🏆 ' : ''}${esc(T.name)} <span class="r">${T.game ? `${esc(T.game)} · ` : ''}${T.ents.length}${team ? '팀' : '명'} · ${champ ? '끝났어요' : '진행 중'}${T.byNick ? ` · 만든 사람 ${esc(T.byNick)}` : ''}</span></h2>
-      ${champ ? `<div class="tchamp">🏆 우승 <b>${esc(entLabel(champ))}</b></div>` : ''}
+      ${champ ? `<div class="tchamp">🏆 우승 <b>${esc(entLabel(champ))}</b></div>` : tnext(T, can)}
       <div class="bracket-wrap"><div class="bracket" style="--cols:${T.rounds.length}">${T.rounds.map((rd, r) => `<div class="bcol"><div class="bh">${roundName(rd.length * 2)}</div><div class="bms">${rd.map((m, i) => `<div class="bm">${slot(m, r, i, 'a')}${slot(m, r, i, 'b')}</div>`).join('')}</div></div>`).join('')}</div></div>
       ${can ? `<div class="tfoot"><button class="btn ghost small" data-tdel="${esc(T.id)}" style="${tournDel === T.id ? 'color:var(--bad);border-color:var(--bad)' : ''}">${tournDel === T.id ? '정말 지우기' : '토너먼트 지우기'}</button></div>` : ''}
     </div>`;
@@ -3140,6 +3186,11 @@ document.addEventListener('click', e => {
 // ---------- 버전 · 패치노트 ----------
 // 커밋해서 올릴 때마다 맨 위에 새 항목을 더해요(규칙은 CLAUDE.md). 오른쪽 위 버전은 맨 위 항목이에요.
 const NOTES = [
+  { v: '1.24.0', d: '2026-10-23', items: [
+    '선수 명단이 보기 쉬워졌어요. 위 버튼으로 MMR·승률·판수·이름·추가순으로 줄 세우고(그 폰에 기억), 1~3등은 금·은·동 숫자예요. 이름 아래엔 내전 티어(Riot ID가 있으면 솔랭·ID도), 오른쪽엔 승패와 색 입힌 승률이 나와요.',
+    '토너먼트: 대진표가 짜지면 "⚔️ 지금 할 판"이 롤 1:1처럼 두 쪽이 마주 보는 카드로 크게 나와요. 이긴 쪽 버튼을 누르면 다음 판으로 넘어가요. 대진표는 그 아래에 그대로 있어요.',
+    '인게임 타이머를 방 없이도 쓸 수 있어요. 방이 없으면 그 폰에서만 보이고(새로 고쳐도 남아요), 방에 들어가면 지금처럼 친구들과 같이 봐요.',
+  ] },
   { v: '1.23.0', d: '2026-10-23', items: [
     '새 탭 "🎲 뭐 하지": 우리가 하는 게임을 돌림판으로 돌려서 오늘 할 게임을 정해요. 화살표가 가리키는 칸이 결과예요.',
     '방에 들어가 있으면 같은 방 친구 화면에서도 돌림판이 같이 돌다가 같은 게임에서 멈춰요. 결과는 서버가 뽑아서 누가 돌려도 고를 수 없어요. 디스코드에도 결과가 올라가요.',
@@ -3377,6 +3428,7 @@ $('#sfxBtn').onclick = () => {
 renderSfx();
 
 loadLocal();
+if (!S.room) S.boards = loadSoloBoards(); // 방 없이 쓰던 인게임 타이머 보드
 renderNotes();
 setMode(S.mode);
 renderLaneToggle();
