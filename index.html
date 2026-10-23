@@ -1082,7 +1082,7 @@ async function pull(beat) {
     if (d.same) return setBadge('online');
     if (w !== writes) return; // 받는 사이에 저장한 게 있으면 이 응답은 낡았어요
     applyServer(d); saveLocal(); renderAll();
-    if (!S.room && S.rooms.length === 1) enterRoom(S.rooms[0].id); // 방이 하나뿐이면 바로 들어가요
+    // 방은 자동으로 들어가지 않아요(방 링크·전에 있던 방은 그대로). 같이 하기 탭의 방 카드에서 직접 골라요.
   } catch { setBadge('offline'); } finally { autoRefreshRiot(); }
 }
 function enterRoom(id) {
@@ -3432,6 +3432,9 @@ document.addEventListener('click', e => {
 // ---------- 버전 · 패치노트 ----------
 // 커밋해서 올릴 때마다 맨 위에 새 항목을 더해요(규칙은 CLAUDE.md). 오른쪽 위 버전은 맨 위 항목이에요.
 const NOTES = [
+  { v: '1.26.1', d: '2026-10-23', items: [
+    '열린 방이 하나뿐이어도 자동으로 들어가지 않아요. 같이 하기 탭의 방 카드에서 "들어가기"를 눌러 골라요. 방 링크로 들어오거나 전에 있던 방으로 돌아가는 건 그대로예요.',
+  ] },
   { v: '1.26.0', d: '2026-10-23', items: [
     '🎮 같이 하기(롤 내전·롤 1:1·토너먼트·인게임 타이머)는 모두 방에 들어가서 해요. 방이 없으면 탭 대신 "방에 들어가서 같이 해요" 카드가 나와서, 열린 방에 들어가거나 새 방을 바로 만들 수 있어요(닉네임이 없으면 닉네임부터).',
     '그래서 방 없이 혼자 쓰던 인게임 타이머는 없어졌어요. 방에서 같은 보드를 연 친구들과 같이 써요.',
