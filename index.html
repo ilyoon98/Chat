@@ -126,9 +126,14 @@ h1 em { font-style: normal; color: var(--gold); }
 .wheel .ptr { position: absolute; top: -8px; left: 50%; transform: translateX(-50%); width: 0; height: 0; border-left: 13px solid transparent; border-right: 13px solid transparent; border-top: 24px solid var(--ink); z-index: 1; }
 .wheel .hub { position: absolute; inset: 50% auto auto 50%; width: 46px; height: 46px; margin: -23px 0 0 -23px; border-radius: 50%; background: var(--surface); border: 3px solid var(--gold); display: grid; place-items: center; font-size: 20px; }
 .pick-res { min-height: 64px; text-align: center; display: grid; gap: 4px; align-content: center; }
-.pick-res .big { font-family: var(--display); font-weight: 800; font-size: clamp(24px, 7vw, 32px); line-height: 1.2; }
-.pick-res .big b { color: var(--gold); }
-.pick-res.landed .big { animation: pop .6s cubic-bezier(.2, .9, .3, 1.5) both; }
+.pick-res .res-big { font-family: var(--display); font-weight: 800; font-size: clamp(24px, 7vw, 32px); line-height: 1.2; }
+.pick-res .res-big b { color: var(--gold); }
+.pick-res .res-big.out b { color: var(--bad); text-decoration: line-through; }
+.pick-res.landed .res-big { animation: pop .6s cubic-bezier(.2, .9, .3, 1.5) both; }
+.pick-list-h { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 16px 0 8px; }
+.pick-list-h .pick-h { margin: 0; flex: 1; }
+.pick-edit { display: grid; gap: 8px; margin-bottom: 10px; padding: 10px; border: 1px dashed var(--gold); border-radius: 12px; }
+.pick-edit .note { margin: 0; }
 .chip.off { opacity: .4; text-decoration: line-through; }
 .pick-hist { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: 14px; }
 .pick-hist li { display: flex; gap: 8px; } .pick-hist time { color: var(--muted); font-variant-numeric: tabular-nums; }
@@ -669,29 +674,24 @@ li.match.picked { outline: 2px solid var(--bad); outline-offset: -2px; }
     <div id="playGateBox"></div>
   </div>
 
-  <!-- 오늘 뭐 하지? 룰렛: 우리가 하는 게임 목록을 돌려서 오늘 할 게임을 정해요. 방에서 돌리면 같은 방 친구 화면에서도 같이 돌아가요. -->
+  <!-- 오늘 뭐 하지? 룰렛: 아래 게임 목록에서 후보로 올리고 → 돌림판을 돌려요(위로 올라가며 골라요). 이 폰에서만 돌아요.
+       돌리기 = 걸린 게임이 오늘 할 게임 / 데스매치 = 걸린 게임이 빠지고, 하나 남을 때까지 -->
   <section class="game" id="g-pick" role="tabpanel" aria-labelledby="game-pick" hidden>
     <div class="card">
-      <h2>🎲 오늘 뭐 하지? <span class="r" id="pickMeta"></span></h2>
+      <h2>🎲 오늘 뭐 하지?</h2>
       <div class="pick-wrap">
         <div class="wheel"><span class="ptr" aria-hidden="true"></span><div id="pickWheel"></div><span class="hub" aria-hidden="true">🎲</span></div>
         <div class="pick-res" id="pickRes" aria-live="polite"></div>
-        <div class="row" style="justify-content:center"><button class="btn gold" id="pickSpin">돌리기</button><button class="btn ghost" id="pickAgain" hidden>이거 빼고 다시</button></div>
+        <div class="row" style="justify-content:center"><button class="btn gold" id="pickSpin">🎲 돌리기</button><button class="btn" id="pickDeath" title="걸린 게임이 빠져요. 하나 남을 때까지">💀 데스매치</button></div>
       </div>
-      <p class="pick-h" style="margin-top:16px">게임 목록 · 누르면 아래 후보로 내려가요</p>
-      <div class="chips" id="pickChips"></div>
-      <p class="pick-h">이번 후보 <span id="pickCount"></span> · 누르면 빠져요 <button class="linkbtn" type="button" id="pickAll">모두 넣기</button> <button class="linkbtn" type="button" id="pickNone">모두 빼기</button></p>
+      <p class="pick-h" style="margin-top:16px">이번 후보 <span id="pickCount"></span> · 누르면 빠져요 <button class="linkbtn" type="button" id="pickAll">모두 넣기</button> <button class="linkbtn" type="button" id="pickNone">모두 빼기</button></p>
       <div class="chips today" id="pickToday"></div>
-      <p class="note" id="pickNote"></p>
-    </div>
-    <div class="card">
-      <h2>게임 목록 <span class="r"><button class="btn ghost small" id="pickEdit">✎ 고치기</button></span></h2>
-      <div id="pickEditBox" hidden>
+      <div class="pick-list-h"><p class="pick-h">게임 목록 · <span id="pickListHint">누르면 위 후보로 올라가요</span></p><button class="btn ghost small" id="pickEdit">✎ 목록 고치기</button></div>
+      <div class="pick-edit" id="pickEditBox" hidden>
         <form class="add" id="pickAddForm"><input id="pickAddInput" type="text" maxlength="200" placeholder="게임 추가 (쉼표로 여러 개: 오버워치, 배그)" autocomplete="off"><button class="btn" type="submit">추가</button></form>
-        <p class="note">고치는 동안 위 게임 목록 칸의 ✕를 누르면 목록에서 빠져요. 목록은 모두 같이 써요(닉네임을 정하면 누구나 고쳐요). <button class="linkbtn" type="button" id="pickReset">처음 목록으로</button></p>
+        <p class="note">아래 게임의 ✕를 누르면 목록에서 빠져요. 목록은 친구들과 같이 써요(닉네임이 있으면 누구나 고쳐요). <button class="linkbtn" type="button" id="pickReset">처음 목록으로</button></p>
       </div>
-      <h2 style="margin-top:14px">최근 결과 <span class="r">이 방</span></h2>
-      <ul class="pick-hist" id="pickHist"></ul>
+      <div class="chips" id="pickChips"></div>
     </div>
   </section>
 
@@ -1025,10 +1025,8 @@ function applyServer(d) {
   if (!rs) return;
   if (rs.boards && typeof rs.boards === 'object') S.boards = rs.boards;
   if (typeof rs.bver === 'number') bver = rs.bver;
-  S.pick = rs.pick && Array.isArray(rs.pick.cands) ? rs.pick : null;
   S.meal = rs.meal && Array.isArray(rs.meal.cands) && Array.isArray(rs.meal.reels) ? rs.meal : null;
   if (mealSeen === undefined) { mealSeen = S.meal?.t ?? null; mealShown = S.meal; } // 처음 들어왔을 때 이미 있던 메뉴는 돌리지 않고 보여만 줘요
-  if (pickSeen === undefined) pickSeen = S.pick?.t ?? null; // 방에 처음 들어왔을 때 이미 있던 결과는 돌리지 않고 보여만 줘요
   const c = rs.current;
   if (c && Array.isArray(c.blue) && Array.isArray(c.red) && (!S.current || (c.t || 0) > (S.current.t || 0))) S.current = c;
   // 오늘 할 사람: 내가 누른 게 아직 저장 중이면 화면에 보이는 내 선택을 그대로 둬요 (끝나면 syncSelect가 맞춰요)
@@ -1104,12 +1102,12 @@ async function pull(beat) {
 }
 function enterRoom(id) {
   if (S.room === id) return;
-  S.room = id; S.current = null; S.selected = new Set(); S.draft = null; S.presence = []; S.boards = {}; S.pick = null; pickSeen = undefined; S.meal = null; mealSeen = undefined; mealShown = null; ver = bver = null;
+  S.room = id; S.current = null; S.selected = new Set(); S.draft = null; S.presence = []; S.boards = {}; S.meal = null; mealSeen = undefined; mealShown = null; ver = bver = null;
   history.replaceState(null, '', id ? `?room=${id}${location.hash}` : location.pathname + location.hash);
   saveLocal(); renderAll(); pull(true);
 }
 function leaveRoom() {
-  S.roomOpen = false; S.room = null; S.current = null; S.selected = new Set(); S.draft = null; S.presence = []; S.boards = {}; S.pick = null; pickSeen = undefined; S.meal = null; mealSeen = undefined; mealShown = null; bver = null;
+  S.roomOpen = false; S.room = null; S.current = null; S.selected = new Set(); S.draft = null; S.presence = []; S.boards = {}; S.meal = null; mealSeen = undefined; mealShown = null; bver = null;
   history.replaceState(null, '', location.pathname + location.hash); saveLocal();
 }
 // 명단은 바로 화면에 반영하고, 서버가 거절하면 서버 상태로 되돌려요.
@@ -2780,21 +2778,22 @@ $('#g-duel').addEventListener('click', async e => {
 });
 
 // ---------- 오늘 뭐 하지? 룰렛 ----------
-// 게임 목록은 모두 같이 써요(S.games, 안 고쳤으면 기본 목록). 후보에서 뺀 게임은 이 기기에만 기억해요.
-// 방에 들어가 있으면 서버가 뽑고(spinPick) 그 방 화면들이 같은 후보·같은 결과로 같이 돌아요. 방이 없으면 이 화면에서만 돌아요.
+// 게임 목록은 모두 같이 써요(S.games, 안 고쳤으면 기본 목록). 후보에서 뺀 게임은 이 기기에만 기억해요. 돌림판은 이 폰에서만 돌아요.
+// 데스매치: 걸린 게임이 후보에서 빠지고, 하나 남을 때까지 이어서 돌려요.
 const PICK_DEFAULT = ['롤 내전', '칼바람', '롤 5인 큐', '롤토체스', '발로란트', '마리오카트', '카트라이더', '보드게임'];
 const PICK_COLORS = ['#d8b55b', '#4c8dff', '#ff5468', '#2ec4a0', '#a78bfa', '#f08a3c', '#56b4e4', '#e9a347'];
 const PICK_TAB = { '롤 내전': 'lol', '롤 1:1': 'duel', '롤 5인 큐': 'five', '토너먼트': 'tourn' }; // 결과가 이 게임이면 그 탭으로 가는 버튼
 let PICK_OFF = new Set(); try { PICK_OFF = new Set(JSON.parse(localStorage.getItem(LS + ':pickOff') || '[]')); } catch {}
 const savePickOff = () => { try { localStorage.setItem(LS + ':pickOff', JSON.stringify([...PICK_OFF])); } catch {} };
-let pickSeen, pickSpin = false, pickEdit = false, wheelRot = 0, wheelKey = '', wheelCands = null, pickLocal = null, pickLanded = 0;
+let pickSpin = false, pickEdit = false, wheelRot = 0, wheelKey = '', wheelCands = null, pickLocal = null, pickLanded = 0;
 const pickGames = () => S.games?.length ? S.games : PICK_DEFAULT;
 const pickCands = () => pickGames().filter(g => !PICK_OFF.has(g));
 // 돌림판 그리기: 위(12시)부터 시계 방향으로 칸을 나눠요. 같은 후보면 다시 안 그려서 돌아간 각도가 그대로예요.
 function drawWheel(cands, force) {
   const key = cands.join('\u0001'); if (!force && key === wheelKey) return; wheelKey = key;
   const n = cands.length, C = 130, R = 126, box = $('#pickWheel');
-  if (n < 2) { box.innerHTML = `<svg viewBox="0 0 260 260" role="img" aria-label="후보가 모자라요"><circle cx="${C}" cy="${C}" r="${R}" fill="var(--sunk)" stroke="var(--line)" stroke-width="2"/></svg>`; return; }
+  if (n === 1) { box.innerHTML = `<svg viewBox="0 0 260 260" role="img" aria-label="돌림판: ${esc(cands[0])}"><circle cx="${C}" cy="${C}" r="${R}" fill="var(--gold)" stroke="rgba(0,0,0,.25)"/><text x="${C}" y="${C + 62}" text-anchor="middle" dominant-baseline="central" font-size="20" font-weight="800" fill="#fff" stroke="rgba(0,0,0,.45)" stroke-width="3" paint-order="stroke" font-family="Pretendard Variable, Pretendard, sans-serif">${esc(cands[0].slice(0, 10))}</text></svg>`; return; } // 하나 남으면(데스매치 생존) 판 전체가 그 게임
+  if (n < 2) { box.innerHTML =`<svg viewBox="0 0 260 260" role="img" aria-label="후보가 모자라요"><circle cx="${C}" cy="${C}" r="${R}" fill="var(--sunk)" stroke="var(--line)" stroke-width="2"/></svg>`; return; }
   const pt = deg => { const r = (deg - 90) * Math.PI / 180; return [C + R * Math.cos(r), C + R * Math.sin(r)]; };
   const fs = n <= 4 ? 17 : n <= 8 ? 15 : n <= 12 ? 13 : 11, max = n <= 6 ? 8 : n <= 12 ? 6 : 4;
   const segs = cands.map((g, i) => {
@@ -2812,7 +2811,13 @@ function spinWheel(cands, i, result, mine) {
   const n = cands.length, center = (i + .5) * 360 / n, cur = ((wheelRot % 360) + 360) % 360, want = (360 - center) % 360;
   wheelRot += 360 * 6 + ((want - cur + 360) % 360);
   const land = () => { // 멈추면 결과가 튀어나와요(그 뒤에 다시 그릴 땐 안 튀게 1초 뒤 지워요)
-    pickSpin = false; pickLanded = result.t; if (mine) sfx('win'); renderPick(); burst($('#pickRes'), 'gold', true);
+    pickSpin = false; pickLanded = result.t;
+    if (result.death) { // 데스매치: 걸린 게임을 후보에서 빼고, 하나 남으면 최종 생존
+      sfx('undo'); PICK_OFF.add(result.game); savePickOff();
+      const left = pickCands(); result.left = left.length; if (left.length === 1) result.winner = left[0];
+      renderPick(); if (result.winner) { sfx('win'); burst($('#pickRes'), 'gold', true); }
+      setTimeout(() => { if (pickLocal === result && !pickSpin) { wheelCands = null; renderPick(); } }, 1300); // 잠깐 보여 주고 돌림판에서 뺀 칸을 지워요
+    } else { if (mine) sfx('win'); renderPick(); burst($('#pickRes'), 'gold', true); }
     setTimeout(() => { if (pickLanded === result.t) pickLanded = 0; }, 1000);
   };
   const g = $('#wheelRot');
@@ -2824,40 +2829,31 @@ function spinWheel(cands, i, result, mine) {
   setTimeout(land, 4350);
 }
 function renderPick() {
-  const p = S.room ? S.pick : pickLocal;
-  if (p && S.room && p.t !== pickSeen && !pickSpin) { pickSeen = p.t; return spinWheel(p.cands, p.i, p, p.mine); } // 방에 새 결과가 오면(내가 돌렸든 친구가 돌렸든) 돌려요
-  const list = pickGames(), cands = pickCands();
+  const p = pickLocal, list = pickGames(), cands = pickCands();
   if (!pickSpin) drawWheel(wheelCands || cands);
-  $('#pickMeta').textContent = S.room ? `${curRoom()?.name || ''} · 같이 돌려요` : '이 화면에서만';
   $('#pickCount').textContent = `${cands.length} / ${list.length}`;
-  // 롤 내전 명단처럼: 위 목록에서 누르면 아래 후보로 내려가고(위엔 흐리게 ✓로 자리 지킴), 아래 후보를 누르면 빠져요.
+  // 위로 올라가며 골라요: 아래 게임 목록에서 누르면 위 후보로 올라가고(목록엔 흐리게 ✓로 자리 지킴), 후보를 누르면 빠져요.
+  // 목록 고치기 중엔 칩마다 ✕(목록에서 빼기)가 붙어요.
   $('#pickChips').innerHTML = list.map((g, k) => { const on = !PICK_OFF.has(g);
-    return `<button class="chip${pickEdit ? '' : on ? ' picked' : ''}" data-pg="${k}" aria-pressed="${on}" aria-label="${esc(g)} ${pickEdit ? '목록에서 빼기' : on ? '후보에서 빼기' : '후보에 넣기'}">${esc(g)}${pickEdit ? '<span class="x" aria-hidden="true">✕</span>' : `<span class="in" aria-hidden="true">${on ? '✓' : '↓'}</span>`}</button>`; }).join('');
+    return `<button class="chip${pickEdit ? '' : on ? ' picked' : ''}" data-pg="${k}" aria-pressed="${on}" aria-label="${esc(g)} ${pickEdit ? '목록에서 빼기' : on ? '후보에서 빼기' : '후보에 올리기'}">${esc(g)}${pickEdit ? '<span class="x" aria-hidden="true">✕</span>' : `<span class="in" aria-hidden="true">${on ? '✓' : '↑'}</span>`}</button>`; }).join('');
   $('#pickToday').innerHTML = cands.map(g => `<button class="chip on" data-pg="${list.indexOf(g)}" aria-label="${esc(g)} 후보에서 빼기">${esc(g)}<span class="x" aria-hidden="true">✕</span></button>`).join('')
-    || '<span class="empty">위 게임 목록에서 누르면 여기로 내려와요.</span>';
-  $('#pickSpin').disabled = pickSpin || cands.length < 2;
-  $('#pickSpin').textContent = pickSpin ? '돌아가는 중…' : p ? '다시 돌리기' : '돌리기';
-  const shown = p && !pickSpin ? p : null, tab = shown && PICK_TAB[shown.game];
-  $('#pickAgain').hidden = !shown || pickSpin || cands.filter(g => g !== shown.game).length < 2;
+    || '<span class="empty">아래 게임 목록에서 누르면 여기로 올라와요.</span>';
+  $('#pickSpin').disabled = $('#pickDeath').disabled = pickSpin || cands.length < 2;
+  $('#pickSpin').textContent = pickSpin ? '돌아가는 중…' : '🎲 돌리기';
+  const shown = p && !pickSpin ? p : null, tab = shown && !shown.death && PICK_TAB[shown.game];
   $('#pickRes').className = 'pick-res' + (shown && pickLanded === shown.t ? ' landed' : '');
-  $('#pickRes').innerHTML = pickSpin ? '<div class="big">두구두구…</div>' : shown
-    ? `<div class="big">오늘은 <b>${esc(shown.game)}</b>!</div><span class="note" style="margin:0">${shown.by ? `${esc(shown.by)}님이 돌렸어요 · ` : ''}${ago(shown.t)}${tab ? ` · <button class="linkbtn" data-pick-go="${tab}">${esc(shown.game)} 탭으로</button>` : ''}</span>`
-    : '<span class="note" style="margin:0">돌리기를 누르면 오늘 할 게임이 정해져요.</span>';
-  $('#pickNote').textContent = cands.length < 2 ? '후보가 두 개 이상 있어야 돌릴 수 있어요.'
-    : !S.room ? '방에 들어가 있으면 같은 방 친구 화면에서도 같이 돌아가요(맨 위 방 줄). 지금은 이 화면에서만 돌아요.'
-    : !ME.nick ? '닉네임을 정하면 돌릴 수 있어요(맨 위 방 줄). 친구가 돌리면 여기서도 같이 돌아가요.' : '같은 방 친구 화면에서도 같이 돌아가요. 결과는 서버가 뽑아서 모두 같아요.';
-  $('#pickEdit').textContent = pickEdit ? '다 고쳤어요' : '✎ 고치기'; $('#pickEditBox').hidden = !pickEdit;
-  const hist = S.room ? S.pick?.hist || [] : [];
-  $('#pickHist').innerHTML = hist.map(h => `<li><time>${ago(h.t)}</time><b>${esc(h.game)}</b><span class="note" style="margin:0">${esc(h.by || '')}</span></li>`).join('')
-    || `<li class="note" style="margin:0">${S.room ? '아직 이 방에서 돌린 적이 없어요.' : '방에 들어가 있으면 이 방에서 나온 결과가 여기 쌓여요.'}</li>`;
+  $('#pickRes').innerHTML = pickSpin ? `<div class="res-big">${p?.death ? '💀 누가 빠질까…' : '두구두구…'}</div>`
+    : !shown ? `<span class="note" style="margin:0">${cands.length < 2 ? '후보가 두 개 이상 있어야 돌릴 수 있어요.' : '🎲 돌리기: 걸린 게임을 해요 · 💀 데스매치: 걸린 게임이 빠지고 하나 남을 때까지'}</span>`
+    : shown.winner ? `<div class="res-big">🏆 최종 생존 <b>${esc(shown.winner)}</b>!</div><span class="note" style="margin:0">💀 ${esc(shown.game)} 탈락 · "모두 넣기"로 다시 시작해요</span>`
+    : shown.death ? `<div class="res-big out">💀 <b>${esc(shown.game)}</b> 탈락!</div><span class="note" style="margin:0">남은 후보 ${shown.left}개 · 데스매치를 또 눌러요</span>`
+    : `<div class="res-big">오늘은 <b>${esc(shown.game)}</b>!</div>${tab ? `<button class="linkbtn" data-pick-go="${tab}">${esc(shown.game)} 하러 가기 →</button>` : ''}`;
+  $('#pickEdit').textContent = pickEdit ? '다 고쳤어요' : '✎ 목록 고치기'; $('#pickEditBox').hidden = !pickEdit;
+  $('#pickListHint').textContent = pickEdit ? '✕를 누르면 목록에서 빠져요' : '누르면 위 후보로 올라가요';
 }
-async function pickSpinNow(cands) {
+function pickSpinNow(cands, death) {
   if (pickSpin || cands.length < 2) return;
-  if (!S.room) { const i = rnd(cands.length); pickLocal = { t: Date.now(), cands, i, game: cands[i] }; return spinWheel(cands, i, pickLocal, true); }
-  if (!ME.nick) return toast(NEED_NICK);
-  $('#pickSpin').disabled = true;
-  try { const d = await api('spinPick', { cands }); if (S.pick && S.pick.t === d.room?.pick?.t) S.pick.mine = true; } catch {}
-  renderPick();
+  const i = rnd(cands.length); pickLocal = { t: Date.now(), cands, i, game: cands[i], death: !!death };
+  spinWheel(cands, i, pickLocal, true);
 }
 async function saveGames(games, msg) {
   if (!ME.nick) return toast(NEED_NICK);
@@ -2866,7 +2862,7 @@ async function saveGames(games, msg) {
   renderPick();
 }
 $('#pickSpin').onclick = () => pickSpinNow(pickCands());
-$('#pickAgain').onclick = () => { const p = S.room ? S.pick : pickLocal; if (!p) return; PICK_OFF.add(p.game); savePickOff(); wheelCands = null; pickSpinNow(pickCands()); };
+$('#pickDeath').onclick = () => pickSpinNow(pickCands(), true);
 function pickToggle(e, fromList) {
   const b = e.target.closest('[data-pg]'); if (!b || pickSpin) return;
   const g = pickGames()[+b.dataset.pg]; if (g == null) return;
@@ -2878,7 +2874,7 @@ $('#pickChips').addEventListener('click', e => pickToggle(e, true));
 $('#pickToday').addEventListener('click', e => pickToggle(e, false));
 $('#pickAll').onclick = () => { if (pickSpin) return; PICK_OFF.clear(); savePickOff(); wheelCands = null; renderPick(); };
 $('#pickNone').onclick = () => { if (pickSpin) return; PICK_OFF = new Set(pickGames()); savePickOff(); wheelCands = null; renderPick(); };
-$('#pickEdit').onclick = () => { pickEdit = !pickEdit; renderPick(); if (pickEdit) $('#pickAddInput').focus(); };
+$('#pickEdit').onclick = () => { if (!pickEdit && !ME.nick) return toast(NEED_NICK); pickEdit = !pickEdit; renderPick(); if (pickEdit) $('#pickAddInput').focus(); };
 $('#pickAddForm').addEventListener('submit', e => {
   e.preventDefault();
   const add = $('#pickAddInput').value.split(/[,，\n]/).map(x => x.trim().slice(0, 20)).filter(Boolean), list = pickGames();
@@ -3014,8 +3010,8 @@ function renderMeal() {
   const shown = !mealBusy ? (mealShown || m) : null;
   $('#mealSpin').disabled = mealBusy; $('#mealSpin').textContent = mealBusy ? '돌아가는 중…' : shown ? '🎰 다시 돌리기' : '🎰 돌리기';
   $('#mealRes').className = 'pick-res' + (shown && mealLanded === shown.t ? ' landed' : '');
-  $('#mealRes').innerHTML = mealBusy ? '<div class="big">두구두구…</div>' : shown
-    ? `<div class="big">오늘은 <b>${esc(shown.menu)}</b>!</div><span class="note" style="margin:0">${shown.reels.map(v => `${MEAL_ICON[v]} ${esc(v)}`).join(' · ')}${shown.by ? ` · ${esc(shown.by)}님이 돌렸어요` : ''} · <a class="linkbtn" href="https://map.naver.com/p/search/${encodeURIComponent(shown.menu)}" target="_blank" rel="noopener">📍 근처 찾기</a></span>`
+  $('#mealRes').innerHTML = mealBusy ? '<div class="res-big">두구두구…</div>' : shown
+    ? `<div class="res-big">오늘은 <b>${esc(shown.menu)}</b>!</div><span class="note" style="margin:0">${shown.reels.map(v => `${MEAL_ICON[v]} ${esc(v)}`).join(' · ')}${shown.by ? ` · ${esc(shown.by)}님이 돌렸어요` : ''} · <a class="linkbtn" href="https://map.naver.com/p/search/${encodeURIComponent(shown.menu)}" target="_blank" rel="noopener">📍 근처 찾기</a></span>`
     : '<span class="note" style="margin:0">돌리면 슬롯 세 칸이 멈추고, 공이 떨어진 칸이 오늘 메뉴예요.</span>';
   // 원하는 조건 고르기: 줄마다 '아무거나'면 슬롯이 돌고, 값을 고르면 그 칸은 고정(🔒)돼요. 이 기기에 기억해요.
   const left = MEALS.filter(m => (!MEAL_LOCK[0] || m[1] === MEAL_LOCK[0]) && (!MEAL_LOCK[1] || m[2] === MEAL_LOCK[1]) && (!MEAL_LOCK[2] || (m[3] ? '매운 거' : '안 매운 거') === MEAL_LOCK[2])).length;
@@ -3487,6 +3483,12 @@ document.addEventListener('click', e => {
 // ---------- 버전 · 패치노트 ----------
 // 커밋해서 올릴 때마다 맨 위에 새 항목을 더해요(규칙은 CLAUDE.md). 오른쪽 위 버전은 맨 위 항목이에요.
 const NOTES = [
+  { v: '1.29.0', d: '2026-10-23', items: [
+    '뭐 하지가 아래에서 위로 고르게 바뀌었어요. 맨 아래 "게임 목록"에서 누르면 위 "이번 후보"로 올라가고, 맨 위 돌림판으로 돌려요.',
+    '💀 데스매치: 돌려서 걸린 게임이 후보에서 빠져요. 하나 남을 때까지 누르면 "🏆 최종 생존"이 나와요. 그래서 "이거 빼고 다시"는 뺐어요.',
+    '게임 목록 고치기를 목록 바로 위에서 해요. "✎ 목록 고치기"를 누르면 추가 칸이 열리고 게임마다 ✕가 붙어요.',
+    '뭐 하지는 이제 내 폰에서만 돌아요(방에서 같이 돌기·최근 결과는 뺐어요). 결과 "오늘은 ○○!"이 상자에 갇혀 보이던 것도 고쳤어요(밥 뭐 먹지도).',
+  ] },
   { v: '1.28.1', d: '2026-10-23', items: [
     '뭐 하지: 롤 내전 명단처럼 바뀌었어요. 위 "게임 목록"에서 누르면 아래 "이번 후보" 칸으로 내려가고(위엔 흐리게 ✓), 후보 칸에서 누르면 빠져요. 돌림판은 후보로만 돌아요. "모두 넣기·모두 빼기"도 있어요.',
   ] },

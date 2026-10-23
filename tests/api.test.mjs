@@ -334,30 +334,6 @@ test('게임 목록은 닉네임만 있으면 누구나 고치고, 비우면 기
   assert.equal((await post({ action: 'setGames', games: [] }, GUEST)).body.games, null);
 });
 
-test('룰렛은 서버가 후보 중 하나를 뽑고, 그 방 버전만 올리고, 최근 결과 5개를 남겨요', async () => {
-  const room = await setup();
-  await post({ action: 'claimNick', nick: '손님' }, GUEST);
-  const before = (await get(`room=${room}`)).body;
-  const cands = ['칼바람', '롤토체스', '마리오카트'];
-  let r;
-  for (let k = 0; k < 7; k++) r = await post({ action: 'spinPick', room, cands }, GUEST);
-  const p = r.body.room.pick;
-  assert.equal(r.body.ver, before.ver);
-  assert.ok(r.body.room.bver > before.room.bver);
-  assert.deepEqual(p.cands, cands);
-  assert.equal(p.game, cands[p.i]);
-  assert.equal(p.by, '손님');
-  assert.equal(p.hist.length, 5);
-  assert.equal(p.hist[0].game, p.game);
-});
-
-test('룰렛은 방·닉네임·후보 둘 이상이 있어야 돌아가요', async () => {
-  const room = await setup();
-  assert.equal((await post({ action: 'spinPick', room, cands: ['a', 'b'] }, OTHER)).body.error, 'need_nick');
-  assert.equal((await post({ action: 'spinPick', room, cands: ['a'] }, HOST)).status, 400);
-  assert.equal((await post({ action: 'spinPick', room: 'nosuchroom1', cands: ['a', 'b'] }, HOST)).status, 404);
-});
-
 test('밥 뭐 먹지: 서버가 후보 중 하나를 뽑고 그 방에 슬롯·결과를 남겨요', async () => {
   const room = await setup();
   const before = (await get(`room=${room}`)).body;
