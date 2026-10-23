@@ -81,6 +81,10 @@ h1 em { font-style: normal; color: var(--gold); }
 .room.new { color: var(--gold); border-style: dashed; align-content: center; }
 .room-info p { margin: 0 0 6px; } .room-info .row { margin-top: 4px; }
 .linkbtn { font: inherit; font-size: 12.5px; background: none; border: 0; padding: 0; color: var(--gold); cursor: pointer; text-decoration: underline; }
+/* 갈래(같이 하기·재미·정보): 고른 갈래의 게임 탭만 아래에 보여요 */
+.cats { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: -6px; }
+.cats button { font: inherit; font-weight: 700; font-size: 14.5px; padding: 7px 14px; border-radius: 999px; border: 1px solid var(--line); background: var(--sunk); color: var(--muted); cursor: pointer; }
+.cats button[aria-selected=true] { background: var(--ink); color: var(--bg); border-color: transparent; }
 .games { display: flex; flex-wrap: wrap; gap: 8px; }
 /* 폰: 게임 탭이 여러 줄로 쌓이지 않게 한 줄로 두고 옆으로 밀어요 */
 @media (max-width: 640px) {
@@ -91,6 +95,15 @@ h1 em { font-style: normal; color: var(--gold); }
 .games button { font-family: var(--display); font-weight: 800; font-size: 18px; padding: 9px 18px; border-radius: 12px; border: 1.5px solid var(--line); background: var(--surface); color: var(--muted); cursor: pointer; }
 .games button[aria-selected=true] { background: var(--gold); color: var(--on-gold); border-color: transparent; }
 .game { display: flex; flex-direction: column; gap: 18px; }
+/* 밥 뭐 먹지: 슬롯 세 칸 + 핀볼 */
+.slots { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; width: min(100%, 420px); padding: 10px; border-radius: 16px; background: var(--sunk); border: 2px solid var(--gold); box-shadow: inset 0 2px 10px rgba(0, 0, 0, .3); }
+.reel { position: relative; height: 56px; overflow: hidden; padding: 0; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font: inherit; cursor: pointer; }
+.reel:disabled { cursor: default; }
+.reel .strip { display: block; }
+.reel .strip span { display: flex; height: 56px; align-items: center; justify-content: center; font-family: var(--display); font-weight: 800; font-size: clamp(14px, 4vw, 17px); white-space: nowrap; }
+.reel.locked { border-color: var(--gold); box-shadow: inset 0 0 0 1px var(--gold); }
+.reel .lock { position: absolute; top: 2px; right: 5px; font-size: 11px; font-style: normal; }
+.pinball { width: min(100%, 360px); } .pinball svg { width: 100%; display: block; }
 /* 오늘 뭐 하지? 룰렛: 돌림판 위 가운데 화살표가 가리키는 칸이 결과예요 */
 .pick-wrap { display: grid; justify-items: center; gap: 14px; }
 .wheel { position: relative; width: min(300px, 78vw); aspect-ratio: 1; }
@@ -514,14 +527,15 @@ body.gated { overflow: hidden; }
 .bm button.lose span { text-decoration: line-through; }
 .bm .tbd { color: var(--muted); font-style: italic; }
 .tfoot { display: flex; justify-content: flex-end; margin-top: 10px; }
-/* 지금 할 판: 롤 1:1처럼 두 쪽을 크게 마주 보게, 아래 버튼으로 이긴 쪽을 골라요 */
-.tnext { display: grid; gap: 12px; margin-bottom: 14px; }
-.tnext-h { margin: 0; font-size: 13px; font-weight: 700; color: var(--muted); }
-.tvs { display: grid; gap: 10px; padding: 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--sunk); }
-.tvs.first { border-color: var(--gold); background: color-mix(in srgb, var(--gold) 8%, var(--sunk)); }
-.tvs-h { display: flex; justify-content: space-between; font-size: 13px; color: var(--muted); } .tvs-h b { color: var(--ink); }
+/* 고른 판 하나만 롤 1:1처럼 크게: 대진표에서 판을 누르면 여기에 떠요 */
+.tvs { display: grid; gap: 10px; padding: 12px; margin-bottom: 14px; border-radius: 12px; border: 1px solid var(--gold); background: color-mix(in srgb, var(--gold) 8%, var(--surface)); }
+.tvs-h { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: 13px; color: var(--muted); } .tvs-h b { color: var(--ink); font-size: 15px; }
 .tvs .result { margin-top: 0; }
 .tvs .duel-slot small { white-space: normal; }
+.tvs .duel-slot.lose { opacity: .35; } .tvs .duel-slot.won { box-shadow: 0 0 0 3px var(--gold); }
+.tvs .tvs-done { text-align: center; font-weight: 700; } .tvs .tvs-done b { color: var(--gold); }
+.bm.sel { border-color: var(--gold); box-shadow: 0 0 0 2px var(--gold); }
+.bm.open:not(.sel) { border-color: color-mix(in srgb, var(--gold) 45%, var(--line)); }
 /* 승부 예측 · MMR 그래프 · 참가 신청 */
 .pred { display: grid; gap: 8px; margin-top: 12px; padding: 10px 12px; border-radius: 12px; border: 1px dashed var(--line); }
 .pred.done { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
@@ -603,14 +617,21 @@ li.match.picked { outline: 2px solid var(--bad); outline-offset: -2px; }
   </div>
 
   <!-- 게임 탭: 다른 게임이 생기면 버튼과 section.game을 하나씩 더 붙이면 돼요. -->
+  <!-- 갈래: 🎮 같이 하기(롤 내전·1:1·토너먼트·타이머) / 🎲 재미(뭐 하지·밥 뭐 먹지) / 📊 정보(5인 큐·선수 명단). 고른 갈래의 탭만 아래에 나와요. -->
+  <nav class="cats" role="tablist" aria-label="갈래">
+    <button role="tab" data-cat="play" aria-selected="true">🎮 같이 하기</button>
+    <button role="tab" data-cat="fun" aria-selected="false">🎲 재미</button>
+    <button role="tab" data-cat="info" aria-selected="false">📊 정보</button>
+  </nav>
   <nav class="games" role="tablist" aria-label="게임">
-    <button role="tab" id="game-pick" aria-selected="false" aria-controls="g-pick">🎲 뭐 하지</button>
     <button role="tab" id="game-lol" aria-selected="true" aria-controls="g-lol">롤 내전</button>
     <button role="tab" id="game-duel" aria-selected="false" aria-controls="g-duel">롤 1:1</button>
-    <button role="tab" id="game-five" aria-selected="false" aria-controls="g-five">롤 5인 큐</button>
     <button role="tab" id="game-tourn" aria-selected="false" aria-controls="g-tourn">토너먼트</button>
     <button role="tab" id="game-timer" aria-selected="false" aria-controls="g-timer">인게임 타이머</button>
-    <button role="tab" id="game-roster" aria-selected="false" aria-controls="g-roster">선수 명단</button>
+    <button role="tab" id="game-pick" aria-selected="false" aria-controls="g-pick" hidden>🎲 뭐 하지</button>
+    <button role="tab" id="game-meal" aria-selected="false" aria-controls="g-meal" hidden>🍚 밥 뭐 먹지</button>
+    <button role="tab" id="game-five" aria-selected="false" aria-controls="g-five" hidden>롤 5인 큐</button>
+    <button role="tab" id="game-roster" aria-selected="false" aria-controls="g-roster" hidden>선수 명단</button>
   </nav>
 
   <!-- 오늘 뭐 하지? 룰렛: 우리가 하는 게임 목록을 돌려서 오늘 할 게임을 정해요. 방에서 돌리면 같은 방 친구 화면에서도 같이 돌아가요. -->
@@ -634,6 +655,24 @@ li.match.picked { outline: 2px solid var(--bad); outline-offset: -2px; }
       </div>
       <h2 style="margin-top:14px">최근 결과 <span class="r">이 방</span></h2>
       <ul class="pick-hist" id="pickHist"></ul>
+    </div>
+  </section>
+
+  <!-- 밥 뭐 먹지: 슬롯(종류·나라·맵기)이 멈추면 그 조건 메뉴들로 공이 떨어져 메뉴가 정해져요. 방에서 돌리면 같은 방 친구 화면에서도 같이 돌아가요. -->
+  <section class="game" id="g-meal" role="tabpanel" aria-labelledby="game-meal" hidden>
+    <div class="card">
+      <h2>🍚 밥 뭐 먹지? <span class="r" id="mealMeta"></span></h2>
+      <div class="pick-wrap">
+        <div class="slots" id="mealReels"></div>
+        <div class="pinball" id="mealBoard"></div>
+        <div class="pick-res" id="mealRes" aria-live="polite"></div>
+        <button class="btn gold" id="mealSpin">🎰 돌리기</button>
+      </div>
+      <p class="note" id="mealNote"></p>
+    </div>
+    <div class="card">
+      <h2>최근 메뉴 <span class="r">이 방</span></h2>
+      <ul class="pick-hist" id="mealHist"></ul>
     </div>
   </section>
 
@@ -957,6 +996,8 @@ function applyServer(d) {
   if (rs.boards && typeof rs.boards === 'object') S.boards = rs.boards;
   if (typeof rs.bver === 'number') bver = rs.bver;
   S.pick = rs.pick && Array.isArray(rs.pick.cands) ? rs.pick : null;
+  S.meal = rs.meal && Array.isArray(rs.meal.cands) && Array.isArray(rs.meal.reels) ? rs.meal : null;
+  if (mealSeen === undefined) { mealSeen = S.meal?.t ?? null; mealShown = S.meal; } // 처음 들어왔을 때 이미 있던 메뉴는 돌리지 않고 보여만 줘요
   if (pickSeen === undefined) pickSeen = S.pick?.t ?? null; // 방에 처음 들어왔을 때 이미 있던 결과는 돌리지 않고 보여만 줘요
   const c = rs.current;
   if (c && Array.isArray(c.blue) && Array.isArray(c.red) && (!S.current || (c.t || 0) > (S.current.t || 0))) S.current = c;
@@ -1033,12 +1074,12 @@ async function pull(beat) {
 }
 function enterRoom(id) {
   if (S.room === id) return;
-  S.room = id; S.current = null; S.selected = new Set(); S.draft = null; S.presence = []; S.boards = {}; S.pick = null; pickSeen = undefined; ver = bver = null;
+  S.room = id; S.current = null; S.selected = new Set(); S.draft = null; S.presence = []; S.boards = {}; S.pick = null; pickSeen = undefined; S.meal = null; mealSeen = undefined; mealShown = null; ver = bver = null;
   history.replaceState(null, '', id ? `?room=${id}${location.hash}` : location.pathname + location.hash);
   saveLocal(); renderAll(); pull(true);
 }
 function leaveRoom() {
-  S.roomOpen = null; S.room = null; S.current = null; S.selected = new Set(); S.draft = null; S.presence = []; S.boards = loadSoloBoards(); S.pick = null; pickSeen = undefined; bver = null;
+  S.roomOpen = null; S.room = null; S.current = null; S.selected = new Set(); S.draft = null; S.presence = []; S.boards = loadSoloBoards(); S.pick = null; pickSeen = undefined; S.meal = null; mealSeen = undefined; mealShown = null; bver = null;
   history.replaceState(null, '', location.pathname + location.hash); saveLocal();
 }
 // 명단은 바로 화면에 반영하고, 서버가 거절하면 서버 상태로 되돌려요.
@@ -2570,16 +2611,22 @@ $('#fivePick').addEventListener('click', e => {
 });
 $('#fiveClear').onclick = () => { FIVE = []; saveFive(); renderFive(); };
 $('#fiveRefresh').onclick = e => refreshRiotNow(e.currentTarget);
-// 게임 탭(롤 내전 / 롤 5인 큐). 마지막에 본 탭을 기억해요.
-const GAMES = ['pick', 'lol', 'duel', 'five', 'tourn', 'timer', 'roster'];
+// 게임 탭은 갈래(같이 하기·재미·정보)로 나눠 보여요. 마지막에 본 탭과 갈래마다 마지막 탭을 기억해요.
+const GAMES = ['lol', 'duel', 'tourn', 'timer', 'pick', 'meal', 'five', 'roster'];
+const CAT = { lol: 'play', duel: 'play', tourn: 'play', timer: 'play', pick: 'fun', meal: 'fun', five: 'info', roster: 'info' };
+let CAT_LAST = {}; try { CAT_LAST = JSON.parse(localStorage.getItem(LS + ':catGame') || '{}') || {}; } catch {}
 function showGame(g) {
-  for (const x of GAMES) { $('#game-' + x).setAttribute('aria-selected', x === g); $('#g-' + x).hidden = x !== g; }
+  const cat = CAT[g];
+  for (const x of GAMES) { $('#game-' + x).setAttribute('aria-selected', x === g); $('#game-' + x).hidden = CAT[x] !== cat; $('#g-' + x).hidden = x !== g; }
+  document.querySelectorAll('.cats [data-cat]').forEach(b => b.setAttribute('aria-selected', b.dataset.cat === cat));
+  CAT_LAST[cat] = g; try { localStorage.setItem(LS + ':catGame', JSON.stringify(CAT_LAST)); } catch {}
   const nav = $('#game-' + g).parentElement, b = $('#game-' + g); // 폰에서 한 줄로 밀어 보는 탭이면 고른 탭이 보이게
   if (nav.scrollWidth > nav.clientWidth) nav.scrollTo({ left: Math.max(0, b.offsetLeft - nav.offsetLeft - 16), behavior: 'smooth' });
   try { localStorage.setItem(LS + ':game', g); } catch {}
 }
 GAMES.forEach(g => $('#game-' + g).addEventListener('click', () => showGame(g)));
-try { const g = localStorage.getItem(LS + ':game'); if (GAMES.includes(g)) showGame(g); } catch {}
+$('.cats').addEventListener('click', e => { const b = e.target.closest('[data-cat]'); if (!b) return; const c = b.dataset.cat; showGame(CAT[CAT_LAST[c]] === c ? CAT_LAST[c] : GAMES.find(x => CAT[x] === c)); });
+{ let g = 'lol'; try { const v = localStorage.getItem(LS + ':game'); if (GAMES.includes(v)) g = v; } catch {} showGame(g); }
 
 // ---------- 1:1 ----------
 // 1:1 MMR은 내전과 따로 계산해요(1000점에서 시작, Elo K=32). P: 사람별, H: 'A\u0001B' → A가 B를 상대로 [판, 승]
@@ -2757,7 +2804,160 @@ $('#pickAddForm').addEventListener('submit', e => {
 $('#pickReset').onclick = () => { wheelCands = null; saveGames([], '처음 목록으로 돌렸어요.'); };
 $('#pickRes').addEventListener('click', e => { const b = e.target.closest('[data-pick-go]'); if (b) { showGame(b.dataset.pickGo); scrollTo({ top: 0, behavior: reduceMotion ? 'auto' : 'smooth' }); } });
 
-function renderAll() { syncPresence(); renderSeasonPick(); renderRoomBar(); renderRoster(); renderTeams(); renderSession(); renderStats(); renderAnalysis(); renderLog(); renderFive(); renderDuel(); renderTourn(); renderTimer(); renderPick(); }
+// ---------- 밥 뭐 먹지? ----------
+// 슬롯 세 칸(종류·나라·맵기)이 돌다가 멈추면, 그 조건에 맞는 메뉴들 칸으로 공이 핀볼처럼 튕기며 떨어져서 메뉴가 정해져요.
+// 칸을 누르면 그 값으로 잠가요(🔒, 이 기기에만). 방에 들어가 있으면 마지막 메뉴는 서버가 뽑고(spinMeal), 같은 방 화면이 같은 슬롯·같은 공 길로 같이 돌아요.
+// 공 길과 슬롯 줄은 결과 시각(t)으로 정해지는 난수라서 어느 화면에서나 똑같이 움직여요.
+const MEAL_REELS = [['밥', '빵', '면'], ['한식', '중식', '일식', '양식', '기타'], ['매운 거', '안 매운 거']];
+const MEAL_ICON = { 밥: '🍚', 빵: '🍞', 면: '🍜', 한식: '🍲', 중식: '🥟', 일식: '🍣', 양식: '🍝', 기타: '🌏', '매운 거': '🌶️', '안 매운 거': '😌' };
+// [메뉴, 종류, 나라, 매움(1)]
+const MEALS = [
+  ['김치찌개', '밥', '한식', 1], ['제육볶음', '밥', '한식', 1], ['순두부찌개', '밥', '한식', 1], ['닭갈비', '밥', '한식', 1], ['낙지볶음', '밥', '한식', 1], ['떡볶이', '밥', '한식', 1], ['오징어덮밥', '밥', '한식', 1], ['부대찌개', '밥', '한식', 1],
+  ['비빔밥', '밥', '한식', 0], ['불고기', '밥', '한식', 0], ['된장찌개', '밥', '한식', 0], ['국밥', '밥', '한식', 0], ['갈비탕', '밥', '한식', 0], ['김밥', '밥', '한식', 0], ['삼계탕', '밥', '한식', 0], ['보쌈', '밥', '한식', 0],
+  ['마파두부밥', '밥', '중식', 1], ['짬뽕밥', '밥', '중식', 1], ['고추잡채밥', '밥', '중식', 1], ['마라샹궈', '밥', '중식', 1],
+  ['볶음밥', '밥', '중식', 0], ['짜장밥', '밥', '중식', 0], ['잡채밥', '밥', '중식', 0], ['탕수육', '밥', '중식', 0],
+  ['매운 카레', '밥', '일식', 1], ['매운 규동', '밥', '일식', 1],
+  ['돈카츠', '밥', '일식', 0], ['규동', '밥', '일식', 0], ['초밥', '밥', '일식', 0], ['텐동', '밥', '일식', 0], ['사케동', '밥', '일식', 0], ['카레라이스', '밥', '일식', 0],
+  ['매콤 리조또', '밥', '양식', 1], ['케이준 치킨 라이스', '밥', '양식', 1],
+  ['오므라이스', '밥', '양식', 0], ['리조또', '밥', '양식', 0], ['함박스테이크', '밥', '양식', 0], ['스테이크', '밥', '양식', 0],
+  ['인도 커리', '밥', '기타', 1], ['팟카파오', '밥', '기타', 1], ['나시고랭', '밥', '기타', 0], ['포케', '밥', '기타', 0], ['케밥 라이스', '밥', '기타', 0],
+  ['김치전', '빵', '한식', 1], ['매운 떡꼬치', '빵', '한식', 1], ['파전', '빵', '한식', 0], ['호떡', '빵', '한식', 0], ['붕어빵', '빵', '한식', 0],
+  ['고추 군만두', '빵', '중식', 1], ['꽃빵 고추잡채', '빵', '중식', 1], ['군만두', '빵', '중식', 0], ['딤섬', '빵', '중식', 0], ['샤오롱바오', '빵', '중식', 0],
+  ['매운 타코야키', '빵', '일식', 1], ['타코야키', '빵', '일식', 0], ['오코노미야키', '빵', '일식', 0], ['카츠산도', '빵', '일식', 0],
+  ['핫치킨버거', '빵', '양식', 1], ['페퍼로니 피자', '빵', '양식', 1], ['매운 치킨', '빵', '양식', 1], ['피자', '빵', '양식', 0], ['햄버거', '빵', '양식', 0], ['샌드위치', '빵', '양식', 0], ['토스트', '빵', '양식', 0], ['치킨', '빵', '양식', 0],
+  ['타코', '빵', '기타', 1], ['부리토', '빵', '기타', 1], ['케밥', '빵', '기타', 0], ['반미', '빵', '기타', 0],
+  ['라면', '면', '한식', 1], ['비빔냉면', '면', '한식', 1], ['쫄면', '면', '한식', 1], ['짬뽕라면', '면', '한식', 1], ['냉면', '면', '한식', 0], ['칼국수', '면', '한식', 0], ['잔치국수', '면', '한식', 0], ['콩국수', '면', '한식', 0],
+  ['짬뽕', '면', '중식', 1], ['마라탕', '면', '중식', 1], ['탄탄면', '면', '중식', 1], ['짜장면', '면', '중식', 0], ['우육면', '면', '중식', 0], ['울면', '면', '중식', 0],
+  ['매운 라멘', '면', '일식', 1], ['카레우동', '면', '일식', 1], ['라멘', '면', '일식', 0], ['우동', '면', '일식', 0], ['소바', '면', '일식', 0], ['야끼소바', '면', '일식', 0],
+  ['아라비아타', '면', '양식', 1], ['로제 파스타', '면', '양식', 1], ['크림 파스타', '면', '양식', 0], ['알리오올리오', '면', '양식', 0], ['토마토 파스타', '면', '양식', 0], ['라자냐', '면', '양식', 0],
+  ['똠얌 누들', '면', '기타', 1], ['미고랭', '면', '기타', 1], ['쌀국수', '면', '기타', 0], ['팟타이', '면', '기타', 0], ['분짜', '면', '기타', 0],
+];
+const mealMatch = (k, c, sp) => MEALS.filter(m => m[1] === k && m[2] === c && (m[3] ? '매운 거' : '안 매운 거') === sp).map(m => m[0]);
+let MEAL_LOCK = [null, null, null]; try { const v = JSON.parse(localStorage.getItem(LS + ':mealLock') || 'null'); if (Array.isArray(v) && v.length === 3) MEAL_LOCK = v.map((x, i) => (MEAL_REELS[i].includes(x) ? x : null)); } catch {}
+const saveMealLock = () => { try { localStorage.setItem(LS + ':mealLock', JSON.stringify(MEAL_LOCK)); } catch {} };
+let mealSeen, mealBusy = false, mealLocal = null, mealShown = null, mealLanded = 0;
+// 결과 시각으로 정해지는 난수(mulberry32): 같은 결과면 어느 화면에서나 같은 슬롯 줄·같은 공 길
+function seeded(t) { let a = (Number(t) >>> 0) || 1; return () => { a = (a + 0x6D2B79F5) | 0; let x = Math.imul(a ^ (a >>> 15), 1 | a); x = (x + Math.imul(x ^ (x >>> 7), 61 | x)) ^ x; return ((x ^ (x >>> 14)) >>> 0) / 4294967296; }; }
+const REEL_H = 56;
+function drawReels(vals, spinning) {
+  $('#mealReels').innerHTML = MEAL_REELS.map((list, k) => {
+    const v = vals?.[k] ?? MEAL_LOCK[k] ?? list[0];
+    return `<button class="reel${MEAL_LOCK[k] ? ' locked' : ''}" data-reel="${k}" aria-label="${['종류', '나라', '맵기'][k]} ${esc(v)}${MEAL_LOCK[k] ? ' (잠금)' : ''}"${spinning ? ' disabled' : ''}><span class="strip"><span>${MEAL_ICON[v]} ${esc(v)}</span></span>${MEAL_LOCK[k] ? '<i class="lock">🔒</i>' : ''}</button>`;
+  }).join('');
+}
+// 슬롯이 돌다가 왼쪽부터 하나씩 멈춰요(잠근 칸은 안 돌아요). 다 멈추면 done()
+function spinReels(reels, rnd, done, mine) {
+  drawReels(reels, true);
+  const els = [...document.querySelectorAll('#mealReels .reel')];
+  if (reduceMotion) return done();
+  els.forEach((el, k) => {
+    if (MEAL_LOCK[k] === reels[k] && el.classList.contains('locked')) return;
+    const list = MEAL_REELS[k], n = 14 + k * 6, items = Array.from({ length: n }, () => list[Math.floor(rnd() * list.length)]).concat(reels[k]);
+    const strip = el.querySelector('.strip');
+    strip.innerHTML = items.map(v => `<span>${MEAL_ICON[v]} ${esc(v)}</span>`).join('');
+    strip.style.transform = 'translateY(0)'; strip.getBoundingClientRect();
+    strip.style.transition = `transform ${1.1 + k * .45}s cubic-bezier(.2, .7, .25, 1)`;
+    strip.style.transform = `translateY(-${(items.length - 1) * REEL_H}px)`;
+    if (mine) setTimeout(() => sfx('land'), (1.1 + k * .45) * 1000);
+  });
+  setTimeout(done, 2100);
+}
+// 핀볼: 위 가운데에서 공을 떨어뜨리면 못에 튕기며 내려가 i번째 칸에 들어가요. 공 길은 rnd로 정해요.
+const PB = { W: 320, H: 330, TOP: 26, ROWS: 8, BIN: 70 };
+function drawBoard(cands, hit) {
+  const n = cands.length, { W, H, TOP, ROWS, BIN } = PB, bw = W / n, gap = (H - BIN - TOP - 20) / ROWS;
+  let pegs = '';
+  for (let r = 0; r < ROWS; r++) { const off = r % 2 ? .5 : 0, cnt = r % 2 ? 9 : 10; for (let c = 0; c < cnt; c++) pegs += `<circle cx="${(16 + (c + off) * ((W - 32) / 9)).toFixed(1)}" cy="${(TOP + 20 + r * gap).toFixed(1)}" r="3.4" fill="var(--muted)"/>`; }
+  const bins = cands.map((m, k) => {
+    const x = k * bw, on = hit === k, max = n > 4 ? 5 : 7, label = m.length > max ? m.slice(0, max) + '…' : m;
+    return `<rect x="${(x + 1.5).toFixed(1)}" y="${H - BIN}" width="${(bw - 3).toFixed(1)}" height="${BIN - 2}" rx="6" fill="${on ? 'var(--gold)' : 'var(--sunk)'}" stroke="${on ? 'var(--gold)' : 'var(--line)'}"/>`
+      + `<text transform="translate(${(x + bw / 2).toFixed(1)} ${H - BIN / 2 + 9}) rotate(${n > 4 ? -90 : 0})" text-anchor="middle" dominant-baseline="central" font-size="${n > 6 ? 11 : 13}" font-weight="800" fill="${on ? 'var(--on-gold)' : 'var(--ink)'}">${esc(label)}</text>`;
+  }).join('');
+  $('#mealBoard').innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="핀볼: ${esc(cands.join(', '))}"><rect x="1" y="1" width="${W - 2}" height="${H - 2}" rx="14" fill="var(--surface)" stroke="var(--line)"/>${pegs}${bins}<circle id="pbBall" cx="${hit >= 0 ? (hit * bw + bw / 2).toFixed(1) : W / 2}" cy="${hit >= 0 ? H - BIN + 13 : TOP - 8}" r="8" fill="var(--gold)" stroke="#fff" stroke-width="2"/></svg>`;
+}
+function dropBall(cands, i, rnd, done, mine) {
+  drawBoard(cands, -1);
+  const n = cands.length, { W, H, TOP, ROWS, BIN } = PB, bw = W / n, gap = (H - BIN - TOP - 20) / ROWS, step = (W - 32) / 9;
+  const target = i * bw + bw / 2, pts = [[W / 2, TOP - 8]];
+  let x = W / 2;
+  for (let r = 0; r < ROWS; r++) {
+    // 못에 부딪혀 왼쪽이나 오른쪽으로 반 칸씩. 남은 줄이 적을수록 목표 칸 쪽으로 기울어요
+    const left = ROWS - r, pull = (target - x) / (left * step / 2), pRight = Math.min(.92, Math.max(.08, .5 + pull * .35));
+    x += (rnd() < pRight ? 1 : -1) * step / 2;
+    x = Math.min(W - 14, Math.max(14, x));
+    pts.push([x, TOP + 20 + r * gap - 9]);
+  }
+  pts.push([target, H - BIN + 13]); // 칸 위쪽에 쏙 들어가요(이름 글자는 안 가려요)
+  const ball = $('#pbBall');
+  if (reduceMotion || !ball) return done();
+  let k = 0;
+  const hop = () => {
+    if (k >= pts.length - 1) return done();
+    const [x0, y0] = pts[k], [x1, y1] = pts[k + 1], dur = k === 0 ? 260 : 150 + k * 6, t0 = performance.now();
+    if (mine && k > 0 && k <= ROWS) sfx('tick');
+    const frame = now => {
+      const p = Math.min(1, (now - t0) / dur), bounce = Math.sin(p * Math.PI) * (k === 0 ? 0 : 8);
+      ball.setAttribute('cx', (x0 + (x1 - x0) * p).toFixed(1)); ball.setAttribute('cy', (y0 + (y1 - y0) * p * p - bounce).toFixed(1));
+      if (p < 1) setTimeout(() => frame(performance.now()), 16); else { k++; hop(); } // 화면이 잠깐 가려져도 멈추지 않게 시간으로 움직여요
+    };
+    frame(t0);
+  };
+  hop();
+}
+function playMeal(m, mine) {
+  mealBusy = true; mealShown = null; renderMeal();
+  const rnd = seeded(m.t);
+  spinReels(m.reels, rnd, () => dropBall(m.cands, m.i, rnd, () => {
+    mealBusy = false; mealShown = m; mealLanded = m.t; drawBoard(m.cands, m.i); renderMeal();
+    if (mine) sfx('win'); burst($('#mealRes'), 'gold', true);
+    setTimeout(() => { if (mealLanded === m.t) mealLanded = 0; }, 1000);
+  }, mine), mine);
+}
+function renderMeal() {
+  const m = S.room ? S.meal : mealLocal;
+  if (m && S.room && m.t !== mealSeen && !mealBusy) { mealSeen = m.t; return playMeal(m, m.mine); } // 방에 새 결과가 오면 같이 돌아요
+  if (!mealBusy) {
+    drawReels(mealShown?.reels || (m && !mealShown ? m.reels : null), false);
+    if (!$('#mealBoard svg') || mealShown) drawBoard(mealShown?.cands || m?.cands || ['?', '?', '?', '?'], mealShown ? mealShown.i : -1);
+  }
+  const shown = !mealBusy ? (mealShown || m) : null;
+  $('#mealSpin').disabled = mealBusy; $('#mealSpin').textContent = mealBusy ? '돌아가는 중…' : shown ? '🎰 다시 돌리기' : '🎰 돌리기';
+  $('#mealRes').className = 'pick-res' + (shown && mealLanded === shown.t ? ' landed' : '');
+  $('#mealRes').innerHTML = mealBusy ? '<div class="big">두구두구…</div>' : shown
+    ? `<div class="big">오늘은 <b>${esc(shown.menu)}</b>!</div><span class="note" style="margin:0">${shown.reels.map(v => `${MEAL_ICON[v]} ${esc(v)}`).join(' · ')}${shown.by ? ` · ${esc(shown.by)}님이 돌렸어요` : ''} · <a class="linkbtn" href="https://map.naver.com/p/search/${encodeURIComponent(shown.menu)}" target="_blank" rel="noopener">📍 근처 찾기</a></span>`
+    : '<span class="note" style="margin:0">돌리면 슬롯 세 칸이 멈추고, 공이 떨어진 칸이 오늘 메뉴예요.</span>';
+  $('#mealMeta').textContent = S.room ? `${curRoom()?.name || ''} · 같이 돌려요` : '이 화면에서만';
+  $('#mealNote').textContent = !S.room ? '슬롯 칸을 누르면 그 값으로 잠가요(🔒). 방에 들어가 있으면 같은 방 친구 화면에서도 같이 돌아가요.'
+    : !ME.nick ? '닉네임을 정하면 돌릴 수 있어요(맨 위 방 줄). 친구가 돌리면 여기서도 같이 돌아가요.' : '슬롯 칸을 누르면 그 값으로 잠가요(🔒). 같은 방 친구 화면에서도 같이 돌아가요.';
+  const hist = S.room ? S.meal?.hist || [] : [];
+  $('#mealHist').innerHTML = hist.map(h => `<li><time>${ago(h.t)}</time><b>${esc(h.menu)}</b><span class="note" style="margin:0">${esc(h.by || '')}</span></li>`).join('')
+    || `<li class="note" style="margin:0">${S.room ? '아직 이 방에서 돌린 적이 없어요.' : '방에 들어가 있으면 이 방에서 나온 메뉴가 여기 쌓여요.'}</li>`;
+}
+async function mealSpinNow() {
+  if (mealBusy) return;
+  // 잠근 값에 맞고 메뉴가 두 개 이상인 조합 중에서 슬롯 결과를 골라요
+  const combos = [];
+  for (const k of MEAL_REELS[0]) for (const c of MEAL_REELS[1]) for (const sp of MEAL_REELS[2]) {
+    if ([k, c, sp].some((v, j) => MEAL_LOCK[j] && MEAL_LOCK[j] !== v)) continue;
+    const ms = mealMatch(k, c, sp); if (ms.length >= 2) combos.push([[k, c, sp], ms]);
+  }
+  if (!combos.length) return toast('잠근 조건에 맞는 메뉴가 모자라요. 잠금을 하나 풀어 주세요.');
+  const [reels, ms] = combos[rnd(combos.length)], cands = shuffle(ms).slice(0, 8);
+  if (!S.room) { const i = rnd(cands.length); mealLocal = { t: Date.now(), reels, cands, i, menu: cands[i] }; return playMeal(mealLocal, true); }
+  if (!ME.nick) return toast(NEED_NICK);
+  $('#mealSpin').disabled = true;
+  try { const d = await api('spinMeal', { reels, cands }); if (S.meal && S.meal.t === d.room?.meal?.t) S.meal.mine = true; } catch {}
+  renderMeal();
+}
+$('#mealSpin').onclick = mealSpinNow;
+$('#mealReels').addEventListener('click', e => {
+  const b = e.target.closest('[data-reel]'); if (!b || mealBusy) return;
+  const k = +b.dataset.reel, cur = (mealShown || (S.room ? S.meal : mealLocal))?.reels?.[k] ?? MEAL_LOCK[k] ?? MEAL_REELS[k][0];
+  MEAL_LOCK[k] = MEAL_LOCK[k] ? null : cur; saveMealLock(); renderMeal();
+  toast(MEAL_LOCK[k] ? `${cur}(으)로 잠갔어요. 다시 누르면 풀려요.` : '잠금을 풀었어요.');
+});
+
+function renderAll() { syncPresence(); renderSeasonPick(); renderRoomBar(); renderRoster(); renderTeams(); renderSession(); renderStats(); renderAnalysis(); renderLog(); renderFive(); renderDuel(); renderTourn(); renderTimer(); renderPick(); renderMeal(); }
 
 // ---------- 인게임 타이머 ----------
 // 게임하면서 옆에 켜 두는 보드. 상대가 스펠을 쓰면 그 칸을 눌러요 → 쿨타임이 돌고, 돌아오면 소리·알림. 다시 누르면 취소.
@@ -2881,18 +3081,24 @@ const TN = { mode: 1, pick: new Set() };
 let tournDel = null;
 const roundName = n => (n === 2 ? '결승' : n === 4 ? '4강' : `${n}강`);
 const entLabel = e => e.join('·');
-// 지금 할 판: 두 쪽이 다 정해졌고 아직 승자가 없는 판들(앞 라운드부터). 맨 앞 판은 금색으로 '지금 판'.
-// 만든 사람·방장은 아래 버튼으로 이긴 쪽을 골라요. 대진표 칸을 눌러도 똑같아요(같은 쪽을 다시 누르면 풀려요).
-function tnext(T, can) {
-  const open = T.rounds.flatMap((rd, r) => rd.map((m, i) => ({ m, r, i }))).filter(({ m }) => m.a != null && m.b != null && !m.w);
-  if (!open.length) return '';
-  const side = (e, cls) => `<div class="duel-slot ${cls}"><b>${esc(T.ents[e].length > 1 ? `${T.ents[e][0]} 팀` : T.ents[e][0])}</b>${T.ents[e].length > 1 ? `<small>${esc(entLabel(T.ents[e]))}</small>` : ''}</div>`;
-  const btn = (x, s, label) => `<button class="win ${s === 'a' ? 'blue' : 'red'}" data-tw="${esc(T.id)}|${x.r}|${x.i}|${s}">${esc(label)} 승리</button>`;
+// 대진표에서 판을 누르면(두 쪽이 다 정해진 판만) 그 판 하나가 위에 롤 1:1처럼 크게 떠요. 고른 판은 이 기기에만 기억해요.
+// 안 골랐으면 앞 라운드부터 아직 안 끝난 첫 판. 결과를 누르면 다음 안 끝난 판으로 넘어가요.
+const TSEL = {}; // 토너먼트 id → 'r|i'
+const tOpen = T => T.rounds.flatMap((rd, r) => rd.map((m, i) => ({ m, r, i }))).filter(({ m }) => m.a != null && m.b != null);
+function tFocus(T) {
+  const all = tOpen(T), [r, i] = (TSEL[T.id] || '').split('|').map(Number), sel = all.find(x => x.r === r && x.i === i);
+  return sel || all.find(x => !x.m.w) || null;
+}
+function tVs(T, can) {
+  const x = tFocus(T); if (!x) return '';
+  const left = tOpen(T).filter(o => !o.m.w).length, w = x.m.w;
   const name = e => (T.ents[e].length > 1 ? `${T.ents[e][0]} 팀` : T.ents[e][0]);
-  return `<div class="tnext"><p class="tnext-h">⚔️ 지금 할 판 ${open.length}개${can ? ' · 이긴 쪽을 눌러 주세요' : ' · 결과는 만든 사람이나 방장이 눌러요'}</p>${open.map((x, k) =>
-    `<div class="tvs${k === 0 ? ' first' : ''}"><div class="tvs-h"><b>${k === 0 ? '지금 판' : '다음'}</b><span>${roundName(T.rounds[x.r].length * 2)} ${x.i + 1}경기</span></div>
-      <div class="duel-vs">${side(x.m.a, 'a')}<span class="vs">VS</span>${side(x.m.b, 'b')}</div>
-      ${can ? `<div class="result">${btn(x, 'a', name(x.m.a))}${btn(x, 'b', name(x.m.b))}</div>` : ''}</div>`).join('')}</div>`;
+  const side = (s, cls) => `<div class="duel-slot ${cls}${w ? (w === s ? ' won' : ' lose') : ''}"><b>${w === s ? '👑 ' : ''}${esc(name(x.m[s]))}</b>${T.ents[x.m[s]].length > 1 ? `<small>${esc(entLabel(T.ents[x.m[s]]))}</small>` : ''}</div>`;
+  const btn = s => `<button class="win ${s === 'a' ? 'blue' : 'red'}" data-tw="${esc(T.id)}|${x.r}|${x.i}|${s}">${esc(name(x.m[s]))} 승리</button>`;
+  const foot = w ? `<p class="tvs-done">👑 <b>${esc(name(x.m[w]))}</b> 승리${can ? ` · <button class="linkbtn" data-tw="${esc(T.id)}|${x.r}|${x.i}|${w}">결과 취소</button>` : ''}</p>`
+    : can ? `<div class="result">${btn('a')}${btn('b')}</div>` : '<p class="note" style="margin:0;text-align:center">결과는 만든 사람이나 방장이 눌러요.</p>';
+  return `<div class="tvs"><div class="tvs-h"><b>⚔️ ${roundName(T.rounds[x.r].length * 2)} ${x.i + 1}경기</b><span>남은 판 ${left}개 · 아래 대진표에서 판을 눌러 골라요</span></div>
+    <div class="duel-vs">${side('a', 'a')}<span class="vs">VS</span>${side('b', 'b')}</div>${foot}</div>`;
 }
 function renderTourn() {
   $('#tMakeBox').hidden = !ME.nick; $('#tNoHost').hidden = !!ME.nick;
@@ -2907,15 +3113,17 @@ function renderTourn() {
   $('#tMake').disabled = !ok;
   $('#tournList').innerHTML = S.tourns.map(T => {
     const champ = T.champ != null ? T.ents[T.champ] : null, team = T.ents[0]?.length > 1, can = canOwn(T);
+    const focus = tFocus(T);
     const slot = (m, r, i, side) => {
       const e = m[side], other = side === 'a' ? 'b' : 'a';
       if (e == null) return `<button disabled><span class="tbd">${r === 0 && side === 'b' ? '부전승' : '기다리는 중'}</span></button>`;
-      const cls = m.w === side ? 'win' : m.w === other ? 'lose' : '', live = can && m.a != null && m.b != null;
-      return `<button class="${cls}" data-tw="${esc(T.id)}|${r}|${i}|${side}"${live ? '' : ' disabled'}><span>${esc(entLabel(T.ents[e]))}</span>${m.w === side ? '<b>승</b>' : ''}</button>`;
+      const cls = m.w === side ? 'win' : m.w === other ? 'lose' : '', ready = m.a != null && m.b != null;
+      return `<button class="${cls}" data-tsel="${esc(T.id)}|${r}|${i}"${ready ? ` aria-label="${roundName(T.rounds[r].length * 2)} ${i + 1}경기 보기"` : ' disabled'}><span>${esc(entLabel(T.ents[e]))}</span>${m.w === side ? '<b>승</b>' : ''}</button>`;
     };
+    const bmCls = (m, r, i) => `bm${focus && focus.r === r && focus.i === i ? ' sel' : m.a != null && m.b != null && !m.w ? ' open' : ''}`;
     return `<div class="card tourn"><h2>${champ ? '🏆 ' : ''}${esc(T.name)} <span class="r">${T.game ? `${esc(T.game)} · ` : ''}${T.ents.length}${team ? '팀' : '명'} · ${champ ? '끝났어요' : '진행 중'}${T.byNick ? ` · 만든 사람 ${esc(T.byNick)}` : ''}</span></h2>
-      ${champ ? `<div class="tchamp">🏆 우승 <b>${esc(entLabel(champ))}</b></div>` : tnext(T, can)}
-      <div class="bracket-wrap"><div class="bracket" style="--cols:${T.rounds.length}">${T.rounds.map((rd, r) => `<div class="bcol"><div class="bh">${roundName(rd.length * 2)}</div><div class="bms">${rd.map((m, i) => `<div class="bm">${slot(m, r, i, 'a')}${slot(m, r, i, 'b')}</div>`).join('')}</div></div>`).join('')}</div></div>
+      ${champ ? `<div class="tchamp">🏆 우승 <b>${esc(entLabel(champ))}</b></div>` : ''}${tVs(T, can)}
+      <div class="bracket-wrap"><div class="bracket" style="--cols:${T.rounds.length}">${T.rounds.map((rd, r) => `<div class="bcol"><div class="bh">${roundName(rd.length * 2)}</div><div class="bms">${rd.map((m, i) => `<div class="${bmCls(m, r, i)}">${slot(m, r, i, 'a')}${slot(m, r, i, 'b')}</div>`).join('')}</div></div>`).join('')}</div></div>
       ${can ? `<div class="tfoot"><button class="btn ghost small" data-tdel="${esc(T.id)}" style="${tournDel === T.id ? 'color:var(--bad);border-color:var(--bad)' : ''}">${tournDel === T.id ? '정말 지우기' : '토너먼트 지우기'}</button></div>` : ''}
     </div>`;
   }).join('') || '<div class="card"><p class="empty" style="margin:0">아직 토너먼트가 없어요. 위에서 참가할 사람을 고르고 대진표를 만들어 보세요.</p></div>';
@@ -2943,6 +3151,8 @@ $('#tournList').addEventListener('click', async e => {
     tournDel = null; try { await api('deleteTourn', { id }); toast('토너먼트를 지웠어요.'); } catch {}
     return renderAll();
   }
+  const pick = e.target.closest('[data-tsel]');
+  if (pick && !pick.disabled) { const [id, r, i] = pick.dataset.tsel.split('|'); TSEL[id] = `${r}|${i}`; renderTourn(); return $(`#tournList .tvs`)?.scrollIntoView({ block: 'nearest', behavior: reduceMotion ? 'auto' : 'smooth' }); }
   const b = e.target.closest('[data-tw]'); if (!b || b.disabled) return;
   const [id, r, i, side] = b.dataset.tw.split('|'), T = S.tourns.find(t => t.id === id), m = T?.rounds[+r]?.[+i];
   if (!m) return;
@@ -2950,6 +3160,7 @@ $('#tournList').addEventListener('click', async e => {
   const w = m.w === side ? null : side, last = +r === T.rounds.length - 1;
   try {
     await api('tournWin', { id, r: +r, i: +i, w });
+    if (w) delete TSEL[id]; // 결과를 정했으면 다음 안 끝난 판으로 넘어가요
     if (w && last) { sfx('win'); toast(`🏆 ${entLabel(T.ents[m[w]])} 우승!`); burst(b, 'gold', true); } else sfx(w ? 'on' : 'undo');
   } catch {}
   renderAll();
@@ -3186,6 +3397,13 @@ document.addEventListener('click', e => {
 // ---------- 버전 · 패치노트 ----------
 // 커밋해서 올릴 때마다 맨 위에 새 항목을 더해요(규칙은 CLAUDE.md). 오른쪽 위 버전은 맨 위 항목이에요.
 const NOTES = [
+  { v: '1.25.0', d: '2026-10-23', items: [
+    '탭을 갈래로 나눴어요. 위에서 🎮 같이 하기(롤 내전·롤 1:1·토너먼트·인게임 타이머) / 🎲 재미(뭐 하지·밥 뭐 먹지) / 📊 정보(롤 5인 큐·선수 명단)를 고르면 그 탭들만 나와요. 갈래마다 마지막에 본 탭을 기억해요.',
+    '새 탭 "🍚 밥 뭐 먹지": 🎰 돌리기를 누르면 슬롯 세 칸(밥·빵·면 / 한식·중식·일식·양식·기타 / 매운 거·안 매운 거)이 하나씩 멈추고, 그 조건 메뉴들 칸으로 공이 핀볼처럼 튕기며 떨어져 오늘 메뉴가 정해져요. 📍 근처 찾기로 지도에서 바로 찾아요.',
+    '밥 뭐 먹지: 슬롯 칸을 누르면 그 값으로 잠가요(예: "면"만). 방에서 돌리면 같은 방 친구 화면에서도 같은 슬롯·같은 공 길로 같이 돌고, 디스코드에도 올라가요.',
+    '토너먼트: 지금 할 판을 줄줄이 늘어놓지 않아요. 대진표에서 판을 누르면 그 판 하나가 위에 롤 1:1처럼 크게 뜨고, 이긴 쪽을 고르면 다음 판으로 넘어가요. 끝난 판을 누르면 "결과 취소"도 돼요.',
+    '테스트로 쌓인 내전 기록을 모두 지웠어요. 선수 명단·Riot ID는 그대로예요.',
+  ] },
   { v: '1.24.0', d: '2026-10-23', items: [
     '선수 명단이 보기 쉬워졌어요. 위 버튼으로 MMR·승률·판수·이름·추가순으로 줄 세우고(그 폰에 기억), 1~3등은 금·은·동 숫자예요. 이름 아래엔 내전 티어(Riot ID가 있으면 솔랭·ID도), 오른쪽엔 승패와 색 입힌 승률이 나와요.',
     '토너먼트: 대진표가 짜지면 "⚔️ 지금 할 판"이 롤 1:1처럼 두 쪽이 마주 보는 카드로 크게 나와요. 이긴 쪽 버튼을 누르면 다음 판으로 넘어가요. 대진표는 그 아래에 그대로 있어요.',

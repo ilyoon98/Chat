@@ -361,6 +361,20 @@ test('룰렛은 방·닉네임·후보 둘 이상이 있어야 돌아가요', as
   assert.equal((await post({ action: 'spinPick', room: 'nosuchroom1', cands: ['a', 'b'] }, HOST)).status, 404);
 });
 
+test('밥 뭐 먹지: 서버가 후보 중 하나를 뽑고 그 방에 슬롯·결과를 남겨요', async () => {
+  const room = await setup();
+  const before = (await get(`room=${room}`)).body;
+  const cands = ['김치찌개', '제육볶음', '순두부찌개'];
+  const r = await post({ action: 'spinMeal', room, reels: ['밥', '한식', '매운 거'], cands }, HOST);
+  const m = r.body.room.meal;
+  assert.equal(r.body.ver, before.ver);
+  assert.deepEqual(m.reels, ['밥', '한식', '매운 거']);
+  assert.equal(m.menu, cands[m.i]);
+  assert.equal(m.hist[0].menu, m.menu);
+  assert.equal((await post({ action: 'spinMeal', room, reels: ['밥', '한식'], cands }, HOST)).status, 400);
+  assert.equal((await post({ action: 'spinMeal', room, reels: ['밥', '한식', '매운 거'], cands }, OTHER)).body.error, 'need_nick');
+});
+
 test('인게임 타이머는 누구나 쓰고, 그 방 버전만 올려요', async () => {
   const room = await setup();
   const before = (await get(`room=${room}`)).body;
