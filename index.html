@@ -398,7 +398,11 @@ td.num, th.num { text-align: right; }
 .streak { font-size: 12px; font-weight: 700; margin-left: 6px; } .streak.w { color: var(--good); } .streak.l { color: var(--bad); }
 /* 명단 편집: 위쪽 큰 버튼으로 시작하고, 편집 중엔 금색 띠에서 끝내요. 고를 사람을 누르면 그 사람만 고치는 작은 칸이 열려요. */
 .roster-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 12px; }
-.roster-head h2 { margin: 0; flex: 1; }
+.roster-head h2 { margin: 0; flex: 1; align-items: center; }
+/* 내전 탭 선수 명단 인원: 넣음 10 · 남음 5 · 전체 15 */
+.rcount { display: inline-flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; font-weight: 600; color: var(--muted); }
+.rcount b { font-family: var(--display); font-size: 22px; font-weight: 800; color: var(--ink); margin-left: 3px; vertical-align: -2px; font-variant-numeric: tabular-nums; }
+.rcount .in b { color: var(--gold); }
 .editbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 10px 12px; margin-bottom: 12px; border-radius: 10px;
   background: color-mix(in srgb, var(--gold) 14%, var(--surface)); border: 1px solid color-mix(in srgb, var(--gold) 45%, var(--line)); }
 .editbar .msg { margin-right: auto; font-size: 14px; } .editbar .msg b { color: var(--gold); }
@@ -683,7 +687,7 @@ li.match.picked { outline: 2px solid var(--bad); outline-offset: -2px; }
   <section class="game" id="g-lol" role="tabpanel" aria-labelledby="game-lol">
   <section id="p-play">
     <div class="card">
-      <div class="roster-head"><h2>선수 명단 <span class="r" id="rosterCount"></span></h2><button class="btn ghost small" id="goRoster">✎ 명단 관리</button></div>
+      <div class="roster-head"><h2>선수 명단 <span class="rcount" id="rosterCount"></span></h2><button class="btn ghost small" id="goRoster">✎ 명단 관리</button></div>
       <div id="roster"></div>
       <p class="note" id="rosterNote"></p>
     </div>
@@ -1360,7 +1364,8 @@ function renderRoster() {
   $('#roster').innerHTML = `<div class="chips">${!players.length
     ? '<span class="empty">아직 명단이 없어요. 위 "선수 명단" 탭에서 친구들 이름을 넣어 주세요.</span>'
     : players.map(p => chip(p, 'roster')).join('')}</div>`;
-  $('#rosterCount').textContent = !players.length ? '' : `남은 ${rest.length}명 / 전체 ${players.length}명`;
+  // 넣은 사람·남은 사람·전체를 큰 숫자로(넣은 사람은 금색)
+  $('#rosterCount').innerHTML = !players.length ? '' : `<span class="in">넣음 <b>${players.length - rest.length}</b></span><span>남음 <b>${rest.length}</b></span><span>전체 <b>${players.length}</b></span>`;
   // 선수 명단 탭: 한 줄에 한 명씩 세로로(티어·이름·라인·솔랭 아이콘 / Riot ID / 이번 시즌 승패·MMR). 누르면 그 줄 아래에 고치는 칸이 열려요(누구나).
   // 고치는 칸(#editBox)은 열린 줄 안으로 옮겨 붙여요. 목록을 다시 그리기 전에 밖으로 빼 둬야 같이 지워지지 않아요.
   // '여러 명 고르기' 중이면 줄을 누를 때 고치는 칸 대신 체크가 바뀌고, 위 줄에서 고른 사람을 한 번에 빼요.
@@ -3389,6 +3394,9 @@ document.addEventListener('click', e => {
 // ---------- 버전 · 패치노트 ----------
 // 커밋해서 올릴 때마다 맨 위에 새 항목을 더해요(규칙은 CLAUDE.md). 오른쪽 위 버전은 맨 위 항목이에요.
 const NOTES = [
+  { v: '1.25.2', d: '2026-10-23', items: [
+    '롤 내전 탭 선수 명단 제목 옆에 "넣음 10 · 남음 5 · 전체 15"처럼 인원을 큰 숫자로 보여 줘요. 오늘 할 사람에 넣은 인원은 금색이에요.',
+  ] },
   { v: '1.25.1', d: '2026-10-23', items: [
     '탭이 세 겹이던 걸 두 겹으로 줄였어요. 롤 내전 탭은 팀 섞고 승패 누르는 화면만 바로 나오고, 전적·분석·기록은 📊 정보 갈래의 "내전 전적 · 내전 분석 · 내전 기록" 탭으로 옮겼어요.',
   ] },
