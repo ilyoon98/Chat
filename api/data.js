@@ -473,14 +473,11 @@ export default async function handler(req, res) {
     const notHost = () => res.status(423).json({ error: 'not_host' });
     // 선수 명단(추가·이름 바꾸기·빼기·Riot ID)은 누구나 고쳐요. 내전 기록 삭제·백업 불러오기·새 시즌·초기화는
     // 모든 방이 같이 쓰는 기록이라 어느 방이든 방장인 사람만 해요.
-    // 1:1·토너먼트는 닉네임을 정한 사람 누구나 기록하고 만들어요. 1:1 지우기·토너먼트 결과·지우기는 만든 사람이나 방장만(ownerOk).
-    const anyHost = rooms.some(isHost);
-    const rosterAction = ['deleteMatch', 'deleteMatches', 'resetRecords', 'importBackup', 'startSeason'].includes(b.action);
-    if (rosterAction && !anyHost) return notHost();
-    const myKey = me ? predKey(me) : null, ownerOk = x => anyHost || (!!myKey && x?.by === myKey);
-    const notOwner = () => res.status(423).json({ error: 'not_owner' });
-    // 그 방의 오늘 할 사람·팀 배치·승패는 그 방 방장만
-    if (['select', 'current', 'addMatch', 'giveHost', 'closeRoom'].includes(b.action)) {
+    const rosterAction = ['deleteMatch', 'deleteMatches', 'deleteDuel', 'resetRecords', 'importBackup', 'startSeason'].includes(b.action);
+    if (rosterAction && !rooms.some(isHost)) return notHost();
+    // 그 방의 오늘 할 사람·팀 배치·승패, 1:1 기록, 토너먼트 만들기·결과·지우기는 지금 들어가 있는 그 방 방장만(같이 하기는 방에서 해요)
+    // 1:1 기록 지우기는 내전 기록 지우기처럼 정보 탭에서 해서 어느 방이든 방장이면 돼요(위 rosterAction).
+    if (['select', 'current', 'addMatch', 'giveHost', 'closeRoom', 'addDuel', 'createTourn', 'tournWin', 'deleteTourn'].includes(b.action)) {
       if (!room) return res.status(404).json({ error: 'no_room' });
       if (!isHost(room)) return notHost();
     }
@@ -581,16 +578,13 @@ export default async function handler(req, res) {
         break;
       }
       case 'createTourn': {
-        // 새 토너먼트(방장): 참가자(사람 또는 팀) 2~32. 순서대로 대진표 칸에 들어가요(화면이 미리 섞어서 보내요).
+        // 새 토너먼트(그 방 방장): 참가자(사람 또는 팀) 2~32. 순서대로 대진표 칸에 들어가요(화면이 미리 섞어서 보내요).
         const name = typeof b.name === 'string' && b.name.trim() ? b.name.trim().slice(0, 30) : null, game = typeof b.game === 'string' ? b.game.trim().slice(0, 20) : '';
         const ents = Array.isArray(b.entrants) ? b.entrants.map(e => cleanNames(e, 5)).filter(e => e?.length) : [], all = ents.flat();
         if (!name || ents.length < 2 || ents.length > 32 || new Set(all).size !== all.length) return bad(res);
-        const nk = await nickOf(me);
-        if (!nk) return needNick(res);
         if ((await readTourns()).length >= MAX_TOURN) return res.status(409).json({ error: 'tourn_full' });
         id = 't' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-        // by: 만든 기기의 짧은 열쇠(기기 id 자체는 안 남겨요), byNick: 만든 사람 닉네임
-        await redis.hset(K.tourn, { [id]: { ...makeTourn(name, game, ents), by: myKey, byNick: nk } });
+        await redis.hset(K.tourn, { [id]: { ...makeTourn(name, game, ents), byNick: room.hostNick } }); // byNick: 만든 방장 닉네임
         break;
       }
       case 'tournWin': {
@@ -598,7 +592,6 @@ export default async function handler(req, res) {
         const tid = typeof b.id === 'string' ? b.id : '', T = tid && parse(await redis.hget(K.tourn, tid));
         const r = Number(b.r), i = Number(b.i), w = b.w === 'a' || b.w === 'b' ? b.w : null, m = T?.rounds?.[r]?.[i];
         if (!m) return res.status(404).json({ error: 'no_tourn' });
-        if (!ownerOk(T)) return notOwner();
         if (m.a == null || m.b == null) return bad(res); // 부전승이나 아직 상대가 안 정해진 판
         if (m.w === w) { dup = true; break; }
         if (T.rounds[r + 1]?.[i >> 1]?.w) return res.status(409).json({ error: 'tourn_locked' });
@@ -609,8 +602,6 @@ export default async function handler(req, res) {
       }
       case 'deleteTourn': {
         if (typeof b.id !== 'string' || !b.id) return bad(res);
-        const T = parse(await redis.hget(K.tourn, b.id));
-        if (T && !ownerOk(T)) return notOwner();
         await redis.hdel(K.tourn, b.id);
         await markGone([b.id]);
         break;
@@ -897,14 +888,14 @@ export default async function handler(req, res) {
         // 1:1 한 판: 두 사람과 이긴 사람. 같은 두 사람·같은 결과가 15초 안에 또 오면 두 번 누른 걸로 보고 한 번만 남겨요.
         const [a, bb] = [cleanName(b.a), cleanName(b.b)], w = cleanName(b.win);
         if (!a || !bb || a === bb || ![a, bb].includes(w)) return bad(res);
-        if (!(await nickOf(me))) return needNick(res);
-        const rule = DUEL_RULES.includes(b.rule) ? b.rule : '자유', now = Date.now(), duels = await readDuels();
+        // 승리 조건(규칙)은 v1.27.0에서 뺐어요. 예전 기록의 rule은 그대로 남아요.
+        const now = Date.now(), duels = await readDuels();
         if (duels.length >= MAX_MATCHES) return res.status(409).json({ error: 'full' });
         const prev = duels.find(d => now - d.t < 15e3 && d.w === w && [d.a, d.b].sort().join() === [a, bb].sort().join());
         if (prev) { id = prev.id; dup = true; break; }
         id = 'd' + now.toString(36) + Math.random().toString(36).slice(2, 6);
-        await redis.hset(K.duels, { [id]: { t: now, a, b: bb, w, rule, by: myKey } }); // by: 기록한 기기 열쇠(그 사람은 지울 수 있어요)
-        notify = `⚔️ 1:1 **${w}** 승리 vs ${w === a ? bb : a}${rule !== '자유' ? ` (${rule})` : ''}`;
+        await redis.hset(K.duels, { [id]: { t: now, a, b: bb, w } });
+        notify = `⚔️ 1:1 **${w}** 승리 vs ${w === a ? bb : a}`;
         break;
       }
       case 'startSeason': {
@@ -918,8 +909,6 @@ export default async function handler(req, res) {
       }
       case 'deleteDuel': {
         if (typeof b.id !== 'string' || !b.id) return bad(res);
-        const d = parse(await redis.hget(K.duels, b.id));
-        if (d && !ownerOk(d)) return notOwner();
         await redis.hdel(K.duels, b.id);
         await markGone([b.id]);
         break;

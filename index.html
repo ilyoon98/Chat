@@ -570,6 +570,10 @@ li.match.picked { outline: 2px solid var(--bad); outline-offset: -2px; }
 .prows > li.picked { background: color-mix(in srgb, var(--bad) 12%, var(--surface)); }
 .prow-name input { margin: 0 4px 0 0; pointer-events: none; }
 .shot-btns { display: inline-flex; gap: 6px; }
+/* 1:1 기록: 판마다 한 줄 카드(시각 · 누가 이겼는지 · 이미지·삭제) */
+#duelLog > li:not(.mday) { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--sunk); }
+#duelLog time { font-weight: 700; font-variant-numeric: tabular-nums; }
+#duelLog .sides { flex: 1; min-width: 0; }
 </style>
 </head>
 <body>
@@ -644,6 +648,7 @@ li.match.picked { outline: 2px solid var(--bad); outline-offset: -2px; }
     <button role="tab" id="game-stats" aria-selected="false" aria-controls="g-stats" hidden>내전 전적</button>
     <button role="tab" id="game-analysis" aria-selected="false" aria-controls="g-analysis" hidden>내전 분석</button>
     <button role="tab" id="game-log" aria-selected="false" aria-controls="g-log" hidden>내전 기록</button>
+    <button role="tab" id="game-dlog" aria-selected="false" aria-controls="g-dlog" hidden>1:1 기록</button>
     <button role="tab" id="game-five" aria-selected="false" aria-controls="g-five" hidden>롤 5인 큐</button>
     <button role="tab" id="game-roster" aria-selected="false" aria-controls="g-roster" hidden>선수 명단</button>
   </nav>
@@ -787,23 +792,27 @@ li.match.picked { outline: 2px solid var(--bad); outline-offset: -2px; }
     <div class="card">
       <h2>1:1 붙기 <span class="r" id="duelMeta"></span></h2>
       <div class="duel-vs" id="duelVs"></div>
-      <div class="row" style="margin-top:12px"><div class="seg" id="duelRule" role="group" aria-label="1:1 규칙"></div></div>
       <div id="duelWin"></div>
       <p class="pick-h" style="margin-top:14px">이름을 눌러 두 명을 골라요 (다시 누르면 빠져요)</p>
       <div class="chips" id="duelPick"></div>
+      <p class="note">1:1 순위와 지난 1:1 기록은 📊 정보 → 1:1 기록에서 봐요.</p>
     </div>
+  </section>
+
+  <!-- 1:1 기록(정보): 1:1 순위와 전체 1:1 기록. 지우기는 내전 기록처럼 어느 방이든 방장이 두 번 눌러서 해요. -->
+  <section class="game" id="g-dlog" role="tabpanel" aria-labelledby="game-dlog" hidden>
     <div class="card">
       <h2>1:1 순위 <span class="r"><span id="duelRankMeta"></span> <label hidden>시즌 <select class="season"></select></label></span></h2>
       <div id="duelRank"></div>
       <p class="note">1:1 MMR은 내전 MMR과 따로예요. 1000점에서 시작해서, 높은 사람을 이기면 많이 오르고 낮은 사람에게 지면 많이 내려가요. 새 시즌이 시작되면 1:1 MMR도 1000점에서 다시 시작해요.</p>
     </div>
     <div class="card">
-      <h2>최근 1:1 <span class="r" id="duelLogMeta"></span></h2>
+      <h2>1:1 기록 <span class="r" id="duelLogMeta"></span></h2>
       <ul class="log" id="duelLog"></ul>
     </div>
   </section>
 
-  <!-- 토너먼트: 롤 1:1이든 다른 게임이든 대진표를 짜요(개인전·팀전). 닉네임을 정한 사람 누구나 만들고, 결과·지우기는 만든 사람과 방장이 해요. -->
+  <!-- 토너먼트: 롤 1:1이든 다른 게임이든 대진표를 짜요(개인전·팀전). 만들기·결과·지우기는 이 방 방장이 해요. -->
   <section class="game" id="g-tourn" role="tabpanel" aria-labelledby="game-tourn" hidden>
     <div class="card">
       <h2>새 토너먼트</h2>
@@ -818,7 +827,7 @@ li.match.picked { outline: 2px solid var(--bad); outline-offset: -2px; }
         <div class="chips" id="tPick"></div>
         <div class="row"><button class="btn gold" id="tMake" disabled>대진표 만들기</button><span class="note" id="tNote" style="margin:0"></span></div>
       </div>
-      <p class="note" id="tNoHost" hidden>닉네임을 정하면 누구나 토너먼트를 만들 수 있어요(맨 위 방 줄). 결과는 만든 사람과 방장이 눌러요. 대진표는 누구나 볼 수 있어요.</p>
+      <p class="note" id="tNoHost" hidden>토너먼트는 이 방 방장이 만들고 결과를 눌러요. 대진표는 누구나 볼 수 있어요.</p>
     </div>
     <div id="tournList"></div>
   </section>
@@ -918,10 +927,6 @@ function saveLocal() {
 const curRoom = () => S.rooms.find(r => r.id === S.room) || null;
 const isHost = () => curRoom()?.hostId === ME.id;               // 이 방의 오늘 할 사람·팀·승패
 const canRoster = () => S.rooms.some(r => r.hostId === ME.id);  // 내전 기록 삭제·백업·시즌은 어느 방이든 방장이면
-// 이 기기의 짧은 열쇠(기기 id를 sha256으로 바꾼 앞 10자리). 서버는 1:1·토너먼트를 만든 사람을 이걸로 남겨요(기기 id는 안 보여요).
-let MY_KEY = '';
-crypto.subtle?.digest('SHA-256', new TextEncoder().encode(ME.id)).then(h => { MY_KEY = [...new Uint8Array(h)].map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 10); renderAll(); }).catch(() => {});
-const canOwn = x => canRoster() || (!!MY_KEY && x?.by === MY_KEY); // 그 1:1·토너먼트를 만든 사람이거나 방장
 const NEED_NICK = '먼저 닉네임을 정해 주세요. 맨 위 방 줄에서 정할 수 있어요.';
 function needHost() {
   if (isHost()) return true;
@@ -976,7 +981,7 @@ async function api(action, body, quiet) {
         pred_closed: '이 판은 결과가 나와서 예측이 마감됐어요.', pred_stale: '팀이 바뀌었어요. 새 팀으로 다시 찍어 주세요.',
         tourn_locked: '다음 판 결과를 먼저 풀어야 바꿀 수 있어요.', no_tourn: '그 토너먼트가 없어요. 지워졌을 수 있어요.', tourn_full: '토너먼트는 50개까지예요. 지난 토너먼트를 지워 주세요.',
         season_empty: '이번 시즌엔 아직 기록한 판이 없어요. 한 판 이상 하고 새 시즌을 시작해 주세요.',
-        need_nick: NEED_NICK, not_owner: '만든 사람이나 방장만 바꿀 수 있어요.' }[e] || '저장에 실패했어요.');
+        need_nick: NEED_NICK }[e] || '저장에 실패했어요.');
       throw new Error(e || String(res.status));
     }
     if (res.status === 424) { const e = (await res.json().catch(() => ({}))).error; if (!quiet) toast(RIOT_ERR[e] || RIOT_ERR.riot_down); throw new Error(e); }
@@ -2624,8 +2629,8 @@ $('#fivePick').addEventListener('click', e => {
 $('#fiveClear').onclick = () => { FIVE = []; saveFive(); renderFive(); };
 $('#fiveRefresh').onclick = e => refreshRiotNow(e.currentTarget);
 // 게임 탭은 갈래(같이 하기·재미·정보)로 나눠 보여요. 마지막에 본 탭과 갈래마다 마지막 탭을 기억해요.
-const GAMES = ['lol', 'duel', 'tourn', 'timer', 'pick', 'meal', 'stats', 'analysis', 'log', 'five', 'roster'];
-const CAT = { lol: 'play', duel: 'play', tourn: 'play', timer: 'play', pick: 'fun', meal: 'fun', stats: 'info', analysis: 'info', log: 'info', five: 'info', roster: 'info' };
+const GAMES = ['lol', 'duel', 'tourn', 'timer', 'pick', 'meal', 'stats', 'analysis', 'log', 'dlog', 'five', 'roster'];
+const CAT = { lol: 'play', duel: 'play', tourn: 'play', timer: 'play', pick: 'fun', meal: 'fun', stats: 'info', analysis: 'info', log: 'info', dlog: 'info', five: 'info', roster: 'info' };
 let CAT_LAST = {}; try { CAT_LAST = JSON.parse(localStorage.getItem(LS + ':catGame') || '{}') || {}; } catch {}
 let CUR_GAME = 'lol'; // 지금 고른 게임 탭
 function showGame(g) {
@@ -2677,10 +2682,9 @@ function duelStats(duels) {
   }
   return { P, H };
 }
-// 고른 두 사람·규칙은 이 기기에만 기억해요. 닉네임을 정한 사람 누구나 결과를 기록하고, 기록한 사람과 방장이 지울 수 있어요.
+// 고른 두 사람은 이 기기에만 기억해요. 결과 기록·지우기는 이 방 방장만 해요.
 let DUEL = { a: null, b: null, rule: '자유' }; try { DUEL = { ...DUEL, ...JSON.parse(localStorage.getItem(LS + ':duel') || '{}') }; } catch {}
 const saveDuel = () => { try { localStorage.setItem(LS + ':duel', JSON.stringify(DUEL)); } catch {} };
-const DUEL_RULES = ['자유', '퍼블', '100CS', '첫 타워'];
 function renderDuel() {
   if (!S.players.includes(DUEL.a)) DUEL.a = null;
   if (!S.players.includes(DUEL.b)) DUEL.b = null;
@@ -2691,10 +2695,9 @@ function renderDuel() {
   const h = a && b ? H[a + '\u0001' + b] : null;
   $('#duelVs').innerHTML = slot(a, 'a') + (a && b ? '<button class="vs" id="duelSwap" title="파랑·빨강 자리 바꾸기">VS<small>⇄ 바꾸기</small></button>' : '<span class="vs">VS</span>') + slot(b, 'b')
     + (a && b ? `<p class="duel-h2h">${h ? `맞대결 <b>${esc(a)} ${h[1]}승</b> · <b>${esc(b)} ${h[0] - h[1]}승</b>` : '둘이 붙는 건 처음이에요'}</p>` : '');
-  $('#duelRule').innerHTML = DUEL_RULES.map(r => `<button data-rule="${r}" aria-pressed="${DUEL.rule === r}">${r}</button>`).join('');
-  $('#duelWin').innerHTML = !(a && b) ? '' : ME.nick
+  $('#duelWin').innerHTML = !(a && b) ? '' : isHost()
     ? `<div class="result"><button class="win blue" data-duelwin="a">${esc(a)} 승리</button><button class="win red" data-duelwin="b">${esc(b)} 승리</button></div>`
-    : '<p class="note">1:1 결과는 닉네임을 정하면 누구나 기록할 수 있어요. 맨 위 방 줄에서 닉네임을 정해 주세요.</p>';
+    : '<p class="note">1:1 결과는 이 방 방장이 기록해요. 구경하는 사람은 순위와 기록을 볼 수 있어요.</p>';
   $('#duelPick').innerHTML = S.players.map(p => `<button class="chip${p === a ? ' a' : p === b ? ' b' : ''}" data-duel="${esc(p)}" aria-pressed="${p === a || p === b}">${esc(p)}${quick(p)}</button>`).join('')
     || '<span class="empty">명단이 비어 있어요. "선수 명단" 탭에서 이름을 넣어 주세요.</span>';
   $('#duelMeta').textContent = `총 ${S.duels.length}판`;
@@ -2707,38 +2710,48 @@ function renderDuel() {
       rows.map((x, i) => `<tr><td class="rank">${i + 1}</td><td><b data-card="${esc(x.name)}">${esc(x.name)}</b></td><td class="num">${x.g}</td><td class="num">${x.w}-${x.g - x.w}</td>
         <td><div class="rate"><span style="width:38px;text-align:right">${pct(x.w, x.g)}%</span>${bar(x.w / x.g)}</div></td><td class="num">${Math.round(x.mmr)}</td>
         <td><span class="form">${x.form.slice(-5).map(f => `<i class="${f ? 'w' : 'l'}">${f ? '승' : '패'}</i>`).join('')}</span>${streak(x.form)}</td></tr>`).join('')}</tbody></table></div>`;
-  // 최근 1:1 (30판까지)
-  const recent = [...S.duels].sort((x, y) => y.t - x.t).slice(0, 30), p2 = n => String(n).padStart(2, '0');
-  const when = t => { const d = new Date(t); return `${d.getMonth() + 1}/${d.getDate()} ${p2(d.getHours())}:${p2(d.getMinutes())}`; };
-  $('#duelLogMeta').textContent = S.duels.length > 30 ? '최근 30판' : '';
-  $('#duelLog').innerHTML = recent.map(d => { const l = d.w === d.a ? d.b : d.a;
-    return `<li><time>${when(d.t)}</time><div class="sides"><span class="won">👑 ${esc(d.w)} <span style="color:var(--muted);font-weight:500">이김 vs</span> ${esc(l)}${d.rule && d.rule !== '자유' ? `<span class="rule">${esc(d.rule)}</span>` : ''}</span></div>
-      <span class="shot-btns"><button class="btn ghost small" data-shot="duel" data-id="${esc(d.id)}">이미지</button>${canOwn(d) ? `<button class="btn ghost small" data-duel-del="${esc(d.id)}">삭제</button>` : ''}</span></li>`; }).join('')
-    || '<li style="display:block"><p class="empty">아직 기록이 없어요.</p></li>';
+  // 1:1 기록(정보 탭): 전체를 날짜별로. 지우기는 어느 방이든 방장이 두 번 눌러서(3초 안)
+  const all = [...S.duels].sort((x, y) => y.t - x.t), p2 = n => String(n).padStart(2, '0'), can = canRoster();
+  const day = t => { const d = new Date(t); return `${d.getMonth() + 1}월 ${d.getDate()}일 ${'일월화수목금토'[d.getDay()]}요일`; };
+  const counts = {}; for (const d of all) counts[day(d.t)] = (counts[day(d.t)] || 0) + 1;
+  $('#duelLogMeta').textContent = all.length ? `총 ${all.length}판` : '';
+  let last = '';
+  $('#duelLog').innerHTML = all.map(d => {
+    const l = d.w === d.a ? d.b : d.a, dd = day(d.t), head = dd !== last ? `<li class="mday">${dd} · ${counts[dd]}판</li>` : ''; last = dd;
+    const t = new Date(d.t), sure = duelDel === d.id;
+    return `${head}<li><time>${p2(t.getHours())}:${p2(t.getMinutes())}</time><div class="sides"><span class="won">👑 ${esc(d.w)} <span style="color:var(--muted);font-weight:500">이김 vs</span> ${esc(l)}</span></div>
+      <span class="shot-btns"><button class="btn ghost small" data-shot="duel" data-id="${esc(d.id)}">이미지</button>${can ? `<button class="btn ghost small" data-duel-del="${esc(d.id)}"${sure ? ' style="color:var(--bad);border-color:var(--bad)"' : ''}>${sure ? '정말 삭제' : '삭제'}</button>` : ''}</span></li>`;
+  }).join('') || '<li style="display:block"><p class="empty">아직 1:1 기록이 없어요. 같이 하기 → 롤 1:1에서 붙어 보세요.</p></li>';
 }
+let duelDel = null; // 지우기 확인 중인 1:1 기록 id
 $('#duelPick').addEventListener('click', e => {
   const p = e.target.closest('[data-duel]')?.dataset.duel; if (!p) return;
   if (DUEL.a === p) DUEL.a = null; else if (DUEL.b === p) DUEL.b = null;
   else if (!DUEL.a) DUEL.a = p; else if (!DUEL.b) DUEL.b = p; else DUEL.b = p; // 둘 다 찼으면 오른쪽 사람을 바꿔요
   saveDuel(); renderDuel();
 });
+$('#g-dlog').addEventListener('click', async e => {
+  const del = e.target.closest('[data-duel-del]'); if (!del || !needRoster()) return;
+  const id = del.dataset.duelDel;
+  if (duelDel !== id) { duelDel = id; renderDuel(); clearTimeout(renderDuel.t); renderDuel.t = setTimeout(() => { duelDel = null; renderDuel(); }, 3000); return; }
+  duelDel = null; try { await api('deleteDuel', { id }); toast('1:1 기록을 지웠어요.'); } catch {}
+  renderAll();
+});
 // 1:1 좌우(파랑·빨강) 바꾸기: 고른 두 사람 자리만 바꿔요(이 기기 화면에서만)
 $('#duelVs').addEventListener('click', e => { if (e.target.closest('#duelSwap')) { [DUEL.a, DUEL.b] = [DUEL.b, DUEL.a]; saveDuel(); renderDuel(); } });
-$('#duelRule').addEventListener('click', e => { const r = e.target.closest('[data-rule]')?.dataset.rule; if (r) { DUEL.rule = r; saveDuel(); renderDuel(); } });
 $('#g-duel').addEventListener('click', async e => {
   const w = e.target.closest('[data-duelwin]'), del = e.target.closest('[data-duel-del]');
   if (w) {
-    if (!ME.nick) return toast(NEED_NICK);
+    if (!needHost()) return;
     const winner = DUEL[w.dataset.duelwin]; w.disabled = true;
     try {
-      const d = await api('addDuel', { a: DUEL.a, b: DUEL.b, win: winner, rule: DUEL.rule });
+      const d = await api('addDuel', { a: DUEL.a, b: DUEL.b, win: winner });
       if (!d.dup) sfx('win');
       toast(d.dup ? '방금 같은 결과가 이미 기록돼 있어서 한 번만 남겼어요.' : `${winner} 승리! 1:1로 기록했어요.`);
     } catch {}
     renderAll();
   }
-  if (del && !canOwn(S.duels.find(d => d.id === del.dataset.duelDel))) return toast('기록한 사람이나 방장만 지울 수 있어요.');
-  if (del && confirm('이 1:1 기록을 지울까요?')) { try { await api('deleteDuel', { id: del.dataset.duelDel }); toast('1:1 기록을 지웠어요.'); } catch {} renderAll(); }
+
 });
 
 // ---------- 오늘 뭐 하지? 룰렛 ----------
@@ -3131,12 +3144,12 @@ function tVs(T, can) {
   const side = (s, cls) => `<div class="duel-slot ${cls}${w ? (w === s ? ' won' : ' lose') : ''}"><b>${w === s ? '👑 ' : ''}${esc(name(x.m[s]))}</b>${T.ents[x.m[s]].length > 1 ? `<small>${esc(entLabel(T.ents[x.m[s]]))}</small>` : ''}</div>`;
   const btn = s => `<button class="win ${s === 'a' ? 'blue' : 'red'}" data-tw="${esc(T.id)}|${x.r}|${x.i}|${s}">${esc(name(x.m[s]))} 승리</button>`;
   const foot = w ? `<p class="tvs-done">👑 <b>${esc(name(x.m[w]))}</b> 승리${can ? ` · <button class="linkbtn" data-tw="${esc(T.id)}|${x.r}|${x.i}|${w}">결과 취소</button>` : ''}</p>`
-    : can ? `<div class="result">${btn('a')}${btn('b')}</div>` : '<p class="note" style="margin:0;text-align:center">결과는 만든 사람이나 방장이 눌러요.</p>';
+    : can ? `<div class="result">${btn('a')}${btn('b')}</div>` : '<p class="note" style="margin:0;text-align:center">결과는 이 방 방장이 눌러요.</p>';
   return `<div class="tvs"><div class="tvs-h"><b>⚔️ ${roundName(T.rounds[x.r].length * 2)} ${x.i + 1}경기</b><span>남은 판 ${left}개 · 아래 대진표에서 판을 눌러 골라요</span></div>
     <div class="duel-vs">${side('a', 'a')}<span class="vs">VS</span>${side('b', 'b')}</div>${foot}</div>`;
 }
 function renderTourn() {
-  $('#tMakeBox').hidden = !ME.nick; $('#tNoHost').hidden = !!ME.nick;
+  $('#tMakeBox').hidden = !isHost(); $('#tNoHost').hidden = isHost();
   for (const n of [...TN.pick]) if (!S.players.includes(n)) TN.pick.delete(n);
   $('#tPick').innerHTML = S.players.map(p => `<button class="chip${TN.pick.has(p) ? ' on' : ''}" data-tp="${esc(p)}" aria-pressed="${TN.pick.has(p)}">${esc(p)}</button>`).join('') || '<span class="empty">선수 명단 탭에서 이름을 먼저 넣어 주세요.</span>';
   document.querySelectorAll('#tMode [data-tm]').forEach(b => b.setAttribute('aria-pressed', +b.dataset.tm === TN.mode));
@@ -3147,7 +3160,7 @@ function renderTourn() {
     : `${k > 1 ? `${E}팀` : `${E}명`} · ${roundName(P)}부터${P > E ? ` · 부전승 ${P - E}` : ''}${k > 1 ? ' · 팀은 무작위로 묶어요' : ''}`;
   $('#tMake').disabled = !ok;
   $('#tournList').innerHTML = S.tourns.map(T => {
-    const champ = T.champ != null ? T.ents[T.champ] : null, team = T.ents[0]?.length > 1, can = canOwn(T);
+    const champ = T.champ != null ? T.ents[T.champ] : null, team = T.ents[0]?.length > 1, can = isHost();
     const focus = tFocus(T);
     const slot = (m, r, i, side) => {
       const e = m[side], other = side === 'a' ? 'b' : 'a';
@@ -3169,7 +3182,7 @@ $('#tPick').addEventListener('click', e => {
 });
 $('#tMode').addEventListener('click', e => { const b = e.target.closest('[data-tm]'); if (b) { TN.mode = +b.dataset.tm; renderTourn(); } });
 $('#tMake').onclick = async () => {
-  if (!ME.nick) return toast(NEED_NICK);
+  if (!needHost()) return;
   const k = TN.mode, picked = shuffle([...TN.pick]), entrants = [];
   for (let i = 0; i + k <= picked.length; i += k) entrants.push(picked.slice(i, i + k));
   const d = new Date(), game = $('#tGame').value.trim(), name = $('#tName').value.trim() || `${d.getMonth() + 1}월 ${d.getDate()}일 ${game || ''} 토너먼트`.replace(/\s+/g, ' ');
@@ -3181,7 +3194,7 @@ $('#tournList').addEventListener('click', async e => {
   const del = e.target.closest('[data-tdel]');
   if (del) {
     const id = del.dataset.tdel;
-    if (!canOwn(S.tourns.find(t => t.id === id))) return toast('만든 사람이나 방장만 지울 수 있어요.');
+    if (!needHost()) return;
     if (tournDel !== id) { tournDel = id; renderTourn(); clearTimeout(renderTourn.t); renderTourn.t = setTimeout(() => { tournDel = null; renderTourn(); }, 3000); return; }
     tournDel = null; try { await api('deleteTourn', { id }); toast('토너먼트를 지웠어요.'); } catch {}
     return renderAll();
@@ -3191,7 +3204,7 @@ $('#tournList').addEventListener('click', async e => {
   const b = e.target.closest('[data-tw]'); if (!b || b.disabled) return;
   const [id, r, i, side] = b.dataset.tw.split('|'), T = S.tourns.find(t => t.id === id), m = T?.rounds[+r]?.[+i];
   if (!m) return;
-  if (!canOwn(T)) return toast('만든 사람이나 방장만 결과를 누를 수 있어요.');
+  if (!needHost()) return;
   const w = m.w === side ? null : side, last = +r === T.rounds.length - 1;
   try {
     await api('tournWin', { id, r: +r, i: +i, w });
@@ -3332,7 +3345,7 @@ async function duelShot(d) {
   const loser = d.w === d.a ? d.b : d.a, h = after.H[d.w + '\u0001' + loser] || [1, 1], side = d.w === d.a ? 'blue' : 'red';
   const sub = shotWhen(d.t), W = SHOT_W, P = SHOT_P, gap = 96, colW = (W - P * 2 - gap) / 2, top = 408, sh = 232, H = top + sh + 236;
   const h2h = `맞대결 ${d.w} ${h[1]}승 · ${loser} ${h[0] - h[1]}승`;
-  const k = await shotStart(H, side, sub, `롤 1:1 결과${d.rule && d.rule !== '자유' ? ` · ${d.rule}` : ''}`, `${d.w} 승리`, [d.a, d.b, h2h, '승리 패배 1:1 MMR VS 번째']), { g, T } = k;
+  const k = await shotStart(H, side, sub, '롤 1:1 결과', `${d.w} 승리`, [d.a, d.b, h2h, '승리 패배 1:1 MMR VS 번째']), { g, T } = k;
   [[d.a, 'blue'], [d.b, 'red']].forEach(([p, s], j) => {
     const x = P + j * (colW + gap), won = p === d.w, C = SHOT[s];
     const a = Math.round(before[p]?.mmr ?? 1000), b = Math.round(after.P[p]?.mmr ?? 1000);
@@ -3432,6 +3445,11 @@ document.addEventListener('click', e => {
 // ---------- 버전 · 패치노트 ----------
 // 커밋해서 올릴 때마다 맨 위에 새 항목을 더해요(규칙은 CLAUDE.md). 오른쪽 위 버전은 맨 위 항목이에요.
 const NOTES = [
+  { v: '1.27.0', d: '2026-10-23', items: [
+    '롤 1:1과 토너먼트는 그 방 방장만 기록·조작해요(1:1 승리 누르기, 토너먼트 만들기·결과·지우기). 구경하는 친구는 보기만 해요. 인게임 타이머는 지금처럼 누구나 눌러요.',
+    '1:1의 승리 조건(자유·퍼블·100CS·첫 타워)을 뺐어요. 두 명 고르고 이긴 사람만 누르면 돼요.',
+    '📊 정보에 "1:1 기록" 탭이 생겼어요. 1:1 순위와 지난 1:1 전체가 날짜별로 나오고, 내전 기록처럼 방장이 두 번 눌러 지울 수 있어요. 같이 하기 → 롤 1:1에는 붙는 화면만 남겼어요.',
+  ] },
   { v: '1.26.1', d: '2026-10-23', items: [
     '열린 방이 하나뿐이어도 자동으로 들어가지 않아요. 같이 하기 탭의 방 카드에서 "들어가기"를 눌러 골라요. 방 링크로 들어오거나 전에 있던 방으로 돌아가는 건 그대로예요.',
   ] },

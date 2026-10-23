@@ -229,12 +229,12 @@ test('백업 불러오기는 지금 없는 것만 더해요', async () => {
 test('일부러 지운 판·1:1·토너먼트는 백업을 불러와도 되살아나지 않아요', async () => {
   const room = await setup();
   const keep = await record(room), gone = await record(room, { blue: ['다'], red: ['라'] });
-  const duel = (await post({ action: 'addDuel', a: '가', b: '나', win: '가' })).body.id;
-  const tourn = (await post({ action: 'createTourn', name: '컵', entrants: [['가'], ['나']] })).body.id;
+  const duel = (await post({ action: 'addDuel', room, a: '가', b: '나', win: '가' })).body.id;
+  const tourn = (await post({ action: 'createTourn', room, name: '컵', entrants: [['가'], ['나']] })).body.id;
   const backup = (await get()).body;
   await post({ action: 'deleteMatch', id: gone });
-  await post({ action: 'deleteDuel', id: duel });
-  await post({ action: 'deleteTourn', id: tourn });
+  await post({ action: 'deleteDuel', room, id: duel });
+  await post({ action: 'deleteTourn', room, id: tourn });
   const r = await post({ action: 'importBackup', players: backup.players, matches: backup.matches, duels: backup.duels, tourns: backup.tourns });
   assert.equal(r.body.imported.matches, 0);
   assert.equal(r.body.imported.duels, 0);
@@ -283,48 +283,41 @@ test('판이 없는 시즌은 새로 시작할 수 없어요', async () => {
 });
 
 test('토너먼트: 이긴 쪽이 올라가고 결승 승자가 우승이에요', async () => {
-  await setup();
-  const id = (await post({ action: 'createTourn', name: '컵', entrants: [['가'], ['나'], ['다'], ['라']] })).body.id;
-  await post({ action: 'tournWin', id, r: 0, i: 0, w: 'a' });
-  await post({ action: 'tournWin', id, r: 0, i: 1, w: 'b' });
-  const r = await post({ action: 'tournWin', id, r: 1, i: 0, w: 'b' });
+  const room = await setup();
+  const id = (await post({ action: 'createTourn', room, name: '컵', entrants: [['가'], ['나'], ['다'], ['라']] })).body.id;
+  await post({ action: 'tournWin', room, id, r: 0, i: 0, w: 'a' });
+  await post({ action: 'tournWin', room, id, r: 0, i: 1, w: 'b' });
+  const r = await post({ action: 'tournWin', room, id, r: 1, i: 0, w: 'b' });
   const T = r.body.tourns.find(t => t.id === id);
   assert.deepEqual(T.ents[T.champ], ['라']);
-  assert.equal((await post({ action: 'tournWin', id, r: 0, i: 0, w: 'b' })).body.error, 'tourn_locked');
+  assert.equal((await post({ action: 'tournWin', room, id, r: 0, i: 0, w: 'b' })).body.error, 'tourn_locked');
 });
 
 // ---------- 1:1·토너먼트 권한 ----------
-test('방이 없어도 닉네임만 있으면 1:1을 기록하고 토너먼트를 만들어요', async () => {
-  await post({ action: 'addPlayers', names: ['가', '나'] }, GUEST);
-  assert.equal((await post({ action: 'addDuel', a: '가', b: '나', win: '가' }, GUEST)).body.error, 'need_nick');
+test('1:1 기록은 그 방 방장만, 지우기는 내전 기록처럼 어느 방이든 방장이 해요', async () => {
+  const room = await setup();
   await post({ action: 'claimNick', nick: '손님' }, GUEST);
-  assert.equal((await post({ action: 'addDuel', a: '가', b: '나', win: '가' }, GUEST)).status, 200);
-  const t = await post({ action: 'createTourn', name: '컵', entrants: [['가'], ['나']] }, GUEST);
-  assert.equal(t.status, 200);
-  assert.equal(t.body.tourns[0].byNick, '손님');
+  assert.equal((await post({ action: 'addDuel', room, a: '가', b: '나', win: '가' }, GUEST)).body.error, 'not_host');
+  assert.equal((await post({ action: 'addDuel', a: '가', b: '나', win: '가' }, HOST)).body.error, 'no_room');
+  const r = await post({ action: 'addDuel', room, a: '가', b: '나', win: '가', rule: '퍼블' }, HOST);
+  assert.equal(r.status, 200);
+  const d = r.body.duels.find(x => x.id === r.body.id);
+  assert.equal(d.rule, undefined); // 승리 조건은 더 안 남겨요
+  assert.equal((await post({ action: 'deleteDuel', id: d.id }, GUEST)).body.error, 'not_host');
+  assert.equal((await post({ action: 'deleteDuel', id: d.id }, HOST)).status, 200); // 정보 탭에서(방 없이) 지워도 돼요
 });
 
-test('토너먼트 결과·지우기는 만든 사람과 방장만 돼요', async () => {
-  await setup();
+test('토너먼트 만들기·결과·지우기는 그 방 방장만 돼요', async () => {
+  const room = await setup();
   await post({ action: 'claimNick', nick: '손님' }, GUEST);
-  await post({ action: 'claimNick', nick: '딴사람' }, OTHER);
-  const id = (await post({ action: 'createTourn', name: '컵', entrants: [['가'], ['나'], ['다'], ['라']] }, GUEST)).body.id;
-  assert.equal((await post({ action: 'tournWin', id, r: 0, i: 0, w: 'a' }, OTHER)).body.error, 'not_owner');
-  assert.equal((await post({ action: 'tournWin', id, r: 0, i: 0, w: 'a' }, GUEST)).status, 200);
-  assert.equal((await post({ action: 'tournWin', id, r: 0, i: 1, w: 'a' }, HOST)).status, 200); // 방장도 돼요
-  assert.equal((await post({ action: 'deleteTourn', id }, OTHER)).body.error, 'not_owner');
-  assert.equal((await post({ action: 'deleteTourn', id }, GUEST)).status, 200);
-});
-
-test('1:1 기록은 기록한 사람과 방장만 지워요', async () => {
-  await setup();
-  await post({ action: 'claimNick', nick: '손님' }, GUEST);
-  await post({ action: 'claimNick', nick: '딴사람' }, OTHER);
-  const id = (await post({ action: 'addDuel', a: '가', b: '나', win: '나' }, GUEST)).body.id;
-  assert.equal((await post({ action: 'deleteDuel', id }, OTHER)).body.error, 'not_owner');
-  assert.equal((await post({ action: 'deleteDuel', id }, GUEST)).status, 200);
-  const id2 = (await post({ action: 'addDuel', a: '다', b: '라', win: '다' }, GUEST)).body.id;
-  assert.equal((await post({ action: 'deleteDuel', id: id2 }, HOST)).status, 200);
+  assert.equal((await post({ action: 'createTourn', room, name: '컵', entrants: [['가'], ['나']] }, GUEST)).body.error, 'not_host');
+  const t = await post({ action: 'createTourn', room, name: '컵', entrants: [['가'], ['나'], ['다'], ['라']] }, HOST);
+  assert.equal(t.body.tourns[0].byNick, '방장');
+  const id = t.body.id;
+  assert.equal((await post({ action: 'tournWin', room, id, r: 0, i: 0, w: 'a' }, GUEST)).body.error, 'not_host');
+  assert.equal((await post({ action: 'tournWin', room, id, r: 0, i: 0, w: 'a' }, HOST)).status, 200);
+  assert.equal((await post({ action: 'deleteTourn', room, id }, GUEST)).body.error, 'not_host');
+  assert.equal((await post({ action: 'deleteTourn', room, id }, HOST)).status, 200);
 });
 
 // ---------- 오늘 뭐 하지? 룰렛 ----------
