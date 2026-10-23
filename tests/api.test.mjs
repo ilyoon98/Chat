@@ -293,6 +293,40 @@ test('토너먼트: 이긴 쪽이 올라가고 결승 승자가 우승이에요'
   assert.equal((await post({ action: 'tournWin', id, r: 0, i: 0, w: 'b' })).body.error, 'tourn_locked');
 });
 
+// ---------- 1:1·토너먼트 권한 ----------
+test('방이 없어도 닉네임만 있으면 1:1을 기록하고 토너먼트를 만들어요', async () => {
+  await post({ action: 'addPlayers', names: ['가', '나'] }, GUEST);
+  assert.equal((await post({ action: 'addDuel', a: '가', b: '나', win: '가' }, GUEST)).body.error, 'need_nick');
+  await post({ action: 'claimNick', nick: '손님' }, GUEST);
+  assert.equal((await post({ action: 'addDuel', a: '가', b: '나', win: '가' }, GUEST)).status, 200);
+  const t = await post({ action: 'createTourn', name: '컵', entrants: [['가'], ['나']] }, GUEST);
+  assert.equal(t.status, 200);
+  assert.equal(t.body.tourns[0].byNick, '손님');
+});
+
+test('토너먼트 결과·지우기는 만든 사람과 방장만 돼요', async () => {
+  await setup();
+  await post({ action: 'claimNick', nick: '손님' }, GUEST);
+  await post({ action: 'claimNick', nick: '딴사람' }, OTHER);
+  const id = (await post({ action: 'createTourn', name: '컵', entrants: [['가'], ['나'], ['다'], ['라']] }, GUEST)).body.id;
+  assert.equal((await post({ action: 'tournWin', id, r: 0, i: 0, w: 'a' }, OTHER)).body.error, 'not_owner');
+  assert.equal((await post({ action: 'tournWin', id, r: 0, i: 0, w: 'a' }, GUEST)).status, 200);
+  assert.equal((await post({ action: 'tournWin', id, r: 0, i: 1, w: 'a' }, HOST)).status, 200); // 방장도 돼요
+  assert.equal((await post({ action: 'deleteTourn', id }, OTHER)).body.error, 'not_owner');
+  assert.equal((await post({ action: 'deleteTourn', id }, GUEST)).status, 200);
+});
+
+test('1:1 기록은 기록한 사람과 방장만 지워요', async () => {
+  await setup();
+  await post({ action: 'claimNick', nick: '손님' }, GUEST);
+  await post({ action: 'claimNick', nick: '딴사람' }, OTHER);
+  const id = (await post({ action: 'addDuel', a: '가', b: '나', win: '나' }, GUEST)).body.id;
+  assert.equal((await post({ action: 'deleteDuel', id }, OTHER)).body.error, 'not_owner');
+  assert.equal((await post({ action: 'deleteDuel', id }, GUEST)).status, 200);
+  const id2 = (await post({ action: 'addDuel', a: '다', b: '라', win: '다' }, GUEST)).body.id;
+  assert.equal((await post({ action: 'deleteDuel', id: id2 }, HOST)).status, 200);
+});
+
 test('인게임 타이머는 누구나 쓰고, 그 방 버전만 올려요', async () => {
   const room = await setup();
   const before = (await get(`room=${room}`)).body;
