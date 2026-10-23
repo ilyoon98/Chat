@@ -104,20 +104,16 @@ h1 em { font-style: normal; color: var(--gold); }
 .game { display: flex; flex-direction: column; gap: 18px; }
 /* 밥 뭐 먹지: 슬롯 세 칸 + 핀볼 */
 .slots { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; width: min(100%, 420px); padding: 10px; border-radius: 16px; background: var(--sunk); border: 2px solid var(--gold); box-shadow: inset 0 2px 10px rgba(0, 0, 0, .3); }
-.reel { position: relative; height: 56px; overflow: hidden; padding: 0; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font: inherit; cursor: pointer; }
-.reel:disabled { cursor: default; }
+.reelcol { display: grid; gap: 6px; min-width: 0; }
+.reel { position: relative; height: 56px; overflow: hidden; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); }
+.reelsel { width: 100%; min-width: 0; font-size: 13.5px; font-weight: 700; text-align: center; text-align-last: center; padding: 6px 4px; border-radius: 8px; }
+.reelsel.on { border-color: var(--gold); color: var(--gold); }
 .reel .strip { display: block; }
 .reel .strip span { display: flex; height: 56px; align-items: center; justify-content: center; font-family: var(--display); font-weight: 800; font-size: clamp(14px, 4vw, 17px); white-space: nowrap; }
 .reel.locked { border-color: var(--gold); box-shadow: inset 0 0 0 1px var(--gold); }
 .reel .lock { position: absolute; top: 2px; right: 5px; font-size: 11px; font-style: normal; }
-.reel { cursor: default; }
 /* 원하는 조건 고르기: 줄마다 아무거나 / 값. 고른 칸은 슬롯이 안 돌아요 */
-.meal-pick { display: grid; gap: 6px; width: min(100%, 420px); }
-.meal-pick .row { display: grid; grid-template-columns: 34px minmax(0, 1fr); align-items: center; gap: 6px; }
-.meal-pick .opts { display: flex; flex-wrap: wrap; gap: 5px; }
-.meal-pick .k { flex: none; width: 34px; font-size: 12.5px; font-weight: 700; color: var(--muted); }
-.meal-pick .chip { flex: none; padding: 5px 11px; font-size: 14px; }
-.meal-pick .cnt { text-align: center; font-size: 13px; color: var(--muted); } .meal-pick .cnt b { color: var(--gold); }
+.meal-cnt { margin: -6px 0 0; text-align: center; font-size: 13px; color: var(--muted); } .meal-cnt b { color: var(--gold); }
 .pinball { width: min(100%, 360px); } .pinball svg { width: 100%; display: block; }
 /* 오늘 뭐 하지? 룰렛: 돌림판 위 가운데 화살표가 가리키는 칸이 결과예요 */
 .pick-wrap { display: grid; justify-items: center; gap: 14px; }
@@ -698,7 +694,7 @@ li.match.picked { outline: 2px solid var(--bad); outline-offset: -2px; }
       <h2>🍚 밥 뭐 먹지? <span class="r" id="mealMeta"></span></h2>
       <div class="pick-wrap">
         <div class="slots" id="mealReels"></div>
-        <div class="meal-pick" id="mealPick"></div>
+        <p class="meal-cnt" id="mealPick"></p>
         <div class="pinball" id="mealBoard"></div>
         <div class="pick-res" id="mealRes" aria-live="polite"></div>
         <button class="btn gold" id="mealSpin">🎰 돌리기</button>
@@ -2899,10 +2895,14 @@ let mealSeen, mealBusy = false, mealLocal = null, mealShown = null, mealLanded =
 // 결과 시각으로 정해지는 난수(mulberry32): 같은 결과면 어느 화면에서나 같은 슬롯 줄·같은 공 길
 function seeded(t) { let a = (Number(t) >>> 0) || 1; return () => { a = (a + 0x6D2B79F5) | 0; let x = Math.imul(a ^ (a >>> 15), 1 | a); x = (x + Math.imul(x ^ (x >>> 7), 61 | x)) ^ x; return ((x ^ (x >>> 14)) >>> 0) / 4294967296; }; }
 const REEL_H = 56;
+// 슬롯 칸마다 아래 드롭다운에서 원하는 값을 고르면 그 칸은 고정(🔒)되고, '🎲 아무거나'인 칸만 돌아요.
 function drawReels(vals, spinning) {
+  if (!spinning && document.activeElement?.matches?.('#mealReels select')) return; // 고르는 중엔 그대로
+  const NAME = ['종류', '나라', '맵기'];
   $('#mealReels').innerHTML = MEAL_REELS.map((list, k) => {
     const v = spinning ? vals[k] : MEAL_LOCK[k] ?? vals?.[k] ?? list[0]; // 고른 조건이 있으면 그 값을 보여줘요(도는 중엔 결과)
-    return `<button class="reel${MEAL_LOCK[k] ? ' locked' : ''}" data-reel="${k}" aria-label="${['종류', '나라', '맵기'][k]} ${esc(v)}${MEAL_LOCK[k] ? ' (잠금)' : ''}"${spinning ? ' disabled' : ''}><span class="strip"><span>${MEAL_ICON[v]} ${esc(v)}</span></span>${MEAL_LOCK[k] ? '<i class="lock">🔒</i>' : ''}</button>`;
+    return `<div class="reelcol"><div class="reel${MEAL_LOCK[k] ? ' locked' : ''}" aria-label="${NAME[k]} ${esc(v)}"><span class="strip"><span>${MEAL_ICON[v]} ${esc(v)}</span></span>${MEAL_LOCK[k] ? '<i class="lock">🔒</i>' : ''}</div>`
+      + `<select class="reelsel${MEAL_LOCK[k] ? ' on' : ''}" data-mpick="${k}" aria-label="${NAME[k]} 고르기"${spinning ? ' disabled' : ''}><option value="">🎲 아무거나</option>${list.map(x => `<option value="${esc(x)}"${MEAL_LOCK[k] === x ? ' selected' : ''}>${MEAL_ICON[x]} ${esc(x)}</option>`).join('')}</select></div>`;
   }).join('');
 }
 // 슬롯이 돌다가 왼쪽부터 하나씩 멈춰요(잠근 칸은 안 돌아요). 다 멈추면 done()
@@ -2990,9 +2990,7 @@ function renderMeal() {
     : '<span class="note" style="margin:0">돌리면 슬롯 세 칸이 멈추고, 공이 떨어진 칸이 오늘 메뉴예요.</span>';
   // 원하는 조건 고르기: 줄마다 '아무거나'면 슬롯이 돌고, 값을 고르면 그 칸은 고정(🔒)돼요. 이 기기에 기억해요.
   const left = MEALS.filter(m => (!MEAL_LOCK[0] || m[1] === MEAL_LOCK[0]) && (!MEAL_LOCK[1] || m[2] === MEAL_LOCK[1]) && (!MEAL_LOCK[2] || (m[3] ? '매운 거' : '안 매운 거') === MEAL_LOCK[2])).length;
-  $('#mealPick').innerHTML = MEAL_REELS.map((list, k) => `<div class="row"><span class="k">${['종류', '나라', '맵기'][k]}</span><div class="opts">${[null, ...list].map(v =>
-    `<button class="chip${MEAL_LOCK[k] === v ? ' on' : ''}" data-mpick="${k}|${v ?? ''}" aria-pressed="${MEAL_LOCK[k] === v}"${mealBusy ? ' disabled' : ''}>${v ? `${MEAL_ICON[v]} ${esc(v)}` : '🎲 아무거나'}</button>`).join('')}</div></div>`).join('')
-    + `<p class="cnt">${MEAL_LOCK.every(Boolean) ? '조건을 다 골랐어요. 슬롯 없이 바로 공을 떨어뜨려요' : '고른 조건은 고정되고 아무거나인 칸만 돌아요'} · 맞는 메뉴 <b>${left}개</b></p>`;
+  $('#mealPick').innerHTML = `${MEAL_LOCK.every(Boolean) ? '다 골랐어요 · 슬롯 없이 바로 공이 떨어져요' : '칸 아래에서 고른 조건은 고정돼요'} · 맞는 메뉴 <b>${left}개</b>`;
   $('#mealMeta').textContent = S.room ? `${curRoom()?.name || ''} · 같이 돌려요` : '이 화면에서만';
   $('#mealNote').textContent = !S.room ? '방에 들어가 있으면 같은 방 친구 화면에서도 같이 돌아가요.'
     : !ME.nick ? '닉네임을 정하면 돌릴 수 있어요(맨 위 방 줄). 친구가 돌리면 여기서도 같이 돌아가요.' : '같은 방 친구 화면에서도 같이 돌아가요.';
@@ -3017,10 +3015,10 @@ async function mealSpinNow() {
   renderMeal();
 }
 $('#mealSpin').onclick = mealSpinNow;
-$('#mealPick').addEventListener('click', e => {
-  const b = e.target.closest('[data-mpick]'); if (!b || mealBusy) return;
-  const [k, v] = b.dataset.mpick.split('|');
-  MEAL_LOCK[+k] = v || null; saveMealLock(); mealShown = null; renderMeal(); // 조건을 바꾸면 슬롯에 고른 값이 보여요
+$('#mealReels').addEventListener('change', e => {
+  const sel = e.target.closest('select[data-mpick]'); if (!sel || mealBusy) return;
+  MEAL_LOCK[+sel.dataset.mpick] = sel.value || null; saveMealLock(); mealShown = null;
+  sel.blur(); renderMeal(); // 조건을 바꾸면 슬롯에 고른 값이 보여요
 });
 
 function renderAll() { syncPresence(); renderSeasonPick(); renderRoomBar(); renderRoster(); renderTeams(); renderSession(); renderStats(); renderAnalysis(); renderLog(); renderFive(); renderDuel(); renderTourn(); renderTimer(); renderPick(); renderMeal(); renderGate(); }
@@ -3460,6 +3458,9 @@ document.addEventListener('click', e => {
 // ---------- 버전 · 패치노트 ----------
 // 커밋해서 올릴 때마다 맨 위에 새 항목을 더해요(규칙은 CLAUDE.md). 오른쪽 위 버전은 맨 위 항목이에요.
 const NOTES = [
+  { v: '1.27.2', d: '2026-10-23', items: [
+    '밥 뭐 먹지: 조건 고르는 칩 세 줄을 없애고, 슬롯 칸마다 바로 아래에 드롭다운을 하나씩 뒀어요. "🎲 아무거나"면 그 칸이 돌고, 값을 고르면 그 칸은 고정(🔒)돼요.',
+  ] },
   { v: '1.27.1', d: '2026-10-23', items: [
     '밥 뭐 먹지: 슬롯 아래에서 종류·나라·맵기를 직접 고를 수 있어요(예: 면 · 일식 · 아무거나). 고른 칸은 고정되고 "아무거나"인 칸만 돌아요. 셋 다 고르면 슬롯 없이 바로 공이 떨어져요. 지금 조건에 맞는 메뉴가 몇 개인지도 보여요.',
   ] },
