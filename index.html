@@ -2987,11 +2987,19 @@ function drawBoard(cands, hit) {
   let pegs = '';
   for (let r = 0; r < ROWS; r++) { const off = r % 2 ? .5 : 0, cnt = r % 2 ? 9 : 10; for (let c = 0; c < cnt; c++) pegs += `<circle cx="${(16 + (c + off) * ((W - 32) / 9)).toFixed(1)}" cy="${(TOP + 20 + r * gap).toFixed(1)}" r="3.4" fill="var(--muted)"/>`; }
   const bins = cands.map((m, k) => {
-    const x = k * bw, on = hit === k, max = n > 4 ? 5 : 7, label = m.length > max ? m.slice(0, max) + '…' : m;
+    // 이름은 가로로, 길면 두 줄로 나눠요(띄어쓰기가 있으면 거기서). 예전 결과처럼 칸이 많으면 글씨를 줄여요.
+    const x = k * bw, on = hit === k, per = n > 5 ? 3 : 5, lines = mealLines(m, per), fs = n > 5 ? 10 : 12, cy = H - BIN / 2 + 9;
     return `<rect x="${(x + 1.5).toFixed(1)}" y="${H - BIN}" width="${(bw - 3).toFixed(1)}" height="${BIN - 2}" rx="6" fill="${on ? 'var(--gold)' : 'var(--sunk)'}" stroke="${on ? 'var(--gold)' : 'var(--line)'}"/>`
-      + `<text transform="translate(${(x + bw / 2).toFixed(1)} ${H - BIN / 2 + 9}) rotate(${n > 4 ? -90 : 0})" text-anchor="middle" dominant-baseline="central" font-size="${n > 6 ? 11 : 13}" font-weight="800" fill="${on ? 'var(--on-gold)' : 'var(--ink)'}">${esc(label)}</text>`;
+      + `<text text-anchor="middle" font-size="${fs}" font-weight="800" fill="${on ? 'var(--on-gold)' : 'var(--ink)'}">${lines.map((l, j) => `<tspan x="${(x + bw / 2).toFixed(1)}" y="${(cy + (j - (lines.length - 1) / 2) * (fs + 3)).toFixed(1)}" dominant-baseline="central">${esc(l)}</tspan>`).join('')}</text>`;
   }).join('');
   $('#mealBoard').innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="핀볼: ${esc(cands.join(', '))}"><rect x="1" y="1" width="${W - 2}" height="${H - 2}" rx="14" fill="var(--surface)" stroke="var(--line)"/>${pegs}${bins}<circle id="pbBall" cx="${hit >= 0 ? (hit * bw + bw / 2).toFixed(1) : W / 2}" cy="${hit >= 0 ? H - BIN + 13 : TOP - 8}" r="8" fill="var(--gold)" stroke="#fff" stroke-width="2"/></svg>`;
+}
+// 핀볼 칸 이름 줄 나누기: per자까지는 한 줄, 길면 띄어쓰기(없으면 가운데)에서 두 줄. 그래도 길면 …
+function mealLines(name, per) {
+  if (name.length <= per) return [name];
+  const sp = name.indexOf(' '), mid = Math.ceil(name.length / 2);
+  const two = sp > 0 && Math.max(sp, name.length - sp - 1) <= per + 1 ? [name.slice(0, sp), name.slice(sp + 1)] : [name.slice(0, mid), name.slice(mid)];
+  return two.map(l => (l.length > per + 1 ? l.slice(0, per) + '…' : l));
 }
 function dropBall(cands, i, rnd, done, mine) {
   drawBoard(cands, -1);
@@ -3064,7 +3072,7 @@ async function mealSpinNow() {
   }
   const full = combos.filter(x => x[1].length >= 4), pool = full.length ? full : combos;
   if (!pool.length) return toast('고른 조건에 맞는 메뉴가 모자라요. 한 줄을 "아무거나"로 바꿔 주세요.');
-  const [reels, ms] = pool[rnd(pool.length)], cands = shuffle(ms).slice(0, 8);
+  const [reels, ms] = pool[rnd(pool.length)], cands = shuffle(ms).slice(0, 5); // 다섯 칸이라야 이름이 가로로 다 보여요
   if (!S.room) { const i = rnd(cands.length); mealLocal = { t: Date.now(), reels, cands, i, menu: cands[i] }; return playMeal(mealLocal, true); }
   if (!ME.nick) return toast(NEED_NICK);
   $('#mealSpin').disabled = true;
@@ -3515,6 +3523,9 @@ document.addEventListener('click', e => {
 // ---------- 버전 · 패치노트 ----------
 // 커밋해서 올릴 때마다 맨 위에 새 항목을 더해요(규칙은 CLAUDE.md). 오른쪽 위 버전은 맨 위 항목이에요.
 const NOTES = [
+  { v: '1.30.1', d: '2026-10-23', items: [
+    '밥 뭐 먹지 핀볼 칸을 다섯 칸으로 줄이고, 메뉴 이름을 가로로 써요. 긴 이름은 두 줄로 나눠서 잘리지 않아요.',
+  ] },
   { v: '1.30.0', d: '2026-10-23', items: [
     '밥 뭐 먹지 메뉴가 100개에서 232개로 늘었어요. 친구들이 모은 음식 목록에서 식사로 먹을 만한 걸 골라 넣었어요(아이스크림·과자 같은 간식, 진라면 맛별처럼 비슷한 것, 상품명은 뺐어요).',
     '슬롯 첫 칸 종류가 밥·면·국물·빵·분식·요리 여섯 가지가 됐어요. 돼지국밥처럼 밥이면서 국물인 메뉴는 두 쪽 다 나와요.',
