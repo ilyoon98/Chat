@@ -678,15 +678,17 @@ li.match.picked { outline: 2px solid var(--bad); outline-offset: -2px; }
         <div class="pick-res" id="pickRes" aria-live="polite"></div>
         <div class="row" style="justify-content:center"><button class="btn gold" id="pickSpin">돌리기</button><button class="btn ghost" id="pickAgain" hidden>이거 빼고 다시</button></div>
       </div>
-      <p class="pick-h" style="margin-top:16px">후보 <span id="pickCount"></span> · 누르면 이번엔 빼요(다시 누르면 넣어요)</p>
+      <p class="pick-h" style="margin-top:16px">게임 목록 · 누르면 아래 후보로 내려가요</p>
       <div class="chips" id="pickChips"></div>
+      <p class="pick-h">이번 후보 <span id="pickCount"></span> · 누르면 빠져요 <button class="linkbtn" type="button" id="pickAll">모두 넣기</button> <button class="linkbtn" type="button" id="pickNone">모두 빼기</button></p>
+      <div class="chips today" id="pickToday"></div>
       <p class="note" id="pickNote"></p>
     </div>
     <div class="card">
       <h2>게임 목록 <span class="r"><button class="btn ghost small" id="pickEdit">✎ 고치기</button></span></h2>
       <div id="pickEditBox" hidden>
         <form class="add" id="pickAddForm"><input id="pickAddInput" type="text" maxlength="200" placeholder="게임 추가 (쉼표로 여러 개: 오버워치, 배그)" autocomplete="off"><button class="btn" type="submit">추가</button></form>
-        <p class="note">아래 후보 칸에서 ✕를 누르면 목록에서 빠져요. 목록은 모두 같이 써요(닉네임을 정하면 누구나 고쳐요). <button class="linkbtn" type="button" id="pickReset">처음 목록으로</button></p>
+        <p class="note">고치는 동안 위 게임 목록 칸의 ✕를 누르면 목록에서 빠져요. 목록은 모두 같이 써요(닉네임을 정하면 누구나 고쳐요). <button class="linkbtn" type="button" id="pickReset">처음 목록으로</button></p>
       </div>
       <h2 style="margin-top:14px">최근 결과 <span class="r">이 방</span></h2>
       <ul class="pick-hist" id="pickHist"></ul>
@@ -2828,7 +2830,11 @@ function renderPick() {
   if (!pickSpin) drawWheel(wheelCands || cands);
   $('#pickMeta').textContent = S.room ? `${curRoom()?.name || ''} · 같이 돌려요` : '이 화면에서만';
   $('#pickCount').textContent = `${cands.length} / ${list.length}`;
-  $('#pickChips').innerHTML = list.map((g, k) => `<button class="chip${PICK_OFF.has(g) ? ' off' : ' on'}" data-pg="${k}" aria-pressed="${!PICK_OFF.has(g)}">${esc(g)}${pickEdit ? '<span class="x" aria-label="목록에서 빼기">✕</span>' : ''}</button>`).join('');
+  // 롤 내전 명단처럼: 위 목록에서 누르면 아래 후보로 내려가고(위엔 흐리게 ✓로 자리 지킴), 아래 후보를 누르면 빠져요.
+  $('#pickChips').innerHTML = list.map((g, k) => { const on = !PICK_OFF.has(g);
+    return `<button class="chip${pickEdit ? '' : on ? ' picked' : ''}" data-pg="${k}" aria-pressed="${on}" aria-label="${esc(g)} ${pickEdit ? '목록에서 빼기' : on ? '후보에서 빼기' : '후보에 넣기'}">${esc(g)}${pickEdit ? '<span class="x" aria-hidden="true">✕</span>' : `<span class="in" aria-hidden="true">${on ? '✓' : '↓'}</span>`}</button>`; }).join('');
+  $('#pickToday').innerHTML = cands.map(g => `<button class="chip on" data-pg="${list.indexOf(g)}" aria-label="${esc(g)} 후보에서 빼기">${esc(g)}<span class="x" aria-hidden="true">✕</span></button>`).join('')
+    || '<span class="empty">위 게임 목록에서 누르면 여기로 내려와요.</span>';
   $('#pickSpin').disabled = pickSpin || cands.length < 2;
   $('#pickSpin').textContent = pickSpin ? '돌아가는 중…' : p ? '다시 돌리기' : '돌리기';
   const shown = p && !pickSpin ? p : null, tab = shown && PICK_TAB[shown.game];
@@ -2861,12 +2867,17 @@ async function saveGames(games, msg) {
 }
 $('#pickSpin').onclick = () => pickSpinNow(pickCands());
 $('#pickAgain').onclick = () => { const p = S.room ? S.pick : pickLocal; if (!p) return; PICK_OFF.add(p.game); savePickOff(); wheelCands = null; pickSpinNow(pickCands()); };
-$('#pickChips').addEventListener('click', e => {
+function pickToggle(e, fromList) {
   const b = e.target.closest('[data-pg]'); if (!b || pickSpin) return;
   const g = pickGames()[+b.dataset.pg]; if (g == null) return;
-  if (pickEdit && e.target.closest('.x')) return saveGames(pickGames().filter(x => x !== g), `'${g}'을(를) 목록에서 뺐어요.`);
+  if (fromList && pickEdit) return saveGames(pickGames().filter(x => x !== g), `'${g}'을(를) 목록에서 뺐어요.`);
   PICK_OFF.has(g) ? PICK_OFF.delete(g) : PICK_OFF.add(g); savePickOff(); wheelCands = null; renderPick(); // 후보가 바뀌면 돌림판도 새로 그려요
-});
+  sfx(PICK_OFF.has(g) ? 'off' : 'on');
+}
+$('#pickChips').addEventListener('click', e => pickToggle(e, true));
+$('#pickToday').addEventListener('click', e => pickToggle(e, false));
+$('#pickAll').onclick = () => { if (pickSpin) return; PICK_OFF.clear(); savePickOff(); wheelCands = null; renderPick(); };
+$('#pickNone').onclick = () => { if (pickSpin) return; PICK_OFF = new Set(pickGames()); savePickOff(); wheelCands = null; renderPick(); };
 $('#pickEdit').onclick = () => { pickEdit = !pickEdit; renderPick(); if (pickEdit) $('#pickAddInput').focus(); };
 $('#pickAddForm').addEventListener('submit', e => {
   e.preventDefault();
@@ -3476,6 +3487,9 @@ document.addEventListener('click', e => {
 // ---------- 버전 · 패치노트 ----------
 // 커밋해서 올릴 때마다 맨 위에 새 항목을 더해요(규칙은 CLAUDE.md). 오른쪽 위 버전은 맨 위 항목이에요.
 const NOTES = [
+  { v: '1.28.1', d: '2026-10-23', items: [
+    '뭐 하지: 롤 내전 명단처럼 바뀌었어요. 위 "게임 목록"에서 누르면 아래 "이번 후보" 칸으로 내려가고(위엔 흐리게 ✓), 후보 칸에서 누르면 빠져요. 돌림판은 후보로만 돌아요. "모두 넣기·모두 빼기"도 있어요.',
+  ] },
   { v: '1.28.0', d: '2026-10-23', items: [
     '맨 위 방 줄이 바뀌었어요. 방에 안 들어가 있으면 접힌 한 줄 옆에 "+ 방 만들기"와 "방 들어가기" 버튼이 있어요. 방 만들기는 바로 만들어지고, 방 들어가기를 누르면 열린 방 목록이 펼쳐져요.',
     '방에 들어가 있으면 다른 방은 보이지 않아요. 한 줄을 누르면 내 방 정보(방장·구경 중인 사람·링크 복사)와 "방 나가기"가 나와요. 다른 방으로 옮기려면 나간 뒤 다시 들어가요.',
