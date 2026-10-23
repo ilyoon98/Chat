@@ -77,11 +77,15 @@ test('판을 지우면 그 판의 MVP 표와 승부 예측도 같이 지워요',
   assert.deepEqual(r.body.pred, []);
 });
 
-test('기록 지우기는 어느 방이든 방장만 돼요', async () => {
+test('기록 지우기는 닉네임을 정한 사람 누구나 돼요(방이 없어도)', async () => {
   const room = await setup();
-  const id = await record(room);
-  assert.equal((await post({ action: 'deleteMatch', id }, GUEST)).status, 423);
-  assert.equal((await post({ action: 'deleteMatch', id }, HOST)).status, 200);
+  const id = await record(room), id2 = await record(room);
+  assert.equal((await post({ action: 'deleteMatch', id }, GUEST)).body.error, 'need_nick');
+  await post({ action: 'claimNick', nick: '손님' }, GUEST);
+  assert.equal((await post({ action: 'deleteMatch', id }, GUEST)).status, 200);
+  await post({ action: 'closeRoom', room });
+  assert.equal((await post({ action: 'deleteMatches', ids: [id2] }, GUEST)).status, 200); // 방이 다 닫혀도 지워요
+  assert.equal((await post({ action: 'resetRecords', confirm: '초기화' }, GUEST)).status, 423); // 초기화는 방장만
 });
 
 // ---------- MVP 투표 ----------
@@ -294,7 +298,7 @@ test('토너먼트: 이긴 쪽이 올라가고 결승 승자가 우승이에요'
 });
 
 // ---------- 1:1·토너먼트 권한 ----------
-test('1:1 기록은 그 방 방장만, 지우기는 내전 기록처럼 어느 방이든 방장이 해요', async () => {
+test('1:1 기록은 그 방 방장만, 지우기는 닉네임을 정한 사람 누구나 해요', async () => {
   const room = await setup();
   await post({ action: 'claimNick', nick: '손님' }, GUEST);
   assert.equal((await post({ action: 'addDuel', room, a: '가', b: '나', win: '가' }, GUEST)).body.error, 'not_host');
@@ -303,8 +307,8 @@ test('1:1 기록은 그 방 방장만, 지우기는 내전 기록처럼 어느 �
   assert.equal(r.status, 200);
   const d = r.body.duels.find(x => x.id === r.body.id);
   assert.equal(d.rule, undefined); // 승리 조건은 더 안 남겨요
-  assert.equal((await post({ action: 'deleteDuel', id: d.id }, GUEST)).body.error, 'not_host');
-  assert.equal((await post({ action: 'deleteDuel', id: d.id }, HOST)).status, 200); // 정보 탭에서(방 없이) 지워도 돼요
+  assert.equal((await post({ action: 'deleteDuel', id: d.id }, OTHER)).body.error, 'need_nick'); // 닉네임 없는 기기는 안 돼요
+  assert.equal((await post({ action: 'deleteDuel', id: d.id }, GUEST)).status, 200); // 방장이 아니어도, 방 없이도 돼요
 });
 
 test('토너먼트 만들기·결과·지우기는 그 방 방장만 돼요', async () => {

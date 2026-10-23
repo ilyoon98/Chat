@@ -473,10 +473,11 @@ export default async function handler(req, res) {
     const notHost = () => res.status(423).json({ error: 'not_host' });
     // 선수 명단(추가·이름 바꾸기·빼기·Riot ID)은 누구나 고쳐요. 내전 기록 삭제·백업 불러오기·새 시즌·초기화는
     // 모든 방이 같이 쓰는 기록이라 어느 방이든 방장인 사람만 해요.
-    const rosterAction = ['deleteMatch', 'deleteMatches', 'deleteDuel', 'resetRecords', 'importBackup', 'startSeason'].includes(b.action);
+    // 전체 초기화·백업 불러오기·새 시즌은 어느 방이든 방장만. 기록 한 판·여러 판 지우기는 방이 다 닫혀도 지울 수 있게 닉네임을 정한 사람 누구나(아래).
+    const rosterAction = ['resetRecords', 'importBackup', 'startSeason'].includes(b.action);
+    if (['deleteMatch', 'deleteMatches'].includes(b.action) && !(await nickOf(me))) return needNick(res);
     if (rosterAction && !rooms.some(isHost)) return notHost();
     // 그 방의 오늘 할 사람·팀 배치·승패, 1:1 기록, 토너먼트 만들기·결과·지우기는 지금 들어가 있는 그 방 방장만(같이 하기는 방에서 해요)
-    // 1:1 기록 지우기는 내전 기록 지우기처럼 정보 탭에서 해서 어느 방이든 방장이면 돼요(위 rosterAction).
     if (['select', 'current', 'addMatch', 'giveHost', 'closeRoom', 'addDuel', 'createTourn', 'tournWin', 'deleteTourn'].includes(b.action)) {
       if (!room) return res.status(404).json({ error: 'no_room' });
       if (!isHost(room)) return notHost();
@@ -558,7 +559,7 @@ export default async function handler(req, res) {
         break;
       }
       case 'deleteMatches': {
-        // 여러 판을 한 번에 지워요(기록 탭 '여러 판 고르기', 방장). 그 판들의 MVP 표도 같이 지워요.
+        // 여러 판을 한 번에 지워요(기록 탭 '여러 판 고르기', 닉네임을 정한 사람 누구나). 그 판들의 MVP 표도 같이 지워요.
         const ids = Array.isArray(b.ids) ? [...new Set(b.ids.filter(x => typeof x === 'string' && x))].slice(0, MAX_MATCHES) : [];
         if (!ids.length) return bad(res);
         const gone = new Set(ids), rounds = (await readMatches()).filter(m => gone.has(m.id)).map(m => m.round);
@@ -908,7 +909,9 @@ export default async function handler(req, res) {
         break;
       }
       case 'deleteDuel': {
+        // 1:1 기록 지우기(정보 → 1:1 기록): 닉네임을 정한 사람 누구나 해요. 화면에서 두 번 눌러야 지워져요.
         if (typeof b.id !== 'string' || !b.id) return bad(res);
+        if (!(await nickOf(me))) return needNick(res);
         await redis.hdel(K.duels, b.id);
         await markGone([b.id]);
         break;
