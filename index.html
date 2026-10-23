@@ -509,7 +509,7 @@ body.gated { overflow: hidden; }
 .draft-turn.changed { animation: pop .5s cubic-bezier(.2, .9, .3, 1.5) both; }
 .draft-team.turn { animation: turnPulse 1.4s ease-in-out infinite; }
 @keyframes turnPulse { 50% { outline-color: color-mix(in srgb, var(--gold) 35%, transparent); } }
-@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+html.calm * { transition: none !important; animation: none !important; } /* ✨ 효과 끔 */
 /* ---------- 결과 이미지 ----------
    기록됨 칸: 폰에서 버튼이 많으면 'OO 승리'를 줄이지 않고 버튼이 아랫줄로 내려가요.
    기록 탭: '이미지' 버튼이 '삭제' 옆에 붙어요(오른쪽 끝은 삭제). 최근 1:1: 버튼 두 개를 한 줄로 */
@@ -619,6 +619,7 @@ li.match.picked { outline: 2px solid var(--bad); outline-offset: -2px; }
     <div class="head-r">
       <button class="badge ver" id="verBtn" aria-haspopup="dialog"><i class="dot" hidden></i><span id="verText">v</span> · 패치노트</button>
       <button class="badge ver" id="sfxBtn" aria-pressed="true" title="효과음 켜기/끄기 (이 기기에 기억해요)">🔊 소리</button>
+      <button class="badge ver" id="fxBtn" aria-pressed="true" title="색종이·움직임 효과 켜기/끄기 (이 기기에 기억해요)">✨ 효과</button>
       <span class="badge" id="syncBadge"><i></i><span>연결 중…</span></span>
     </div>
   </header>
@@ -892,7 +893,10 @@ li.match.picked { outline: 2px solid var(--bad); outline-offset: -2px; }
 <script>
 const $ = s => document.querySelector(s);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+// 효과(움직임·색종이)는 이 사이트 설정으로 켜고 꺼요(기본 켜짐, 오른쪽 위 ✨ 버튼, 이 기기에 기억).
+// 게임용 PC는 Windows '애니메이션 효과'를 끈 경우(최적 성능)가 많아서, 기기 '움직임 줄이기' 설정만 따르면 효과가 아예 안 보였어요.
+let reduceMotion = false; try { reduceMotion = localStorage.getItem('lol-naejeon-v1:fx') === 'off'; } catch {}
+document.documentElement.classList.toggle('calm', reduceMotion);
 function rnd(n) { const a = new Uint32Array(1), lim = Math.floor(0x100000000 / n) * n; let x; do { crypto.getRandomValues(a); x = a[0]; } while (x >= lim); return x % n; }
 function shuffle(arr, r) { const a = [...arr]; for (let i = a.length - 1; i > 0; i--) { const j = r ? Math.floor(r() * (i + 1)) : rnd(i + 1); [a[i], a[j]] = [a[j], a[i]]; } return a; }
 function toast(msg) { const t = $('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => t.hidden = true, 2200); }
@@ -1681,7 +1685,7 @@ const FX_COLORS = { blue: ['#4c8dff', '#9cc0ff', '#ffffff'], red: ['#ff5468', '#
 function burst(el, side, big) {
   if (reduceMotion || !window.confetti || !el) return;
   const r = el.getBoundingClientRect(), origin = { x: (r.left + r.width / 2) / innerWidth, y: (r.top + r.height / 3) / innerHeight };
-  const o = { origin, colors: FX_COLORS[side] || FX_COLORS.gold, zIndex: 70, disableForReducedMotion: true };
+  const o = { origin, colors: FX_COLORS[side] || FX_COLORS.gold, zIndex: 70 }; // 켜고 끄기는 위 reduceMotion(✨ 버튼)으로 해요
   confetti({ ...o, particleCount: big ? 120 : 36, spread: big ? 90 : 55, startVelocity: big ? 45 : 26, scalar: big ? 1 : .8 });
   if (big) setTimeout(() => confetti({ ...o, particleCount: 80, spread: 130, startVelocity: 32 }), 250);
 }
@@ -3523,6 +3527,10 @@ document.addEventListener('click', e => {
 // ---------- 버전 · 패치노트 ----------
 // 커밋해서 올릴 때마다 맨 위에 새 항목을 더해요(규칙은 CLAUDE.md). 오른쪽 위 버전은 맨 위 항목이에요.
 const NOTES = [
+  { v: '1.31.0', d: '2026-10-24', items: [
+    '✨ 효과 버튼이 생겼어요(오른쪽 위 🔊 소리 옆). 색종이·팀 섞기·룰렛 같은 효과를 이 기기에서 켜고 꺼요. 기본은 켜짐이에요.',
+    '예전엔 컴퓨터의 "애니메이션 효과"(Windows 시각 효과를 "최적 성능"으로 둔 게임용 PC 등)가 꺼져 있으면 효과가 아예 안 나왔어요. 이제는 그래도 나와요. 움직임이 불편하면 ✨ 버튼으로 꺼 주세요.',
+  ] },
   { v: '1.30.1', d: '2026-10-23', items: [
     '밥 뭐 먹지 핀볼 칸을 다섯 칸으로 줄이고, 메뉴 이름을 가로로 써요. 긴 이름은 두 줄로 나눠서 잘리지 않아요.',
   ] },
@@ -3819,6 +3827,16 @@ $('#sfxBtn').onclick = () => {
   renderSfx(); sfx('on');
 };
 renderSfx();
+// ✨ 효과: 끄면 움직임(팀 섞기·룰렛·동전·날아가기)과 색종이가 모두 멈춰요. 켜면 버튼에서 색종이가 한 번 터져요.
+function renderFx() { const b = $('#fxBtn'); b.setAttribute('aria-pressed', !reduceMotion); b.textContent = reduceMotion ? '✨ 효과 꺼짐' : '✨ 효과'; }
+$('#fxBtn').onclick = () => {
+  reduceMotion = !reduceMotion; document.documentElement.classList.toggle('calm', reduceMotion);
+  try { localStorage.setItem(LS + ':fx', reduceMotion ? 'off' : 'on'); } catch {}
+  renderFx(); renderAll();
+  if (!reduceMotion) burst($('#fxBtn'), 'gold');
+  toast(reduceMotion ? '효과를 껐어요. 움직임과 색종이가 안 나와요.' : '효과를 켰어요!');
+};
+renderFx();
 
 loadLocal();
 renderNotes();
