@@ -86,6 +86,13 @@ h1 em { font-style: normal; color: var(--gold); }
 .cats button { font: inherit; font-weight: 700; font-size: 14.5px; padding: 7px 14px; border-radius: 999px; border: 1px solid var(--line); background: var(--sunk); color: var(--muted); cursor: pointer; }
 .cats button[aria-selected=true] { background: var(--ink); color: var(--bg); border-color: transparent; }
 .games { display: flex; flex-wrap: wrap; gap: 8px; }
+/* 같이 하기 탭인데 방이 없을 때: 탭 내용 대신 방 들어가기·만들기 카드 */
+.play-gate { display: grid; gap: 12px; text-align: center; padding: 28px 18px; }
+.play-gate h2 { justify-content: center; font-size: 19px; margin: 0; }
+.play-gate .note { margin: 0; }
+.pg-rooms { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+.pg-rooms .room { min-width: 140px; }
+.play-gate form.add { max-width: 360px; margin: 0 auto; width: 100%; }
 /* 폰: 게임 탭이 여러 줄로 쌓이지 않게 한 줄로 두고 옆으로 밀어요 */
 @media (max-width: 640px) {
   .games { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
@@ -641,6 +648,13 @@ li.match.picked { outline: 2px solid var(--bad); outline-offset: -2px; }
     <button role="tab" id="game-roster" aria-selected="false" aria-controls="g-roster" hidden>선수 명단</button>
   </nav>
 
+  <!-- 같이 하기(롤 내전·롤 1:1·토너먼트·인게임 타이머)는 방에 들어가 있어야 써요. 방이 없으면 고른 탭 대신 이 카드가 나와요. -->
+  <div class="card play-gate" id="playGate" hidden>
+    <h2>🏠 방에 들어가서 같이 해요</h2>
+    <p class="note">롤 내전·롤 1:1·토너먼트·인게임 타이머는 방에서 해요. 방을 만들면 내가 방장이 되고, 방 링크를 보내면 친구들이 들어와요.</p>
+    <div id="playGateBox"></div>
+  </div>
+
   <!-- 오늘 뭐 하지? 룰렛: 우리가 하는 게임 목록을 돌려서 오늘 할 게임을 정해요. 방에서 돌리면 같은 방 친구 화면에서도 같이 돌아가요. -->
   <section class="game" id="g-pick" role="tabpanel" aria-labelledby="game-pick" hidden>
     <div class="card">
@@ -1078,7 +1092,7 @@ function enterRoom(id) {
   saveLocal(); renderAll(); pull(true);
 }
 function leaveRoom() {
-  S.roomOpen = null; S.room = null; S.current = null; S.selected = new Set(); S.draft = null; S.presence = []; S.boards = loadSoloBoards(); S.pick = null; pickSeen = undefined; S.meal = null; mealSeen = undefined; mealShown = null; bver = null;
+  S.roomOpen = null; S.room = null; S.current = null; S.selected = new Set(); S.draft = null; S.presence = []; S.boards = {}; S.pick = null; pickSeen = undefined; S.meal = null; mealSeen = undefined; mealShown = null; bver = null;
   history.replaceState(null, '', location.pathname + location.hash); saveLocal();
 }
 // 명단은 바로 화면에 반영하고, 서버가 거절하면 서버 상태로 되돌려요.
@@ -2455,7 +2469,8 @@ $('#restoreFile').onchange = async e => {
 
 // ---------- 방 ----------
 // 방 탭 + 방장/구경 중인 사람 + 방장 버튼(넘기기·닫기·링크 복사). 닉네임이 없으면 먼저 닉네임부터 받아요.
-const roomOpen = () => S.roomOpen ?? !(ME.nick && curRoom());
+// 같이 하기 탭에서 방 카드가 보일 땐(방이 없음) 위 방 줄은 접어 둬요. 같은 칸이 두 번 보이지 않게.
+const roomOpen = () => S.roomOpen ?? (!(ME.nick && curRoom()) && !(CAT[CUR_GAME] === 'play' && !S.room));
 function renderRoomSum() {
   const r = curRoom(), open = roomOpen(), viewers = r ? S.presence.filter(p => p.id !== r.hostId).length : 0;
   $('#roomToggle').setAttribute('aria-expanded', open); $('#roomPanel').hidden = !open;
@@ -2612,15 +2627,41 @@ $('#fiveRefresh').onclick = e => refreshRiotNow(e.currentTarget);
 const GAMES = ['lol', 'duel', 'tourn', 'timer', 'pick', 'meal', 'stats', 'analysis', 'log', 'five', 'roster'];
 const CAT = { lol: 'play', duel: 'play', tourn: 'play', timer: 'play', pick: 'fun', meal: 'fun', stats: 'info', analysis: 'info', log: 'info', five: 'info', roster: 'info' };
 let CAT_LAST = {}; try { CAT_LAST = JSON.parse(localStorage.getItem(LS + ':catGame') || '{}') || {}; } catch {}
+let CUR_GAME = 'lol'; // 지금 고른 게임 탭
 function showGame(g) {
-  const cat = CAT[g];
+  const cat = CAT[g]; CUR_GAME = g;
   for (const x of GAMES) { $('#game-' + x).setAttribute('aria-selected', x === g); $('#game-' + x).hidden = CAT[x] !== cat; $('#g-' + x).hidden = x !== g; }
   document.querySelectorAll('.cats [data-cat]').forEach(b => b.setAttribute('aria-selected', b.dataset.cat === cat));
   CAT_LAST[cat] = g; try { localStorage.setItem(LS + ':catGame', JSON.stringify(CAT_LAST)); } catch {}
   const nav = $('#game-' + g).parentElement, b = $('#game-' + g); // 폰에서 한 줄로 밀어 보는 탭이면 고른 탭이 보이게
   if (nav.scrollWidth > nav.clientWidth) nav.scrollTo({ left: Math.max(0, b.offsetLeft - nav.offsetLeft - 16), behavior: 'smooth' });
   try { localStorage.setItem(LS + ':game', g); } catch {}
+  renderGate(); renderRoomSum();
 }
+// 같이 하기 탭인데 방에 안 들어가 있으면 그 탭 대신 방 카드: 닉네임이 없으면 닉네임부터, 있으면 열린 방 들어가기·새 방 만들기
+function renderGate() {
+  const gated = CAT[CUR_GAME] === 'play' && !S.room;
+  $('#playGate').hidden = !gated; $('#g-' + CUR_GAME).hidden = gated;
+  if (!gated || document.activeElement?.id === 'pgNick') return; // 닉네임을 적는 중엔 그대로
+  $('#playGateBox').innerHTML = !ME.nick
+    ? `<form class="add" id="pgNickForm"><input id="pgNick" type="text" maxlength="16" placeholder="내 닉네임 (예: 일윤)" autocomplete="off" aria-label="내 닉네임"><button class="btn" type="submit">정하기</button></form>
+       <p class="note">먼저 닉네임을 정해 주세요. 방장·구경하는 사람이 이 이름으로 보여요.</p>`
+    : `<div class="pg-rooms">${S.rooms.map(r => `<button class="room" data-room="${r.id}">${esc(r.name)}<small>${r.hostAlive ? `👑 ${esc(r.hostNick)}` : '방장 없음'} · 들어가기</small></button>`).join('')}<button class="btn gold" id="pgNew">+ 새 방 만들기</button></div>
+       <p class="note">${S.rooms.length ? '열린 방을 누르면 들어가요. 새 방을 만들면 내가 방장이 돼요.' : '아직 열린 방이 없어요. 새 방을 만들어 보세요.'}</p>`;
+}
+$('#playGate').addEventListener('click', async e => {
+  const t = e.target.closest('button'); if (!t || t.form) return;
+  const r = t.closest('[data-room]'); if (r) { S.roomOpen = null; enterRoom(r.dataset.room); return renderAll(); }
+  if (t.id !== 'pgNew') return;
+  t.disabled = true;
+  try { const d = await api('createRoom', { nick: ME.nick }); S.roomOpen = true; enterRoom(d.id); toast('방을 만들었어요. 내가 방장이에요. 맨 위 방 줄에서 방 링크를 복사해 카톡에 보내 보세요.'); } catch { t.disabled = false; }
+  renderAll();
+});
+$('#playGate').addEventListener('submit', async e => {
+  e.preventDefault();
+  const v = $('#pgNick').value.trim().slice(0, 16); if (!v) return;
+  document.activeElement?.blur?.(); await claimNick(v); renderAll(); pull(true);
+});
 GAMES.forEach(g => $('#game-' + g).addEventListener('click', () => showGame(g)));
 $('.cats').addEventListener('click', e => { const b = e.target.closest('[data-cat]'); if (!b) return; const c = b.dataset.cat; showGame(CAT[CAT_LAST[c]] === c ? CAT_LAST[c] : GAMES.find(x => CAT[x] === c)); });
 { let g = 'lol'; try { const v = localStorage.getItem(LS + ':game'); if (GAMES.includes(v)) g = v; } catch {} const h = location.hash.slice(1); if (['stats', 'analysis', 'log'].includes(h)) g = h; showGame(g); }
@@ -2954,7 +2995,7 @@ $('#mealReels').addEventListener('click', e => {
   toast(MEAL_LOCK[k] ? `${cur}(으)로 잠갔어요. 다시 누르면 풀려요.` : '잠금을 풀었어요.');
 });
 
-function renderAll() { syncPresence(); renderSeasonPick(); renderRoomBar(); renderRoster(); renderTeams(); renderSession(); renderStats(); renderAnalysis(); renderLog(); renderFive(); renderDuel(); renderTourn(); renderTimer(); renderPick(); renderMeal(); }
+function renderAll() { syncPresence(); renderSeasonPick(); renderRoomBar(); renderRoster(); renderTeams(); renderSession(); renderStats(); renderAnalysis(); renderLog(); renderFive(); renderDuel(); renderTourn(); renderTimer(); renderPick(); renderMeal(); renderGate(); }
 
 // ---------- 인게임 타이머 ----------
 // 게임하면서 옆에 켜 두는 보드. 상대가 스펠을 쓰면 그 칸을 눌러요 → 쿨타임이 돌고, 돌아오면 소리·알림. 다시 누르면 취소.
@@ -2986,7 +3027,7 @@ function renderTimer() {
   if (document.activeElement?.closest?.('#g-timer select, #g-timer input')) return; // 고르거나 적는 중엔 그대로 둬요
   const side = tmSide(), bd = tmBoard(), now = nowS();
   document.querySelectorAll('#tmBoard [data-tb]').forEach(b => b.setAttribute('aria-pressed', b.dataset.tb === side));
-  $('#tmNote').textContent = !S.room ? '방 없이 쓰는 중이라 이 폰에서만 보여요. 맨 위 방 줄에서 방에 들어가면 같은 보드를 연 친구들과 같이 봐요.' : side === 'solo' ? '솔랭·일반: 같이 큐 돌리는 친구들끼리 상대 스펠을 같이 봐요.' : `${TEAM[side]} 보드: 우리 팀끼리 상대 팀 스펠을 같이 봐요. 상대 팀은 자기 보드를 따로 써요.`;
+  $('#tmNote').textContent = side === 'solo' ? '솔랭·일반: 같이 큐 돌리는 친구들끼리 상대 스펠을 같이 봐요.' : `${TEAM[side]} 보드: 우리 팀끼리 상대 팀 스펠을 같이 봐요. 상대 팀은 자기 보드를 따로 써요.`;
   const start = Number(bd.start) || 0;
   $('#tmTop').innerHTML = (start ? `<button class="btn small" id="tmCopy">채팅용 복사</button><label class="note" style="margin:0">게임 시간 맞추기 <input id="tmSet" type="text" inputmode="numeric" placeholder="12:30"></label>`
     : '<button class="btn gold small" id="tmStart">⏱ 게임 시작</button><span class="note" style="margin:0">로딩 끝나고 게임이 시작될 때 눌러요(늦었으면 시작하고 시간을 맞춰요)</span>')
@@ -3015,11 +3056,8 @@ function tmTick() {
   if (done) renderTimer();
 }
 setInterval(tmTick, 1000);
-// 방이 없으면 이 기기에만 저장해요(새로 고쳐도 남게). 방에 들어가면 서버 보드를 써요.
-const saveSoloBoards = () => { try { localStorage.setItem(LS + ':boards', JSON.stringify(S.boards)); } catch {} };
-const loadSoloBoards = () => { try { const b = JSON.parse(localStorage.getItem(LS + ':boards') || '{}'); return b && typeof b === 'object' ? b : {}; } catch { return {}; } };
 async function tmSend(body) {
-  if (!S.room) { saveSoloBoards(); return renderTimer(); }
+  if (!S.room) return; // 타이머는 방에서만 열려요(같이 하기)
   try { await api('board', { side: tmSide(), ...body }, true); } catch { ver = null; await pull(); }
   renderTimer();
 }
@@ -3394,6 +3432,10 @@ document.addEventListener('click', e => {
 // ---------- 버전 · 패치노트 ----------
 // 커밋해서 올릴 때마다 맨 위에 새 항목을 더해요(규칙은 CLAUDE.md). 오른쪽 위 버전은 맨 위 항목이에요.
 const NOTES = [
+  { v: '1.26.0', d: '2026-10-23', items: [
+    '🎮 같이 하기(롤 내전·롤 1:1·토너먼트·인게임 타이머)는 모두 방에 들어가서 해요. 방이 없으면 탭 대신 "방에 들어가서 같이 해요" 카드가 나와서, 열린 방에 들어가거나 새 방을 바로 만들 수 있어요(닉네임이 없으면 닉네임부터).',
+    '그래서 방 없이 혼자 쓰던 인게임 타이머는 없어졌어요. 방에서 같은 보드를 연 친구들과 같이 써요.',
+  ] },
   { v: '1.25.2', d: '2026-10-23', items: [
     '롤 내전 탭 선수 명단 제목 옆에 "넣음 10 · 남음 5 · 전체 15"처럼 인원을 큰 숫자로 보여 줘요. 오늘 할 사람에 넣은 인원은 금색이에요.',
   ] },
@@ -3649,7 +3691,6 @@ $('#sfxBtn').onclick = () => {
 renderSfx();
 
 loadLocal();
-if (!S.room) S.boards = loadSoloBoards(); // 방 없이 쓰던 인게임 타이머 보드
 renderNotes();
 setMode(S.mode);
 renderLaneToggle();
