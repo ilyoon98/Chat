@@ -1,14 +1,14 @@
 import { Redis } from '@upstash/redis';
-import { createHash, createHmac, randomBytes } from 'node:crypto';
+import { createHash, createHmac, randomBytes, randomInt } from 'node:crypto';
 
 // Vercel Marketplace의 Upstash Redis를 연결하면 아래 환경변수가 자동으로 들어와요.
 const url = process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL;
 const token = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN;
 const redis = globalThis.__redis ?? (url && token ? new Redis({ url, token }) : null);
 
-const K = { players: 'lol:players', matches: 'lol:matches', ver: 'lol:ver', riot: 'lol:riot', riotLock: 'lol:riot:lock', riotRest: 'lol:riot:rest', riotGames: 'lol:riot:games', rooms: 'lol:rooms', hostSeen: 'lol:hostseen', nicks: 'lol:nicks', duels: 'lol:duels', mvp: 'lol:mvp', seasons: 'lol:seasons', pred: 'lol:pred', tourn: 'lol:tourn', gone: 'lol:gone', mvpLock: 'lol:mvp:lock' };
+const K = { players: 'lol:players', matches: 'lol:matches', ver: 'lol:ver', riot: 'lol:riot', riotLock: 'lol:riot:lock', riotRest: 'lol:riot:rest', riotGames: 'lol:riot:games', rooms: 'lol:rooms', hostSeen: 'lol:hostseen', nicks: 'lol:nicks', duels: 'lol:duels', mvp: 'lol:mvp', seasons: 'lol:seasons', pred: 'lol:pred', tourn: 'lol:tourn', gone: 'lol:gone', mvpLock: 'lol:mvp:lock', games: 'lol:games' };
 // 방마다 따로인 것: 오늘 할 사람(정렬 집합), 팀 배치, 지금 보고 있는 사람(정렬 집합, 점수 = 마지막 신호 시각)
-const RK = { sel: r => `lol:room:${r}:sel`, cur: r => `lol:room:${r}:cur`, seen: r => `lol:room:${r}:seen`, board: (r, s) => `lol:room:${r}:board:${s}`, bver: r => `lol:room:${r}:bver` };
+const RK = { sel: r => `lol:room:${r}:sel`, cur: r => `lol:room:${r}:cur`, seen: r => `lol:room:${r}:seen`, board: (r, s) => `lol:room:${r}:board:${s}`, bver: r => `lol:room:${r}:bver`, pick: r => `lol:room:${r}:pick` };
 // 인게임 타이머 보드: 방마다 블루팀·레드팀·솔랭(우리끼리) 셋. 해시 필드 'start'(게임 0초 시각), 'r:라인'({ s: [스펠 둘], b: 신발, c: 우주적 통찰력 }),
 // 'e:라인:칸'(그 스펠이 돌아오는 시각, 0이면 준비). 바뀌면 그 방 보드 버전(bver)만 올려요.
 // (오브젝트 타이머 'o:…'는 v1.22.1에서 뺐어요. 게임 안에서도 보여서요. 예전 보드에 남은 값은 화면이 안 읽어요.)
@@ -224,7 +224,7 @@ async function readRooms() {
 const saveRoom = ({ id, hostAlive, ...r }) => redis.hset(K.rooms, { [id]: r });
 async function dropRoom(id) {
   await redis.hdel(K.rooms, id); await redis.hdel(K.hostSeen, id);
-  await redis.del(RK.sel(id), RK.cur(id), RK.seen(id), RK.bver(id), ...BOARD_SIDES.map(s => RK.board(id, s)));
+  await redis.del(RK.sel(id), RK.cur(id), RK.seen(id), RK.bver(id), RK.pick(id), ...BOARD_SIDES.map(s => RK.board(id, s)));
 }
 // 1:1 기록: { id, t, a, b(두 사람), w(이긴 사람 이름), rule('자유'·'퍼블'·'100CS'·'첫 타워') }. 내전 기록과 따로예요.
 const DUEL_RULES = ['자유', '퍼블', '100CS', '첫 타워'];
@@ -274,6 +274,12 @@ async function dropMvp(mid) {
   const keys = Object.keys((await redis.hgetall(K.mvp)) || {}).filter(k => k.startsWith(mid + '|'));
   if (keys.length) await redis.hdel(K.mvp, ...keys); // 한 번에 지워요
 }
+// ---------- 오늘 뭐 하지? 룰렛 ----------
+// 게임 목록(lol:games)은 모두 같이 써요(닉네임을 정한 사람 누구나 고쳐요). 한 번도 안 고쳤으면 null이고 화면이 기본 목록을 보여줘요.
+// 방에서 돌리면 서버가 하나를 뽑아 그 방 'pick'에 남겨요: { t, cands(돌린 후보), i(뽑힌 번호), game, by(돌린 사람), hist(최근 결과 5개) }.
+// 구경하는 화면도 같은 후보·같은 결과로 돌림판이 돌아가요.
+const MAX_GAMES = 30;
+const cleanGames = (a, max = MAX_GAMES) => (Array.isArray(a) ? [...new Set(a.filter(x => typeof x === 'string').map(x => x.trim().slice(0, 20)).filter(Boolean))].slice(0, max) : null);
 // 이 기기가 정해 둔 닉네임(30일 안에 쓴 것). 없으면 null이에요.
 // MVP 투표·승부 예측은 닉네임을 정한 기기만 받아요. 기기 id만 바꿔서 표를 여러 번 던지기 어렵게 하는 가벼운 장치예요.
 async function nickOf(me) {
@@ -330,12 +336,12 @@ async function readPred() {
 }
 async function readState(room) {
   // 방 정보(오늘 할 사람·팀 배치·타이머 보드)도 다른 기록과 한 번에 같이 읽어요(DB에 한 번만 다녀와요). 없는 방이면 버려요.
-  const roomPart = room ? Promise.all([readSelected(room), redis.get(RK.cur(room)), redis.get(RK.bver(room)), ...BOARD_SIDES.map(s => redis.hgetall(RK.board(room, s)))]) : null;
-  const [players, matches, ver, riot, rooms, duels, votes, seasons, pred, tourns, rp] = await Promise.all([readPlayers(), readMatches(), redis.get(K.ver), readRiot(), readRooms(), readDuels(), redis.hgetall(K.mvp), readSeasons(), readPred(), readTourns(), roomPart]);
+  const roomPart = room ? Promise.all([readSelected(room), redis.get(RK.cur(room)), redis.get(RK.bver(room)), redis.get(RK.pick(room)), ...BOARD_SIDES.map(s => redis.hgetall(RK.board(room, s)))]) : null;
+  const [players, matches, ver, riot, rooms, duels, votes, seasons, pred, tourns, games, rp] = await Promise.all([readPlayers(), readMatches(), redis.get(K.ver), readRiot(), readRooms(), readDuels(), redis.hgetall(K.mvp), readSeasons(), readPred(), readTourns(), redis.get(K.games), roomPart]);
   const mvp = mergeMvp(matches, votes);
   const r = rooms.find(x => x.id === room);
-  const roomState = r && rp ? { id: r.id, selected: rp[0], current: rp[1] || null, bver: Number(rp[2]) || 0, boards: Object.fromEntries(BOARD_SIDES.map((s, i) => [s, rp[3 + i] || {}])) } : null;
-  return { players, matches, duels, mvp, pred, tourns, riot, rooms, seasons, room: roomState, ver: Number(ver) || 0, ably: ABLY_NS, now: Date.now() };
+  const roomState = r && rp ? { id: r.id, selected: rp[0], current: rp[1] || null, bver: Number(rp[2]) || 0, pick: rp[3] || null, boards: Object.fromEntries(BOARD_SIDES.map((s, i) => [s, rp[4 + i] || {}])) } : null;
+  return { players, matches, duels, mvp, pred, tourns, riot, rooms, seasons, games: Array.isArray(games) ? games : null, room: roomState, ver: Number(ver) || 0, ably: ABLY_NS, now: Date.now() };
 }
 // 지금 보고 있다는 신호(15초마다). 멤버는 "기기id|닉네임"이고, 방장이면 방장 신호 시각도 남겨요.
 async function heartbeat(room, me, nick, claimsHost) {
@@ -460,7 +466,7 @@ export default async function handler(req, res) {
     const b = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body || {};
     // 솔랭 새로고침·닉네임 정하기는 기록을 바꾸지 않아서 비밀번호 없이도 돼요. MVP 투표도 구경하는 사람 누구나 해요.
     // 승부 예측·인게임 타이머도 구경하는 친구 누구나 해요(참가 신청은 비밀번호를 걸었으면 비밀번호가 필요해요).
-    if (!['refreshRiot', 'claimNick', 'voteMvp', 'predict', 'board'].includes(b.action) && !pinOk(req)) return res.status(401).json({ error: 'pin_required' });
+    if (!['refreshRiot', 'claimNick', 'voteMvp', 'predict', 'board', 'spinPick'].includes(b.action) && !pinOk(req)) return res.status(401).json({ error: 'pin_required' });
     // 방장 확인: 기기마다 화면이 만든 id(x-device)로 구분해요. 친구끼리 쓰는 거라 로그인 없이 이 정도로 막아요.
     const me = cleanId(req.headers['x-device']), rooms = await readRooms();
     const room = rooms.find(r => r.id === cleanId(b.room)), isHost = r => !!r && !!me && r.hostId === me;
@@ -632,6 +638,29 @@ export default async function handler(req, res) {
           await redis.hset(key, { [`e:${b.lane}:${k}`]: dur == null ? 0 : now + dur * 1000 });
         } else return bad(res);
         bv = await redis.incr(RK.bver(room.id)); dup = true; // 전체 버전은 그대로, 이 방 보드 버전만 올려요
+        break;
+      }
+      case 'setGames': {
+        // 게임 목록 고치기(닉네임을 정한 사람 누구나): 목록을 통째로 보내요. 비우면 기본 목록으로 돌아가요.
+        const games = cleanGames(b.games);
+        if (!games) return bad(res);
+        if (!(await nickOf(me))) return needNick(res);
+        if (games.length) await redis.set(K.games, games); else await redis.del(K.games);
+        break;
+      }
+      case 'spinPick': {
+        // 룰렛 돌리기(닉네임을 정한 사람 누구나, 그 방에서): 후보 중 하나를 서버가 뽑아요(누가 돌려도 결과를 고를 수 없게).
+        if (!room) return res.status(404).json({ error: 'no_room' });
+        const nk = await nickOf(me);
+        if (!nk) return needNick(res);
+        const cands = cleanGames(b.cands);
+        if (!cands || cands.length < 2) return bad(res);
+        const prev = await redis.get(RK.pick(room.id)), i = randomInt(cands.length), t = Date.now();
+        const hist = [{ game: cands[i], t, by: nk }, ...(Array.isArray(prev?.hist) ? prev.hist : [])].slice(0, 5);
+        await redis.set(RK.pick(room.id), { t, cands, i, game: cands[i], by: nk, hist });
+        await saveRoom({ ...room, lastActive: t });
+        notify = `🎲 오늘 뭐 하지? → **${cands[i]}** (${nk}님이 돌렸어요 · ${room.name})`;
+        bv = await redis.incr(RK.bver(room.id)); dup = true; // 그 방 화면만 다시 받아요
         break;
       }
       case 'selfSelect': {

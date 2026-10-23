@@ -91,6 +91,19 @@ h1 em { font-style: normal; color: var(--gold); }
 .games button { font-family: var(--display); font-weight: 800; font-size: 18px; padding: 9px 18px; border-radius: 12px; border: 1.5px solid var(--line); background: var(--surface); color: var(--muted); cursor: pointer; }
 .games button[aria-selected=true] { background: var(--gold); color: var(--on-gold); border-color: transparent; }
 .game { display: flex; flex-direction: column; gap: 18px; }
+/* 오늘 뭐 하지? 룰렛: 돌림판 위 가운데 화살표가 가리키는 칸이 결과예요 */
+.pick-wrap { display: grid; justify-items: center; gap: 14px; }
+.wheel { position: relative; width: min(300px, 78vw); aspect-ratio: 1; }
+.wheel svg { width: 100%; height: 100%; display: block; filter: drop-shadow(0 8px 24px rgba(0, 0, 0, .35)); }
+.wheel .ptr { position: absolute; top: -8px; left: 50%; transform: translateX(-50%); width: 0; height: 0; border-left: 13px solid transparent; border-right: 13px solid transparent; border-top: 24px solid var(--ink); z-index: 1; }
+.wheel .hub { position: absolute; inset: 50% auto auto 50%; width: 46px; height: 46px; margin: -23px 0 0 -23px; border-radius: 50%; background: var(--surface); border: 3px solid var(--gold); display: grid; place-items: center; font-size: 20px; }
+.pick-res { min-height: 64px; text-align: center; display: grid; gap: 4px; align-content: center; }
+.pick-res .big { font-family: var(--display); font-weight: 800; font-size: clamp(24px, 7vw, 32px); line-height: 1.2; }
+.pick-res .big b { color: var(--gold); }
+.pick-res.landed .big { animation: pop .6s cubic-bezier(.2, .9, .3, 1.5) both; }
+.chip.off { opacity: .4; text-decoration: line-through; }
+.pick-hist { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: 14px; }
+.pick-hist li { display: flex; gap: 8px; } .pick-hist time { color: var(--muted); font-variant-numeric: tabular-nums; }
 /* 1:1 */
 .duel-vs { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 10px; align-items: center; }
 .duel-slot { border-radius: 12px; padding: 14px 10px; text-align: center; color: #fff; min-height: 74px; display: grid; align-content: center; gap: 2px; }
@@ -576,6 +589,7 @@ li.match.picked { outline: 2px solid var(--bad); outline-offset: -2px; }
 
   <!-- 게임 탭: 다른 게임이 생기면 버튼과 section.game을 하나씩 더 붙이면 돼요. -->
   <nav class="games" role="tablist" aria-label="게임">
+    <button role="tab" id="game-pick" aria-selected="false" aria-controls="g-pick">🎲 뭐 하지</button>
     <button role="tab" id="game-lol" aria-selected="true" aria-controls="g-lol">롤 내전</button>
     <button role="tab" id="game-duel" aria-selected="false" aria-controls="g-duel">롤 1:1</button>
     <button role="tab" id="game-five" aria-selected="false" aria-controls="g-five">롤 5인 큐</button>
@@ -583,6 +597,30 @@ li.match.picked { outline: 2px solid var(--bad); outline-offset: -2px; }
     <button role="tab" id="game-timer" aria-selected="false" aria-controls="g-timer">인게임 타이머</button>
     <button role="tab" id="game-roster" aria-selected="false" aria-controls="g-roster">선수 명단</button>
   </nav>
+
+  <!-- 오늘 뭐 하지? 룰렛: 우리가 하는 게임 목록을 돌려서 오늘 할 게임을 정해요. 방에서 돌리면 같은 방 친구 화면에서도 같이 돌아가요. -->
+  <section class="game" id="g-pick" role="tabpanel" aria-labelledby="game-pick" hidden>
+    <div class="card">
+      <h2>🎲 오늘 뭐 하지? <span class="r" id="pickMeta"></span></h2>
+      <div class="pick-wrap">
+        <div class="wheel"><span class="ptr" aria-hidden="true"></span><div id="pickWheel"></div><span class="hub" aria-hidden="true">🎲</span></div>
+        <div class="pick-res" id="pickRes" aria-live="polite"></div>
+        <div class="row" style="justify-content:center"><button class="btn gold" id="pickSpin">돌리기</button><button class="btn ghost" id="pickAgain" hidden>이거 빼고 다시</button></div>
+      </div>
+      <p class="pick-h" style="margin-top:16px">후보 <span id="pickCount"></span> · 누르면 이번엔 빼요(다시 누르면 넣어요)</p>
+      <div class="chips" id="pickChips"></div>
+      <p class="note" id="pickNote"></p>
+    </div>
+    <div class="card">
+      <h2>게임 목록 <span class="r"><button class="btn ghost small" id="pickEdit">✎ 고치기</button></span></h2>
+      <div id="pickEditBox" hidden>
+        <form class="add" id="pickAddForm"><input id="pickAddInput" type="text" maxlength="200" placeholder="게임 추가 (쉼표로 여러 개: 오버워치, 배그)" autocomplete="off"><button class="btn" type="submit">추가</button></form>
+        <p class="note">아래 후보 칸에서 ✕를 누르면 목록에서 빠져요. 목록은 모두 같이 써요(닉네임을 정하면 누구나 고쳐요). <button class="linkbtn" type="button" id="pickReset">처음 목록으로</button></p>
+      </div>
+      <h2 style="margin-top:14px">최근 결과 <span class="r">이 방</span></h2>
+      <ul class="pick-hist" id="pickHist"></ul>
+    </div>
+  </section>
 
   <section class="game" id="g-lol" role="tabpanel" aria-labelledby="game-lol">
 
@@ -891,6 +929,7 @@ function applyServer(d) {
   if (Array.isArray(d.tourns)) S.tourns = d.tourns.filter(t => t && typeof t.id === 'string' && Array.isArray(t.rounds) && Array.isArray(t.ents));
   if (Array.isArray(d.pred)) S.pred = d.pred.filter(x => x && typeof x.n === 'string' && ['blue', 'red'].includes(x.s));
   if (Array.isArray(d.seasons)) S.seasons = cleanSeasons(d.seasons);
+  if ('games' in d) S.games = Array.isArray(d.games) ? d.games.filter(x => typeof x === 'string') : null; // null = 아직 안 고친 기본 목록
   if (d.riot && typeof d.riot === 'object') S.riot = d.riot;
   if (typeof d.now === 'number') S.skew = d.now - Date.now(); // 서버 시계 - 내 폰 시계 (타이머를 서버 시각으로 맞춰요)
   if (d.ably) connectAbly(d.ably);
@@ -902,6 +941,8 @@ function applyServer(d) {
   if (!rs) return;
   if (rs.boards && typeof rs.boards === 'object') S.boards = rs.boards;
   if (typeof rs.bver === 'number') bver = rs.bver;
+  S.pick = rs.pick && Array.isArray(rs.pick.cands) ? rs.pick : null;
+  if (pickSeen === undefined) pickSeen = S.pick?.t ?? null; // 방에 처음 들어왔을 때 이미 있던 결과는 돌리지 않고 보여만 줘요
   const c = rs.current;
   if (c && Array.isArray(c.blue) && Array.isArray(c.red) && (!S.current || (c.t || 0) > (S.current.t || 0))) S.current = c;
   // 오늘 할 사람: 내가 누른 게 아직 저장 중이면 화면에 보이는 내 선택을 그대로 둬요 (끝나면 syncSelect가 맞춰요)
@@ -977,12 +1018,12 @@ async function pull(beat) {
 }
 function enterRoom(id) {
   if (S.room === id) return;
-  S.room = id; S.current = null; S.selected = new Set(); S.draft = null; S.presence = []; S.boards = {}; ver = bver = null;
+  S.room = id; S.current = null; S.selected = new Set(); S.draft = null; S.presence = []; S.boards = {}; S.pick = null; pickSeen = undefined; ver = bver = null;
   history.replaceState(null, '', id ? `?room=${id}${location.hash}` : location.pathname + location.hash);
   saveLocal(); renderAll(); pull(true);
 }
 function leaveRoom() {
-  S.roomOpen = null; S.room = null; S.current = null; S.selected = new Set(); S.draft = null; S.presence = []; S.boards = {}; bver = null;
+  S.roomOpen = null; S.room = null; S.current = null; S.selected = new Set(); S.draft = null; S.presence = []; S.boards = {}; S.pick = null; pickSeen = undefined; bver = null;
   history.replaceState(null, '', location.pathname + location.hash); saveLocal();
 }
 // 명단은 바로 화면에 반영하고, 서버가 거절하면 서버 상태로 되돌려요.
@@ -2499,7 +2540,7 @@ $('#fivePick').addEventListener('click', e => {
 $('#fiveClear').onclick = () => { FIVE = []; saveFive(); renderFive(); };
 $('#fiveRefresh').onclick = e => refreshRiotNow(e.currentTarget);
 // 게임 탭(롤 내전 / 롤 5인 큐). 마지막에 본 탭을 기억해요.
-const GAMES = ['lol', 'duel', 'five', 'tourn', 'timer', 'roster'];
+const GAMES = ['pick', 'lol', 'duel', 'five', 'tourn', 'timer', 'roster'];
 function showGame(g) {
   for (const x of GAMES) { $('#game-' + x).setAttribute('aria-selected', x === g); $('#g-' + x).hidden = x !== g; }
   const nav = $('#game-' + g).parentElement, b = $('#game-' + g); // 폰에서 한 줄로 밀어 보는 탭이면 고른 탭이 보이게
@@ -2584,7 +2625,108 @@ $('#g-duel').addEventListener('click', async e => {
   if (del && confirm('이 1:1 기록을 지울까요?')) { try { await api('deleteDuel', { id: del.dataset.duelDel }); toast('1:1 기록을 지웠어요.'); } catch {} renderAll(); }
 });
 
-function renderAll() { syncPresence(); renderSeasonPick(); renderRoomBar(); renderRoster(); renderTeams(); renderSession(); renderStats(); renderAnalysis(); renderLog(); renderFive(); renderDuel(); renderTourn(); renderTimer(); }
+// ---------- 오늘 뭐 하지? 룰렛 ----------
+// 게임 목록은 모두 같이 써요(S.games, 안 고쳤으면 기본 목록). 후보에서 뺀 게임은 이 기기에만 기억해요.
+// 방에 들어가 있으면 서버가 뽑고(spinPick) 그 방 화면들이 같은 후보·같은 결과로 같이 돌아요. 방이 없으면 이 화면에서만 돌아요.
+const PICK_DEFAULT = ['롤 내전', '칼바람', '롤 5인 큐', '롤토체스', '발로란트', '마리오카트', '카트라이더', '보드게임'];
+const PICK_COLORS = ['#d8b55b', '#4c8dff', '#ff5468', '#2ec4a0', '#a78bfa', '#f08a3c', '#56b4e4', '#e9a347'];
+const PICK_TAB = { '롤 내전': 'lol', '롤 1:1': 'duel', '롤 5인 큐': 'five', '토너먼트': 'tourn' }; // 결과가 이 게임이면 그 탭으로 가는 버튼
+let PICK_OFF = new Set(); try { PICK_OFF = new Set(JSON.parse(localStorage.getItem(LS + ':pickOff') || '[]')); } catch {}
+const savePickOff = () => { try { localStorage.setItem(LS + ':pickOff', JSON.stringify([...PICK_OFF])); } catch {} };
+let pickSeen, pickSpin = false, pickEdit = false, wheelRot = 0, wheelKey = '', wheelCands = null, pickLocal = null, pickLanded = 0;
+const pickGames = () => S.games?.length ? S.games : PICK_DEFAULT;
+const pickCands = () => pickGames().filter(g => !PICK_OFF.has(g));
+// 돌림판 그리기: 위(12시)부터 시계 방향으로 칸을 나눠요. 같은 후보면 다시 안 그려서 돌아간 각도가 그대로예요.
+function drawWheel(cands, force) {
+  const key = cands.join('\u0001'); if (!force && key === wheelKey) return; wheelKey = key;
+  const n = cands.length, C = 130, R = 126, box = $('#pickWheel');
+  if (n < 2) { box.innerHTML = `<svg viewBox="0 0 260 260" role="img" aria-label="후보가 모자라요"><circle cx="${C}" cy="${C}" r="${R}" fill="var(--sunk)" stroke="var(--line)" stroke-width="2"/></svg>`; return; }
+  const pt = deg => { const r = (deg - 90) * Math.PI / 180; return [C + R * Math.cos(r), C + R * Math.sin(r)]; };
+  const fs = n <= 4 ? 17 : n <= 8 ? 15 : n <= 12 ? 13 : 11, max = n <= 6 ? 8 : n <= 12 ? 6 : 4;
+  const segs = cands.map((g, i) => {
+    const a0 = i * 360 / n, a1 = (i + 1) * 360 / n, [x0, y0] = pt(a0), [x1, y1] = pt(a1), mid = (a0 + a1) / 2 - 90;
+    const col = PICK_COLORS[i === n - 1 && n % PICK_COLORS.length === 1 ? 2 : i % PICK_COLORS.length], label = g.length > max ? g.slice(0, max) + '…' : g;
+    return `<path d="M${C} ${C} L${x0.toFixed(2)} ${y0.toFixed(2)} A${R} ${R} 0 ${a1 - a0 > 180 ? 1 : 0} 1 ${x1.toFixed(2)} ${y1.toFixed(2)} Z" fill="${col}" stroke="rgba(0,0,0,.25)" stroke-width="1"/>`
+      // 왼쪽 절반 칸은 글자가 거꾸로 서지 않게 반 바퀴 돌려서 가운데 쪽에서 읽혀요
+      + `<text transform="rotate(${(mid > 90 ? mid - 180 : mid).toFixed(2)} ${C} ${C})" x="${mid > 90 ? C - R * .6 : C + R * .6}" y="${C}" text-anchor="middle" dominant-baseline="central" font-size="${fs}" font-weight="800" fill="#fff" stroke="rgba(0,0,0,.45)" stroke-width="3" paint-order="stroke" font-family="Pretendard Variable, Pretendard, sans-serif">${esc(label)}</text>`;
+  }).join('');
+  box.innerHTML = `<svg viewBox="0 0 260 260" role="img" aria-label="돌림판: ${esc(cands.join(', '))}"><g id="wheelRot" style="transform-origin:${C}px ${C}px;transform:rotate(${wheelRot}deg)">${segs}</g></svg>`;
+}
+// i번째 칸이 위 화살표 아래에 오게 6바퀴 넘게 돌다가 멈춰요. mine이면(내가 돌렸으면) 똑딱 소리.
+function spinWheel(cands, i, result, mine) {
+  wheelCands = cands; drawWheel(cands, true);
+  const n = cands.length, center = (i + .5) * 360 / n, cur = ((wheelRot % 360) + 360) % 360, want = (360 - center) % 360;
+  wheelRot += 360 * 6 + ((want - cur + 360) % 360);
+  const land = () => { // 멈추면 결과가 튀어나와요(그 뒤에 다시 그릴 땐 안 튀게 1초 뒤 지워요)
+    pickSpin = false; pickLanded = result.t; if (mine) sfx('win'); renderPick(); burst($('#pickRes'), 'gold', true);
+    setTimeout(() => { if (pickLanded === result.t) pickLanded = 0; }, 1000);
+  };
+  const g = $('#wheelRot');
+  if (reduceMotion || !g) { if (g) g.style.transform = `rotate(${wheelRot}deg)`; return land(); }
+  pickSpin = true; renderPick();
+  g.getBoundingClientRect(); // 지금 각도를 먼저 그려 두고, 다음 각도로 미끄러지게
+  g.style.transition = 'transform 4.2s cubic-bezier(.12, .75, .18, 1)'; g.style.transform = `rotate(${wheelRot}deg)`;
+  if (mine) for (let k = 1; k <= 26; k++) setTimeout(() => pickSpin && sfx('tick'), 4000 * (k / 26) ** 1.9); // 처음엔 빠르게, 점점 느리게
+  setTimeout(land, 4350);
+}
+function renderPick() {
+  const p = S.room ? S.pick : pickLocal;
+  if (p && S.room && p.t !== pickSeen && !pickSpin) { pickSeen = p.t; return spinWheel(p.cands, p.i, p, p.mine); } // 방에 새 결과가 오면(내가 돌렸든 친구가 돌렸든) 돌려요
+  const list = pickGames(), cands = pickCands();
+  if (!pickSpin) drawWheel(wheelCands || cands);
+  $('#pickMeta').textContent = S.room ? `${curRoom()?.name || ''} · 같이 돌려요` : '이 화면에서만';
+  $('#pickCount').textContent = `${cands.length} / ${list.length}`;
+  $('#pickChips').innerHTML = list.map((g, k) => `<button class="chip${PICK_OFF.has(g) ? ' off' : ' on'}" data-pg="${k}" aria-pressed="${!PICK_OFF.has(g)}">${esc(g)}${pickEdit ? '<span class="x" aria-label="목록에서 빼기">✕</span>' : ''}</button>`).join('');
+  $('#pickSpin').disabled = pickSpin || cands.length < 2;
+  $('#pickSpin').textContent = pickSpin ? '돌아가는 중…' : p ? '다시 돌리기' : '돌리기';
+  const shown = p && !pickSpin ? p : null, tab = shown && PICK_TAB[shown.game];
+  $('#pickAgain').hidden = !shown || pickSpin || cands.filter(g => g !== shown.game).length < 2;
+  $('#pickRes').className = 'pick-res' + (shown && pickLanded === shown.t ? ' landed' : '');
+  $('#pickRes').innerHTML = pickSpin ? '<div class="big">두구두구…</div>' : shown
+    ? `<div class="big">오늘은 <b>${esc(shown.game)}</b>!</div><span class="note" style="margin:0">${shown.by ? `${esc(shown.by)}님이 돌렸어요 · ` : ''}${ago(shown.t)}${tab ? ` · <button class="linkbtn" data-pick-go="${tab}">${esc(shown.game)} 탭으로</button>` : ''}</span>`
+    : '<span class="note" style="margin:0">돌리기를 누르면 오늘 할 게임이 정해져요.</span>';
+  $('#pickNote').textContent = cands.length < 2 ? '후보가 두 개 이상 있어야 돌릴 수 있어요.'
+    : !S.room ? '방에 들어가 있으면 같은 방 친구 화면에서도 같이 돌아가요(맨 위 방 줄). 지금은 이 화면에서만 돌아요.'
+    : !ME.nick ? '닉네임을 정하면 돌릴 수 있어요(맨 위 방 줄). 친구가 돌리면 여기서도 같이 돌아가요.' : '같은 방 친구 화면에서도 같이 돌아가요. 결과는 서버가 뽑아서 모두 같아요.';
+  $('#pickEdit').textContent = pickEdit ? '다 고쳤어요' : '✎ 고치기'; $('#pickEditBox').hidden = !pickEdit;
+  const hist = S.room ? S.pick?.hist || [] : [];
+  $('#pickHist').innerHTML = hist.map(h => `<li><time>${ago(h.t)}</time><b>${esc(h.game)}</b><span class="note" style="margin:0">${esc(h.by || '')}</span></li>`).join('')
+    || `<li class="note" style="margin:0">${S.room ? '아직 이 방에서 돌린 적이 없어요.' : '방에 들어가 있으면 이 방에서 나온 결과가 여기 쌓여요.'}</li>`;
+}
+async function pickSpinNow(cands) {
+  if (pickSpin || cands.length < 2) return;
+  if (!S.room) { const i = rnd(cands.length); pickLocal = { t: Date.now(), cands, i, game: cands[i] }; return spinWheel(cands, i, pickLocal, true); }
+  if (!ME.nick) return toast(NEED_NICK);
+  $('#pickSpin').disabled = true;
+  try { const d = await api('spinPick', { cands }); if (S.pick && S.pick.t === d.room?.pick?.t) S.pick.mine = true; } catch {}
+  renderPick();
+}
+async function saveGames(games, msg) {
+  if (!ME.nick) return toast(NEED_NICK);
+  const prev = S.games; S.games = games.length ? games : null; renderPick();
+  try { await api('setGames', { games }); if (msg) toast(msg); } catch { S.games = prev; }
+  renderPick();
+}
+$('#pickSpin').onclick = () => pickSpinNow(pickCands());
+$('#pickAgain').onclick = () => { const p = S.room ? S.pick : pickLocal; if (!p) return; PICK_OFF.add(p.game); savePickOff(); wheelCands = null; pickSpinNow(pickCands()); };
+$('#pickChips').addEventListener('click', e => {
+  const b = e.target.closest('[data-pg]'); if (!b || pickSpin) return;
+  const g = pickGames()[+b.dataset.pg]; if (g == null) return;
+  if (pickEdit && e.target.closest('.x')) return saveGames(pickGames().filter(x => x !== g), `'${g}'을(를) 목록에서 뺐어요.`);
+  PICK_OFF.has(g) ? PICK_OFF.delete(g) : PICK_OFF.add(g); savePickOff(); wheelCands = null; renderPick(); // 후보가 바뀌면 돌림판도 새로 그려요
+});
+$('#pickEdit').onclick = () => { pickEdit = !pickEdit; renderPick(); if (pickEdit) $('#pickAddInput').focus(); };
+$('#pickAddForm').addEventListener('submit', e => {
+  e.preventDefault();
+  const add = $('#pickAddInput').value.split(/[,，\n]/).map(x => x.trim().slice(0, 20)).filter(Boolean), list = pickGames();
+  const fresh = [...new Set(add)].filter(x => !list.includes(x)); if (!fresh.length) return;
+  if (list.length + fresh.length > 30) return toast('게임은 30개까지 넣을 수 있어요.');
+  $('#pickAddInput').value = ''; wheelCands = null; saveGames([...list, ...fresh], `${fresh.join(', ')}을(를) 넣었어요.`);
+});
+$('#pickReset').onclick = () => { wheelCands = null; saveGames([], '처음 목록으로 돌렸어요.'); };
+$('#pickRes').addEventListener('click', e => { const b = e.target.closest('[data-pick-go]'); if (b) { showGame(b.dataset.pickGo); scrollTo({ top: 0, behavior: reduceMotion ? 'auto' : 'smooth' }); } });
+
+function renderAll() { syncPresence(); renderSeasonPick(); renderRoomBar(); renderRoster(); renderTeams(); renderSession(); renderStats(); renderAnalysis(); renderLog(); renderFive(); renderDuel(); renderTourn(); renderTimer(); renderPick(); }
 
 // ---------- 인게임 타이머 ----------
 // 게임하면서 옆에 켜 두는 보드. 상대가 스펠을 쓰면 그 칸을 눌러요 → 쿨타임이 돌고, 돌아오면 소리·알림. 다시 누르면 취소.
@@ -2998,6 +3140,12 @@ document.addEventListener('click', e => {
 // ---------- 버전 · 패치노트 ----------
 // 커밋해서 올릴 때마다 맨 위에 새 항목을 더해요(규칙은 CLAUDE.md). 오른쪽 위 버전은 맨 위 항목이에요.
 const NOTES = [
+  { v: '1.23.0', d: '2026-10-23', items: [
+    '새 탭 "🎲 뭐 하지": 우리가 하는 게임을 돌림판으로 돌려서 오늘 할 게임을 정해요. 화살표가 가리키는 칸이 결과예요.',
+    '방에 들어가 있으면 같은 방 친구 화면에서도 돌림판이 같이 돌다가 같은 게임에서 멈춰요. 결과는 서버가 뽑아서 누가 돌려도 고를 수 없어요. 디스코드에도 결과가 올라가요.',
+    '후보 칸을 누르면 이번엔 빼고 돌려요. 결과가 마음에 안 들면 "이거 빼고 다시". 결과가 롤 내전·롤 1:1·롤 5인 큐·토너먼트면 그 탭으로 바로 갈 수 있어요.',
+    '게임 목록은 모두 같이 써요. "✎ 고치기"에서 닉네임을 정한 사람 누구나 넣고 뺄 수 있어요. 이 방에서 나온 최근 결과 5개도 보여요.',
+  ] },
   { v: '1.22.1', d: '2026-10-23', items: [
     '인게임 타이머에서 드래곤·바론·장로·억제기 칸을 뺐어요. 오브젝트 시간은 게임 안에서도 보여서, 게임이 안 알려 주는 상대 스펠 쿨타임만 남겼어요.',
   ] },
