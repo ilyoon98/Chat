@@ -4,39 +4,17 @@
 import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { readFileSync, writeFileSync } from 'node:fs';
+import { createRedis, zset } from './dev-redis.mjs';
 
 const file = process.env.DEV_DATA || new URL('./.dev-data.json', import.meta.url);
 const kv = new Map();
-const zset = entries => Object.assign(new Map(entries), { isZ: true }); // 정렬 집합(멤버 → 점수)
 try {
   for (const [k, v] of Object.entries(JSON.parse(readFileSync(file, 'utf8'))))
     kv.set(k, v?.__hash ? new Map(Object.entries(v.__hash)) : v?.__zset ? zset(Object.entries(v.__zset)) : v);
 } catch {}
 const save = () => writeFileSync(file, JSON.stringify(Object.fromEntries([...kv].map(([k, v]) =>
   [k, v instanceof Map ? { [v.isZ ? '__zset' : '__hash']: Object.fromEntries(v) } : v]))));
-
-const redis = {
-  async get(k) { return kv.get(k) ?? null; },
-  async set(k, v) { kv.set(k, structuredClone(v)); save(); return 'OK'; },
-  async del(...ks) { let n = 0; for (const k of ks) if (kv.delete(k)) n++; save(); return n; },
-  async hget(k, f) { return kv.get(k)?.get(f) ?? null; },
-  async hgetall(k) { const h = kv.get(k); return h ? Object.fromEntries(h) : null; },
-  async hset(k, obj) { const h = kv.get(k) ?? new Map(); for (const [f, v] of Object.entries(obj)) h.set(f, structuredClone(v)); kv.set(k, h); save(); return 1; },
-  async hdel(k, ...fs) { let n = 0; for (const f of fs) if (kv.get(k)?.delete(f)) n++; save(); return n; },
-  async incr(k) { const n = (kv.get(k) ?? 0) + 1; kv.set(k, n); save(); return n; },
-  // @upstash/redis와 같은 모양: zadd(key, [opts], {score, member}, ...)
-  async zadd(k, ...args) {
-    const opts = args[0] && !('member' in args[0]) ? args.shift() : {}, z = kv.get(k) ?? zset();
-    let n = 0;
-    for (const { score, member } of args) if (!(opts.nx && z.has(member))) { if (!z.has(member)) n++; z.set(member, score); }
-    kv.set(k, z); save(); return n;
-  },
-  async zrem(k, ...members) { const z = kv.get(k); let n = 0; for (const m of members) if (z?.delete(m)) n++; save(); return n; },
-  // zrange(key, 0, -1, { withScores: true })면 [멤버, 점수, 멤버, 점수, …]
-  async zrange(k, _s, _e, opts = {}) { const z = kv.get(k); return z ? [...z].sort((a, b) => a[1] - b[1]).flatMap(([m, s]) => opts.withScores ? [m, s] : [m]) : []; },
-  async zremrangebyscore(k, min, max) { const z = kv.get(k); let n = 0; for (const [m, s] of z || []) if (s >= min && s <= max) { z.delete(m); n++; } save(); return n; },
-  async zscore(k, m) { return kv.get(k)?.get(m) ?? null; },
-};
+const redis = createRedis(kv, save); // 가짜 Redis는 dev-redis.mjs에 있어요(시험도 같이 써요)
 const latency = Number(process.env.DEV_LATENCY) || 0;
 globalThis.__redis = latency
   ? Object.fromEntries(Object.entries(redis).map(([name, fn]) => [name, async (...a) => { await new Promise(r => setTimeout(r, latency)); return fn(...a); }]))

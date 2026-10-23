@@ -88,6 +88,7 @@ npm run dev
 ```
 
 http://localhost:3000 에서 열려요. 이때 기록은 이 폴더의 `.dev-data.json` 파일에 저장돼서 서버를 껐다 켜도 남아요. (배포한 사이트와는 따로예요. git에는 안 올라가요.)
+서버 시험은 `npm test` 한 번으로 돌려요(`tests/`, 가짜 Redis라서 실제 기록은 안 건드려요). 고친 뒤 올리기 전에 돌려 보세요.
 솔랭 티어까지 시험하려면 이 폴더에 `.env` 파일을 만들고 `RIOT_API_KEY=RGAPI-…` 한 줄을 넣어요. 실시간 신호는 `ABLY_API_KEY=…` 줄을 넣으면 돼요. `npm run dev`가 읽어 가요. (`.env`도 git에는 안 올라가요.)
 
 ## 기능

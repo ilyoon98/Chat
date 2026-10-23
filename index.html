@@ -854,7 +854,8 @@ async function api(action, body, quiet) {
         no_match: '그 판 기록이 없어요. 지워졌을 수 있어요.', mvp_closed: 'MVP 투표는 기록하고 하루 안에만 할 수 있어요.',
         pred_closed: '이 판은 결과가 나와서 예측이 마감됐어요.', pred_stale: '팀이 바뀌었어요. 새 팀으로 다시 찍어 주세요.',
         tourn_locked: '다음 판 결과를 먼저 풀어야 바꿀 수 있어요.', no_tourn: '그 토너먼트가 없어요. 지워졌을 수 있어요.', tourn_full: '토너먼트는 50개까지예요. 지난 토너먼트를 지워 주세요.',
-        season_empty: '이번 시즌엔 아직 기록한 판이 없어요. 한 판 이상 하고 새 시즌을 시작해 주세요.' }[e] || '저장에 실패했어요.');
+        season_empty: '이번 시즌엔 아직 기록한 판이 없어요. 한 판 이상 하고 새 시즌을 시작해 주세요.',
+        need_nick: '먼저 닉네임을 정해 주세요. 롤 내전 탭 방 칸에서 정할 수 있어요.' }[e] || '저장에 실패했어요.');
       throw new Error(e || String(res.status));
     }
     if (res.status === 424) { const e = (await res.json().catch(() => ({}))).error; if (!quiet) toast(RIOT_ERR[e] || RIOT_ERR.riot_down); throw new Error(e); }
@@ -1380,7 +1381,7 @@ async function predict(side) {
   const round = roundOf(c), prev = MY_PRED[round] ?? null, next = prev === side ? null : side;
   if (next) MY_PRED[round] = next; else delete MY_PRED[round];
   saveMyPred(); renderTeams();
-  try { await api('predict', { round, side: next, nick: ME.nick }); sfx(next ? 'on' : 'off'); if (next) toast(`${TEAM[next]} 승리에 걸었어요!`); }
+  try { await api('predict', { round, side: next }); sfx(next ? 'on' : 'off'); if (next) toast(`${TEAM[next]} 승리에 걸었어요!`); }
   catch { if (prev) MY_PRED[round] = prev; else delete MY_PRED[round]; saveMyPred(); }
   renderAll();
 }
@@ -1593,8 +1594,7 @@ const TEAM = { blue: '1팀 블루', red: '2팀 레드' };
 function streakNote(rec, st) {
   const out = [];
   for (const p of [...rec[rec.win], ...rec[rec.win === 'blue' ? 'red' : 'blue']]) {
-    const f = st.P[p]?.form || [], last = f.at(-1); let n = 0;
-    for (let i = f.length - 1; i >= 0 && f[i] === last; i--) n++;
+    const [n, last] = runOf(st.P[p]?.form || []);
     if (n >= 3) out.push(`<span class="${last ? 'w' : 'l'}">${last ? '🔥' : '🧊'} ${esc(p)} ${n}연${last ? '승' : '패'}</span>`);
   }
   return out.length ? `<p class="rec-streak">${out.join('')}</p>` : '';
@@ -1616,6 +1616,7 @@ function mvpBox(rec) {
     <div class="mvp-chips">${rec[rec.win].map(p => chip(p, rec.win)).join('')}</div><div class="mvp-chips">${rec[lose].map(p => chip(p, lose)).join('')}</div></div>`;
 }
 async function voteMvp(id, name) {
+  if (!ME.nick) return toast('먼저 닉네임을 정해 주세요. 롤 내전 탭 방 칸에서 정할 수 있어요.');
   const prev = MY_MVP[id] ?? null, next = prev === name ? null : name, v = S.mvp[id] = { ...S.mvp[id] };
   if (prev && v[prev] && !--v[prev]) delete v[prev]; // 화면은 바로 바꾸고, 서버 답이 오면 진짜 표 수로 맞춰요
   if (next) v[next] = (v[next] || 0) + 1;
@@ -2043,10 +2044,14 @@ const NO_PERIOD = '<p class="empty">이 기간에는 기록된 경기가 없어�
 // 판이 없을 때 안내: 기간 때문인지, 새 시즌이라 아직 없는 건지, 기록이 아예 없는 건지
 const noMatches = () => viewMatches().length ? NO_PERIOD : S.matches.length
   ? `<p class="empty">시즌 ${viewSeason()}에는 아직 기록된 경기가 없어요. 위 "시즌"에서 지난 시즌이나 전체를 골라 볼 수 있어요.</p>` : emptyStats();
-function streak(form) {
-  if (!form.length) return '';
+// 최근 결과 목록(1 승 / 0 패)의 끝에서 같은 결과가 몇 번 이어졌는지: [횟수, 마지막 결과]
+function runOf(form) {
   const last = form.at(-1); let n = 0;
   for (let i = form.length - 1; i >= 0 && form[i] === last; i--) n++;
+  return [n, last];
+}
+function streak(form) {
+  const [n, last] = runOf(form);
   return n >= 2 ? `<span class="streak ${last ? 'w' : 'l'}">${n}연${last ? '승' : '패'}</span>` : '';
 }
 let sortKey = 'rate';
@@ -2310,7 +2315,8 @@ $('#restoreFile').onchange = async e => {
   if (!confirm(`백업 파일${when}\n선수 ${ps.length}명 · 내전 ${ms.length}판 · 1:1 ${ds.length}판${ts.length ? ` · 토너먼트 ${ts.length}개` : ''}${ss.length ? ` · 시즌 ${ss.length + 1}까지` : ''}\n\n지금 기록에 없는 것만 더해요. 지금 있는 기록은 지우거나 덮어쓰지 않아요.\n백업한 뒤에 일부러 지운 기록도 이 파일에 있으면 다시 들어와요. 불러올까요?`)) return;
   try {
     const r = await api('importBackup', { players: ps, matches: ms, duels: ds, seasons: ss, tourns: ts, riot: d.riot }), x = r.imported || {};
-    toast(r.dup ? '이미 다 들어 있는 기록이라 더할 게 없었어요.' : `불러왔어요: 선수 ${x.players}명 · 내전 ${x.matches}판 · 1:1 ${x.duels}판${x.tourns ? ` · 토너먼트 ${x.tourns}개` : ''}${x.riot ? ` · Riot ID ${x.riot}명` : ''}${x.seasons ? ` · 시즌 시작 ${x.seasons}개` : ''}`);
+    const skip = x.gone ? ` (일부러 지운 ${x.gone}개는 빼고)` : '';
+    toast(r.dup ? `이미 다 들어 있는 기록이라 더할 게 없었어요.${skip}` : `불러왔어요: 선수 ${x.players}명 · 내전 ${x.matches}판 · 1:1 ${x.duels}판${x.tourns ? ` · 토너먼트 ${x.tourns}개` : ''}${x.riot ? ` · Riot ID ${x.riot}명` : ''}${x.seasons ? ` · 시즌 시작 ${x.seasons}개` : ''}${skip}`);
   } catch {}
   renderAll();
 };
@@ -2971,6 +2977,12 @@ document.addEventListener('click', e => {
 // ---------- 버전 · 패치노트 ----------
 // 커밋해서 올릴 때마다 맨 위에 새 항목을 더해요(규칙은 CLAUDE.md). 오른쪽 위 버전은 맨 위 항목이에요.
 const NOTES = [
+  { v: '1.21.2', d: '2026-10-23', items: [
+    'MVP 투표와 승부 예측은 닉네임을 정한 폰에서만 돼요. 예측왕에는 그 폰의 닉네임으로 남아서, 다른 사람 이름으로 찍을 수 없어요.',
+    '일부러 지운 판·1:1·토너먼트는 백업을 불러와도 다시 생기지 않아요. 불러온 뒤 "일부러 지운 n개는 빼고"라고 알려 줘요. 전체 초기화 전에 받은 백업으로는 그대로 다 되살릴 수 있어요.',
+    '승부 예측과 참가 신청은 그 방 화면에만 바로 반영돼요. 다른 방을 보는 친구 화면은 쓸데없이 다시 불러오지 않아요.',
+    '투표가 끝난 판(하루 지난 판)의 MVP 표는 판 기록 안에 정리해 둬요. 기록이 쌓여도 사이트가 느려지지 않고, 백업에도 MVP가 같이 담겨요.',
+  ] },
   { v: '1.21.1', d: '2026-10-23', items: [
     '지금까지 만든 기능을 정리한 기획서와 앞으로의 계획(로드맵)을 문서로 남겨 뒀어요. 사이트 기능은 그대로예요.',
   ] },
