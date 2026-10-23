@@ -617,7 +617,7 @@ li.match.picked { outline: 2px solid var(--bad); outline-offset: -2px; }
   </div>
 
   <!-- 게임 탭: 다른 게임이 생기면 버튼과 section.game을 하나씩 더 붙이면 돼요. -->
-  <!-- 갈래: 🎮 같이 하기(롤 내전·1:1·토너먼트·타이머) / 🎲 재미(뭐 하지·밥 뭐 먹지) / 📊 정보(5인 큐·선수 명단). 고른 갈래의 탭만 아래에 나와요. -->
+  <!-- 갈래: 🎮 같이 하기(롤 내전·1:1·토너먼트·타이머) / 🎲 재미(뭐 하지·밥 뭐 먹지) / 📊 정보(내전 전적·분석·기록·5인 큐·선수 명단). 고른 갈래의 탭만 아래에 나와요. -->
   <nav class="cats" role="tablist" aria-label="갈래">
     <button role="tab" data-cat="play" aria-selected="true">🎮 같이 하기</button>
     <button role="tab" data-cat="fun" aria-selected="false">🎲 재미</button>
@@ -630,6 +630,9 @@ li.match.picked { outline: 2px solid var(--bad); outline-offset: -2px; }
     <button role="tab" id="game-timer" aria-selected="false" aria-controls="g-timer">인게임 타이머</button>
     <button role="tab" id="game-pick" aria-selected="false" aria-controls="g-pick" hidden>🎲 뭐 하지</button>
     <button role="tab" id="game-meal" aria-selected="false" aria-controls="g-meal" hidden>🍚 밥 뭐 먹지</button>
+    <button role="tab" id="game-stats" aria-selected="false" aria-controls="g-stats" hidden>내전 전적</button>
+    <button role="tab" id="game-analysis" aria-selected="false" aria-controls="g-analysis" hidden>내전 분석</button>
+    <button role="tab" id="game-log" aria-selected="false" aria-controls="g-log" hidden>내전 기록</button>
     <button role="tab" id="game-five" aria-selected="false" aria-controls="g-five" hidden>롤 5인 큐</button>
     <button role="tab" id="game-roster" aria-selected="false" aria-controls="g-roster" hidden>선수 명단</button>
   </nav>
@@ -676,17 +679,9 @@ li.match.picked { outline: 2px solid var(--bad); outline-offset: -2px; }
     </div>
   </section>
 
+  <!-- 롤 내전(같이 하기): 팀 섞기·승패 화면. 전적·분석·기록은 📊 정보 갈래의 탭으로 따로 있어요. -->
   <section class="game" id="g-lol" role="tabpanel" aria-labelledby="game-lol">
-
-  <nav class="tabs" role="tablist">
-    <button role="tab" id="tab-play" aria-selected="true">내전</button>
-    <button role="tab" id="tab-stats" aria-selected="false">전적</button>
-    <button role="tab" id="tab-analysis" aria-selected="false">분석</button>
-    <button role="tab" id="tab-log" aria-selected="false">기록</button>
-  </nav>
-
-  <!-- 내전 -->
-  <section id="p-play" role="tabpanel">
+  <section id="p-play">
     <div class="card">
       <div class="roster-head"><h2>선수 명단 <span class="r" id="rosterCount"></span></h2><button class="btn ghost small" id="goRoster">✎ 명단 관리</button></div>
       <div id="roster"></div>
@@ -713,21 +708,22 @@ li.match.picked { outline: 2px solid var(--bad); outline-offset: -2px; }
     <div class="card" id="sessionCard" hidden>
       <h2>이 방 기록 <span class="r"><span id="sessionMeta"></span> <button class="btn ghost small" id="copySession">카톡용 복사</button> <button class="btn ghost small" id="shotSession">결산 이미지</button></span></h2>
       <div id="sessionBox"></div>
-      <p class="note">이 방에서 한 판들만 따로 세요. 모든 방을 합친 전체 전적은 전적 탭에서 봐요.</p>
+      <p class="note">이 방에서 한 판들만 따로 세요. 모든 방을 합친 전체 전적은 📊 정보 → 내전 전적에서 봐요.</p>
     </div>
   </section>
+  </section>
 
-  <!-- 전적 -->
-  <section id="p-stats" role="tabpanel" hidden>
+  <!-- 내전 전적(정보) -->
+  <section class="game" id="g-stats" role="tabpanel" aria-labelledby="game-stats" hidden>
     <div class="card">
       <h2>선수별 전적 <span class="r"><span id="statsMeta"></span> · <label hidden>시즌 <select class="season"></select></label> <label>기간 <select class="period"><option value="all">전체</option><option value="30">최근 30일</option><option value="7">최근 7일</option><option value="1">최근 24시간</option></select></label></span></h2>
       <div id="statsBox"></div>
-      <p class="note">MMR은 1000점에서 시작해 강한 팀을 이기면 많이 올라요. 내전 티어는 그 MMR 순위를 롤 티어 분포에 맞춘 거예요.<br>방장이 기록 탭에서 새 시즌을 시작하면 모두 1000점에서 다시 시작해요. 지난 시즌은 "시즌"에서 골라 그대로 볼 수 있어요.<br>솔랭·주 라인·모스트는 Riot ID를 연결한 사람만 나와요. 이름에 마우스를 올리면(폰은 누르면) 자세히 보여요.</p>
+      <p class="note">MMR은 1000점에서 시작해 강한 팀을 이기면 많이 올라요. 내전 티어는 그 MMR 순위를 롤 티어 분포에 맞춘 거예요.<br>방장이 내전 기록 탭에서 새 시즌을 시작하면 모두 1000점에서 다시 시작해요. 지난 시즌은 "시즌"에서 골라 그대로 볼 수 있어요.<br>솔랭·주 라인·모스트는 Riot ID를 연결한 사람만 나와요. 이름에 마우스를 올리면(폰은 누르면) 자세히 보여요.</p>
     </div>
   </section>
 
-  <!-- 분석 -->
-  <section id="p-analysis" role="tabpanel" hidden>
+  <!-- 내전 분석(정보) -->
+  <section class="game" id="g-analysis" role="tabpanel" aria-labelledby="game-analysis" hidden>
     <div class="card">
       <h2>한눈에 보기 <span class="r"><label hidden>시즌 <select class="season"></select></label> <label>기간 <select class="period"><option value="all">전체</option><option value="30">최근 30일</option><option value="7">최근 7일</option><option value="1">최근 24시간</option></select></label> <label>최소 판수 <select id="minG"><option>1</option><option>2</option><option selected>3</option><option>5</option></select></label></span></h2>
       <div id="hlBox"></div>
@@ -752,8 +748,8 @@ li.match.picked { outline: 2px solid var(--bad); outline-offset: -2px; }
     </div>
   </section>
 
-  <!-- 기록 -->
-  <section id="p-log" role="tabpanel" hidden>
+  <!-- 내전 기록(정보) -->
+  <section class="game" id="g-log" role="tabpanel" aria-labelledby="game-log" hidden>
     <div class="card">
       <h2>경기 기록 <span class="r"><span id="logMeta"></span> <button class="btn ghost small" id="seasonStart" hidden title="내전·1:1 MMR을 모두 1000점에서 다시 시작해요. 지난 시즌 기록은 그대로 남아요."></button> <button class="btn ghost small" id="backup">백업 받기</button> <button class="btn ghost small" id="restore" hidden>백업 불러오기</button><input type="file" id="restoreFile" accept=".json,application/json" hidden></span></h2>
       <div class="row log-tools" id="logTools"></div>
@@ -765,7 +761,6 @@ li.match.picked { outline: 2px solid var(--bad); outline-offset: -2px; }
       </div>
       <ul class="log" id="logBox"></ul>
     </div>
-  </section>
   </section>
 
   <!-- 롤 5인 큐: 친구 다섯이 같이 랭크·일반을 돌릴 때 라인을 추천해요. 내전 기록과는 따로예요. -->
@@ -1741,7 +1736,7 @@ function mvpBox(rec) {
   const v = S.mvp[rec.id] || {}, mine = MY_MVP[rec.id], open = Date.now() - rec.t < MVP_OPEN, top = mvpTop(rec.id);
   const total = Object.values(v).reduce((s, n) => s + n, 0), lose = rec.win === 'blue' ? 'red' : 'blue';
   const chip = (p, side) => `<button class="chip mvpc ${side}${mine === p ? ' on' : ''}" data-mvp="${esc(p)}" aria-pressed="${mine === p}"${open ? '' : ' disabled'}>${top.includes(p) ? '⭐ ' : ''}${esc(p)}${v[p] ? `<b>${v[p]}</b>` : ''}</button>`;
-  return `<div class="mvp"><p class="mvp-h"><b>⭐ MVP 투표</b><small>${!open ? '투표가 끝났어요' : mine ? `내 표: ${esc(mine)} · 다시 누르면 취소` : '누구나 한 표 · 이긴 팀 진 팀 상관없이 · 하루 동안은 기록 탭에서도 돼요'} · ${total}표</small></p>
+  return `<div class="mvp"><p class="mvp-h"><b>⭐ MVP 투표</b><small>${!open ? '투표가 끝났어요' : mine ? `내 표: ${esc(mine)} · 다시 누르면 취소` : '누구나 한 표 · 이긴 팀 진 팀 상관없이 · 하루 동안은 내전 기록 탭에서도 돼요'} · ${total}표</small></p>
     <div class="mvp-chips">${rec[rec.win].map(p => chip(p, rec.win)).join('')}</div><div class="mvp-chips">${rec[lose].map(p => chip(p, lose)).join('')}</div></div>`;
 }
 async function voteMvp(id, name) {
@@ -2451,10 +2446,7 @@ $('#restoreFile').onchange = async e => {
 };
 
 // ---------- 탭 ----------
-const TABS = ['play', 'stats', 'analysis', 'log'];
-function showTab(t) { for (const x of TABS) { $('#tab-' + x).setAttribute('aria-selected', x === t); $('#p-' + x).hidden = x !== t; } }
-TABS.forEach(t => $('#tab-' + t).addEventListener('click', () => showTab(t)));
-if (TABS.includes(location.hash.slice(1))) showTab(location.hash.slice(1));
+// 예전 주소 끝의 #stats·#analysis·#log는 정보 갈래의 그 탭으로 열어요(아래 게임 탭 코드가 읽어요)
 
 // ---------- 방 ----------
 // 방 탭 + 방장/구경 중인 사람 + 방장 버튼(넘기기·닫기·링크 복사). 닉네임이 없으면 먼저 닉네임부터 받아요.
@@ -2612,8 +2604,8 @@ $('#fivePick').addEventListener('click', e => {
 $('#fiveClear').onclick = () => { FIVE = []; saveFive(); renderFive(); };
 $('#fiveRefresh').onclick = e => refreshRiotNow(e.currentTarget);
 // 게임 탭은 갈래(같이 하기·재미·정보)로 나눠 보여요. 마지막에 본 탭과 갈래마다 마지막 탭을 기억해요.
-const GAMES = ['lol', 'duel', 'tourn', 'timer', 'pick', 'meal', 'five', 'roster'];
-const CAT = { lol: 'play', duel: 'play', tourn: 'play', timer: 'play', pick: 'fun', meal: 'fun', five: 'info', roster: 'info' };
+const GAMES = ['lol', 'duel', 'tourn', 'timer', 'pick', 'meal', 'stats', 'analysis', 'log', 'five', 'roster'];
+const CAT = { lol: 'play', duel: 'play', tourn: 'play', timer: 'play', pick: 'fun', meal: 'fun', stats: 'info', analysis: 'info', log: 'info', five: 'info', roster: 'info' };
 let CAT_LAST = {}; try { CAT_LAST = JSON.parse(localStorage.getItem(LS + ':catGame') || '{}') || {}; } catch {}
 function showGame(g) {
   const cat = CAT[g];
@@ -2626,7 +2618,7 @@ function showGame(g) {
 }
 GAMES.forEach(g => $('#game-' + g).addEventListener('click', () => showGame(g)));
 $('.cats').addEventListener('click', e => { const b = e.target.closest('[data-cat]'); if (!b) return; const c = b.dataset.cat; showGame(CAT[CAT_LAST[c]] === c ? CAT_LAST[c] : GAMES.find(x => CAT[x] === c)); });
-{ let g = 'lol'; try { const v = localStorage.getItem(LS + ':game'); if (GAMES.includes(v)) g = v; } catch {} showGame(g); }
+{ let g = 'lol'; try { const v = localStorage.getItem(LS + ':game'); if (GAMES.includes(v)) g = v; } catch {} const h = location.hash.slice(1); if (['stats', 'analysis', 'log'].includes(h)) g = h; showGame(g); }
 
 // ---------- 1:1 ----------
 // 1:1 MMR은 내전과 따로 계산해요(1000점에서 시작, Elo K=32). P: 사람별, H: 'A\u0001B' → A가 B를 상대로 [판, 승]
@@ -3397,6 +3389,9 @@ document.addEventListener('click', e => {
 // ---------- 버전 · 패치노트 ----------
 // 커밋해서 올릴 때마다 맨 위에 새 항목을 더해요(규칙은 CLAUDE.md). 오른쪽 위 버전은 맨 위 항목이에요.
 const NOTES = [
+  { v: '1.25.1', d: '2026-10-23', items: [
+    '탭이 세 겹이던 걸 두 겹으로 줄였어요. 롤 내전 탭은 팀 섞고 승패 누르는 화면만 바로 나오고, 전적·분석·기록은 📊 정보 갈래의 "내전 전적 · 내전 분석 · 내전 기록" 탭으로 옮겼어요.',
+  ] },
   { v: '1.25.0', d: '2026-10-23', items: [
     '탭을 갈래로 나눴어요. 위에서 🎮 같이 하기(롤 내전·롤 1:1·토너먼트·인게임 타이머) / 🎲 재미(뭐 하지·밥 뭐 먹지) / 📊 정보(롤 5인 큐·선수 명단)를 고르면 그 탭들만 나와요. 갈래마다 마지막에 본 탭을 기억해요.',
     '새 탭 "🍚 밥 뭐 먹지": 🎰 돌리기를 누르면 슬롯 세 칸(밥·빵·면 / 한식·중식·일식·양식·기타 / 매운 거·안 매운 거)이 하나씩 멈추고, 그 조건 메뉴들 칸으로 공이 핀볼처럼 튕기며 떨어져 오늘 메뉴가 정해져요. 📍 근처 찾기로 지도에서 바로 찾아요.',
