@@ -119,15 +119,21 @@ h1 em { font-style: normal; color: var(--gold); }
 /* 원하는 조건 고르기: 줄마다 아무거나 / 값. 고른 칸은 슬롯이 안 돌아요 */
 .meal-all summary { cursor: pointer; display: flex; align-items: baseline; gap: 8px; list-style: none; }
 .meal-all summary::-webkit-details-marker { display: none; }
-.meal-all summary .ma-title { font-family: var(--display); font-weight: 800; font-size: 17px; }
+.meal-all summary .ma-title { font-family: var(--display); font-weight: 800; font-size: 17px; white-space: nowrap; }
 .meal-all summary::after { content: '펼치기 ▾'; margin-left: auto; font-size: 13px; color: var(--muted); } .meal-all[open] summary::after { content: '접기 ▴'; }
-.meal-all > input { width: 100%; margin: 12px 0 4px; }
+.meal-all > input { width: 100%; margin: 8px 0 4px; }
+.meal-filter { display: grid; gap: 6px; margin-top: 12px; }
+.meal-filter .fr { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.meal-filter .fr > span { width: 34px; font-size: 12.5px; color: var(--muted); font-weight: 700; }
+.meal-filter button { font: inherit; font-size: 13px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--sunk); color: var(--ink); cursor: pointer; }
+.meal-filter button[aria-pressed=true] { background: var(--gold); color: var(--on-gold); border-color: transparent; font-weight: 700; }
+.meal-filter .clear { border-style: dashed; color: var(--muted); }
 .meal-all h4 { margin: 14px 0 6px; font-size: 14px; } .meal-all h4 small { color: var(--muted); font-weight: 500; }
 .mchips { display: flex; flex-wrap: wrap; gap: 6px; }
 .mchip { display: inline-flex; align-items: baseline; gap: 4px; padding: 4px 10px; border-radius: 999px; background: var(--sunk); border: 1px solid var(--line); font-size: 14px; }
 .mchip small { color: var(--muted); font-size: 11.5px; } .mchip.new { border-color: var(--gold); }
 .mchip .mdel { font: inherit; font-size: 12px; background: none; border: 0; color: var(--bad); cursor: pointer; padding: 0 0 0 4px; }
-.meal-add { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto auto auto; gap: 8px; align-items: center; margin-top: 16px; padding: 12px; border: 1px dashed var(--line); border-radius: 12px; }
+.meal-add { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto auto auto; gap: 8px; align-items: center; margin: 12px 0 4px; padding: 12px; border: 1px dashed var(--line); border-radius: 12px; }
 @media (max-width: 640px) { .meal-add { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .meal-add b, .meal-add input { grid-column: 1 / -1; } }
 .meal-cnt { margin: -6px 0 0; text-align: center; font-size: 13px; color: var(--muted); } .meal-cnt b { color: var(--gold); }
 .pinball { width: min(100%, 360px); } .pinball svg { width: 100%; display: block; }
@@ -728,8 +734,6 @@ li.match.picked { outline: 2px solid var(--bad); outline-offset: -2px; }
     <div class="card">
       <details class="meal-all" id="mealAll">
         <summary><span class="ma-title">📖 모든 메뉴</span> <span class="r" id="mealAllMeta"></span></summary>
-        <input id="mealSearch" type="text" inputmode="search" placeholder="메뉴 찾기 (예: 짬뽕, 일식, 매운)" autocomplete="off" aria-label="메뉴 찾기">
-        <div id="mealAllBox"></div>
         <form class="meal-add" id="mealAddForm">
           <b>＋ 메뉴 추가</b>
           <input id="mealAddName" type="text" maxlength="20" placeholder="메뉴 이름 (예: 마라샹궈)" autocomplete="off" aria-label="메뉴 이름">
@@ -739,6 +743,9 @@ li.match.picked { outline: 2px solid var(--bad); outline-offset: -2px; }
           <button class="btn small" type="submit">추가</button>
           <p class="note" style="margin:0;grid-column:1/-1">닉네임을 정한 사람 누구나 넣을 수 있어요. 넣은 메뉴는 바로 돌리기에도 나와요. 지우기는 넣은 사람과 방장이 해요.</p>
         </form>
+        <div class="meal-filter" id="mealFilter"></div>
+        <input id="mealSearch" type="text" inputmode="search" placeholder="메뉴 찾기 (예: 짬뽕, 일식, 매운)" autocomplete="off" aria-label="메뉴 찾기">
+        <div id="mealAllBox"></div>
       </details>
     </div>
   </section>
@@ -3120,21 +3127,42 @@ $('#mealSpin').onclick = mealSpinNow;
 // 종류별로 묶어 보여 줘요(돼지국밥처럼 종류가 둘이면 두 곳에 다 나와요). 위 칸에 적으면 이름·종류·나라·'매운'으로 걸러요.
 // ✨는 친구들이 더한 메뉴예요. 지우기(✕)는 더한 사람과 방장에게만 보이고, 두 번 눌러야 지워져요.
 let mealDel = null;
+// 필터: 종류·나라·맵기는 하나씩(다시 누르면 풀림), ✨는 친구들이 더한 메뉴만. 이 기기에 기억해요.
+let MF = { k: null, c: null, s: null, mine: false }; try { MF = { ...MF, ...JSON.parse(localStorage.getItem(LS + ':mealFilter') || '{}') }; } catch {}
+const saveMF = () => { try { localStorage.setItem(LS + ':mealFilter', JSON.stringify(MF)); } catch {} };
+function renderMealFilter() {
+  const row = (label, key, vals) => `<div class="fr"><span>${label}</span>${vals.map(v => `<button type="button" data-mf="${key}" data-v="${esc(v)}" aria-pressed="${MF[key] === v}">${MEAL_ICON[v] || ''} ${esc(v)}</button>`).join('')}</div>`;
+  const on = MF.k || MF.c || MF.s || MF.mine;
+  $('#mealFilter').innerHTML = row('종류', 'k', MEAL_REELS[0]) + row('나라', 'c', MEAL_REELS[1]) + row('맵기', 's', MEAL_REELS[2])
+    + `<div class="fr"><span></span><button type="button" data-mf="mine" aria-pressed="${MF.mine}">✨ 친구가 넣은 것만</button>${on ? '<button type="button" class="clear" data-mf="clear">필터 지우기</button>' : ''}</div>`;
+}
+$('#mealFilter').addEventListener('click', e => {
+  const b = e.target.closest('[data-mf]'); if (!b) return;
+  const k = b.dataset.mf;
+  if (k === 'clear') MF = { k: null, c: null, s: null, mine: false };
+  else if (k === 'mine') MF.mine = !MF.mine;
+  else MF[k] = MF[k] === b.dataset.v ? null : b.dataset.v;
+  saveMF(); renderMealAll();
+});
 $('#mealAddKind').innerHTML = MEAL_REELS[0].map(k => `<option>${k}</option>`).join('');
 $('#mealAddLand').innerHTML = MEAL_REELS[1].map(c => `<option>${c}</option>`).join('');
 function renderMealAll() {
   const ms = allMeals(), q = $('#mealSearch').value.trim().toLowerCase();
   $('#mealAllMeta').textContent = `${ms.length}개${S.meals.length ? ` · 친구들이 더한 ${S.meals.length}개` : ''}`;
   if (!$('#mealAll').open) return;
-  const hit = m => !q || [m[0], m[1], m[2], m[3] ? '매운' : '안 매운'].join(' ').toLowerCase().includes(q);
+  renderMealFilter();
+  const hit = m => (!q || [m[0], m[1], m[2], m[3] ? '매운' : '안 매운'].join(' ').toLowerCase().includes(q))
+    && mealFits(m, MF.k, MF.c, MF.s) && (!MF.mine || !!m[4]);
   const chip = m => {
     const own = m[4] && (m[4].by === ME.nick || canRoster());
     return `<span class="mchip${m[4] ? ' new' : ''}"${m[4] ? ` title="${esc(m[4].by)}님이 더했어요"` : ''}>${m[4] ? '✨' : ''}${esc(m[0])}${m[3] ? ' 🌶️' : ''}<small>${esc(m[2].replace(' ', '·'))}</small>`
       + (own ? `<button type="button" class="mdel" data-mdel="${esc(m[0])}" aria-label="${esc(m[0])} 지우기">${mealDel === m[0] ? '정말?' : '✕'}</button>` : '') + '</span>';
   };
-  const groups = MEAL_REELS[0].map(k => [k, ms.filter(m => m[1].split(' ').includes(k) && hit(m)).sort((a, b) => a[0].localeCompare(b[0], 'ko'))]).filter(([, l]) => l.length);
+  const groups = MEAL_REELS[0].filter(k => !MF.k || k === MF.k).map(k => [k, ms.filter(m => m[1].split(' ').includes(k) && hit(m)).sort((a, b) => a[0].localeCompare(b[0], 'ko'))]).filter(([, l]) => l.length);
+  const shown = new Set(groups.flatMap(([, l]) => l.map(m => m[0]))).size;
+  $('#mealAllMeta').textContent += (q || MF.k || MF.c || MF.s || MF.mine) ? ` · 맞는 ${shown}개` : '';
   $('#mealAllBox').innerHTML = groups.map(([k, l]) => `<h4>${MEAL_ICON[k]} ${k} <small>${l.length}</small></h4><div class="mchips">${l.map(chip).join('')}</div>`).join('')
-    || `<p class="empty">"${esc(q)}"에 맞는 메뉴가 없어요. 아래에서 더해 보세요.</p>`;
+    || `<p class="empty">${q ? `"${esc(q)}"에 맞는 ` : '조건에 맞는 '}메뉴가 없어요. 필터를 풀거나 위에서 더해 보세요.</p>`;
 }
 $('#mealAll').addEventListener('toggle', renderMealAll);
 $('#mealSearch').addEventListener('input', renderMealAll);
@@ -3150,7 +3178,7 @@ $('#mealAddForm').addEventListener('submit', async e => {
   e.preventDefault();
   if (!ME.nick) return toast(NEED_NICK);
   const name = $('#mealAddName').value.trim().slice(0, 20); if (!name) return toast('메뉴 이름을 적어 주세요.');
-  if (allMeals().some(m => m[0].replace(/\s/g, '') === name.replace(/\s/g, ''))) return toast(`${name}은(는) 이미 있어요. 위에서 찾아보세요.`);
+  if (allMeals().some(m => m[0].replace(/\s/g, '') === name.replace(/\s/g, ''))) return toast(`${name}은(는) 이미 있어요. 아래 목록에서 찾아보세요.`);
   try {
     await api('addMeal', { name, kinds: [$('#mealAddKind').value], lands: [$('#mealAddLand').value], spicy: $('#mealAddSpicy').value === '1' });
     $('#mealAddName').value = ''; $('#mealSearch').value = ''; sfx('done'); toast(`${name}을(를) 메뉴에 넣었어요! 이제 돌리기에도 나와요.`);
@@ -3600,6 +3628,10 @@ document.addEventListener('click', e => {
 // ---------- 버전 · 패치노트 ----------
 // 커밋해서 올릴 때마다 맨 위에 새 항목을 더해요(규칙은 CLAUDE.md). 오른쪽 위 버전은 맨 위 항목이에요.
 const NOTES = [
+  { v: '1.33.0', d: '2026-10-24', items: [
+    '📖 모든 메뉴: "＋ 메뉴 추가" 칸을 맨 위로 올렸어요.',
+    '그 아래에 필터가 생겼어요. 종류·나라·맵기를 하나씩 눌러 거르고(다시 누르면 풀려요), "✨ 친구가 넣은 것만"으로 친구들이 더한 메뉴만 볼 수 있어요. "필터 지우기"로 한 번에 풀고, 고른 필터는 이 기기에 기억해요. 맞는 메뉴 수도 위에 나와요.',
+  ] },
   { v: '1.32.0', d: '2026-10-24', items: [
     '🍚 밥 뭐 먹지에 "📖 모든 메뉴"가 생겼어요. 누르면 펼쳐져서 어떤 메뉴가 있는지 종류(밥·면·국물·빵·분식·요리)별로 볼 수 있어요. 위 칸에 적으면 이름·나라·"매운"으로 찾아요.',
     '목록 맨 아래 "＋ 메뉴 추가"로 없는 메뉴를 넣을 수 있어요(닉네임을 정한 사람 누구나). 이름·종류·나라·맵기를 고르면 바로 돌리기에도 나와요. 친구가 넣은 메뉴엔 ✨가 붙고, 넣은 사람과 방장이 ✕를 두 번 눌러 지울 수 있어요.',
