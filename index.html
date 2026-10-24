@@ -117,6 +117,18 @@ h1 em { font-style: normal; color: var(--gold); }
 .reel.locked { border-color: var(--gold); box-shadow: inset 0 0 0 1px var(--gold); }
 .reel .lock { position: absolute; top: 2px; right: 5px; font-size: 11px; font-style: normal; }
 /* 원하는 조건 고르기: 줄마다 아무거나 / 값. 고른 칸은 슬롯이 안 돌아요 */
+.meal-all summary { cursor: pointer; display: flex; align-items: baseline; gap: 8px; list-style: none; }
+.meal-all summary::-webkit-details-marker { display: none; }
+.meal-all summary .ma-title { font-family: var(--display); font-weight: 800; font-size: 17px; }
+.meal-all summary::after { content: '펼치기 ▾'; margin-left: auto; font-size: 13px; color: var(--muted); } .meal-all[open] summary::after { content: '접기 ▴'; }
+.meal-all > input { width: 100%; margin: 12px 0 4px; }
+.meal-all h4 { margin: 14px 0 6px; font-size: 14px; } .meal-all h4 small { color: var(--muted); font-weight: 500; }
+.mchips { display: flex; flex-wrap: wrap; gap: 6px; }
+.mchip { display: inline-flex; align-items: baseline; gap: 4px; padding: 4px 10px; border-radius: 999px; background: var(--sunk); border: 1px solid var(--line); font-size: 14px; }
+.mchip small { color: var(--muted); font-size: 11.5px; } .mchip.new { border-color: var(--gold); }
+.mchip .mdel { font: inherit; font-size: 12px; background: none; border: 0; color: var(--bad); cursor: pointer; padding: 0 0 0 4px; }
+.meal-add { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto auto auto; gap: 8px; align-items: center; margin-top: 16px; padding: 12px; border: 1px dashed var(--line); border-radius: 12px; }
+@media (max-width: 640px) { .meal-add { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .meal-add b, .meal-add input { grid-column: 1 / -1; } }
 .meal-cnt { margin: -6px 0 0; text-align: center; font-size: 13px; color: var(--muted); } .meal-cnt b { color: var(--gold); }
 .pinball { width: min(100%, 360px); } .pinball svg { width: 100%; display: block; }
 /* 오늘 뭐 하지? 룰렛: 돌림판 위 가운데 화살표가 가리키는 칸이 결과예요 */
@@ -713,6 +725,22 @@ li.match.picked { outline: 2px solid var(--bad); outline-offset: -2px; }
       <h2>최근 메뉴 <span class="r">이 방</span></h2>
       <ul class="pick-hist" id="mealHist"></ul>
     </div>
+    <div class="card">
+      <details class="meal-all" id="mealAll">
+        <summary><span class="ma-title">📖 모든 메뉴</span> <span class="r" id="mealAllMeta"></span></summary>
+        <input id="mealSearch" type="text" inputmode="search" placeholder="메뉴 찾기 (예: 짬뽕, 일식, 매운)" autocomplete="off" aria-label="메뉴 찾기">
+        <div id="mealAllBox"></div>
+        <form class="meal-add" id="mealAddForm">
+          <b>＋ 메뉴 추가</b>
+          <input id="mealAddName" type="text" maxlength="20" placeholder="메뉴 이름 (예: 마라샹궈)" autocomplete="off" aria-label="메뉴 이름">
+          <select id="mealAddKind" aria-label="종류"></select>
+          <select id="mealAddLand" aria-label="나라"></select>
+          <select id="mealAddSpicy" aria-label="맵기"><option value="0">😌 안 매운 거</option><option value="1">🌶️ 매운 거</option></select>
+          <button class="btn small" type="submit">추가</button>
+          <p class="note" style="margin:0;grid-column:1/-1">닉네임을 정한 사람 누구나 넣을 수 있어요. 넣은 메뉴는 바로 돌리기에도 나와요. 지우기는 넣은 사람과 방장이 해요.</p>
+        </form>
+      </details>
+    </div>
   </section>
 
   <!-- 롤 내전(같이 하기): 팀 섞기·승패 화면. 전적·분석·기록은 📊 정보 갈래의 탭으로 따로 있어요. -->
@@ -908,7 +936,7 @@ async function copyText(text) {
 
 // ---------- 상태 ----------
 // current·selected는 지금 들어가 있는 방(room)의 팀 배치·오늘 할 사람이에요. presence = 이 방을 보고 있는 사람들.
-const S = { players: [], matches: [], duels: [], mvp: {}, pred: [], tourns: [], boards: {}, skew: 0, seasons: [], current: null, selected: new Set(), riot: {}, rooms: [], room: null, presence: [], mode: 'random', editing: false, editTarget: null, period: 'all', season: 'cur', capMethod: 'top', draft: null };
+const S = { players: [], matches: [], duels: [], mvp: {}, pred: [], tourns: [], meals: [], boards: {}, skew: 0, seasons: [], current: null, selected: new Set(), riot: {}, rooms: [], room: null, presence: [], mode: 'random', editing: false, editTarget: null, period: 'all', season: 'cur', capMethod: 'top', draft: null };
 const LS = 'lol-naejeon-v1';
 // 이 기기를 구분하는 id와 닉네임. 로그인 없이 방장을 가려요.
 const ME = (() => {
@@ -993,7 +1021,7 @@ async function api(action, body, quiet) {
       const e = (await res.json().catch(() => ({}))).error;
       if (!quiet) toast({ full: '기록이 너무 많아요. 오래된 기록을 지워 주세요.', rooms_full: '방은 10개까지 만들 수 있어요. 안 쓰는 방을 닫아 주세요.',
         host_busy: '지금 방장이 있어요. 방장이 넘겨줘야 해요.', not_host: '방장만 바꿀 수 있어요.', no_room: '그 방이 없어요. 닫혔을 수 있어요.',
-        no_match: '그 판 기록이 없어요. 지워졌을 수 있어요.', mvp_closed: 'MVP 투표는 기록하고 하루 안에만 할 수 있어요.',
+        no_match: '그 판 기록이 없어요. 지워졌을 수 있어요.', meal_dup: '이미 있는 메뉴예요.', meal_full: '더한 메뉴는 300개까지예요.', no_meal: '그 메뉴가 없어요. 이미 지워졌을 수 있어요.', mvp_closed: 'MVP 투표는 기록하고 하루 안에만 할 수 있어요.',
         pred_closed: '이 판은 결과가 나와서 예측이 마감됐어요.', pred_stale: '팀이 바뀌었어요. 새 팀으로 다시 찍어 주세요.',
         tourn_locked: '다음 판 결과를 먼저 풀어야 바꿀 수 있어요.', no_tourn: '그 토너먼트가 없어요. 지워졌을 수 있어요.', tourn_full: '토너먼트는 50개까지예요. 지난 토너먼트를 지워 주세요.',
         season_empty: '이번 시즌엔 아직 기록한 판이 없어요. 한 판 이상 하고 새 시즌을 시작해 주세요.',
@@ -1017,6 +1045,7 @@ function applyServer(d) {
   if (Array.isArray(d.tourns)) S.tourns = d.tourns.filter(t => t && typeof t.id === 'string' && Array.isArray(t.rounds) && Array.isArray(t.ents));
   if (Array.isArray(d.pred)) S.pred = d.pred.filter(x => x && typeof x.n === 'string' && ['blue', 'red'].includes(x.s));
   if (Array.isArray(d.seasons)) S.seasons = cleanSeasons(d.seasons);
+  if (Array.isArray(d.meals)) S.meals = d.meals.filter(m => m && typeof m.n === 'string' && typeof m.k === 'string' && typeof m.c === 'string');
   if ('games' in d) S.games = Array.isArray(d.games) ? d.games.filter(x => typeof x === 'string') : null; // null = 아직 안 고친 기본 목록
   if (d.riot && typeof d.riot === 'object') S.riot = d.riot;
   if (typeof d.now === 'number') S.skew = d.now - Date.now(); // 서버 시계 - 내 폰 시계 (타이머를 서버 시각으로 맞춰요)
@@ -2948,7 +2977,9 @@ const MEALS = [
 ];
 // 조건(비어 있으면 아무거나)에 맞는 메뉴
 const mealFits = (m, k, c, sp) => (!k || m[1].split(' ').includes(k)) && (!c || m[2].split(' ').includes(c)) && (!sp || (m[3] ? '매운 거' : '안 매운 거') === sp);
-const mealMatch = (k, c, sp) => MEALS.filter(m => mealFits(m, k, c, sp)).map(m => m[0]);
+// 기본 메뉴 + 친구들이 더한 메뉴(S.meals). 더한 메뉴는 다섯 번째 칸에 { by } 정보가 있어요.
+const allMeals = () => [...MEALS, ...S.meals.map(m => [m.n, m.k, m.c, m.s, m])];
+const mealMatch = (k, c, sp) => allMeals().filter(m => mealFits(m, k, c, sp)).map(m => m[0]);
 let MEAL_LOCK = [null, null, null]; try { const v = JSON.parse(localStorage.getItem(LS + ':mealLock') || 'null'); if (Array.isArray(v) && v.length === 3) MEAL_LOCK = v.map((x, i) => (MEAL_REELS[i].includes(x) ? x : null)); } catch {}
 const saveMealLock = () => { try { localStorage.setItem(LS + ':mealLock', JSON.stringify(MEAL_LOCK)); } catch {} };
 let mealSeen, mealBusy = false, mealLocal = null, mealShown = null, mealLanded = 0;
@@ -3057,7 +3088,7 @@ function renderMeal() {
     ? `<div class="res-big">오늘은 <b>${esc(shown.menu)}</b>!</div><span class="note" style="margin:0">${shown.reels.map(v => `${MEAL_ICON[v]} ${esc(v)}`).join(' · ')}${shown.by ? ` · ${esc(shown.by)}님이 돌렸어요` : ''} · <a class="linkbtn" href="https://map.naver.com/p/search/${encodeURIComponent(shown.menu)}" target="_blank" rel="noopener">📍 근처 찾기</a></span>`
     : '<span class="note" style="margin:0">돌리면 슬롯 세 칸이 멈추고, 공이 떨어진 칸이 오늘 메뉴예요.</span>';
   // 원하는 조건 고르기: 줄마다 '아무거나'면 슬롯이 돌고, 값을 고르면 그 칸은 고정(🔒)돼요. 이 기기에 기억해요.
-  const left = MEALS.filter(m => mealFits(m, ...MEAL_LOCK)).length;
+  const left = allMeals().filter(m => mealFits(m, ...MEAL_LOCK)).length;
   $('#mealPick').innerHTML = `${MEAL_LOCK.every(Boolean) ? '다 골랐어요 · 슬롯 없이 바로 공이 떨어져요' : '칸 아래에서 고른 조건은 고정돼요'} · 맞는 메뉴 <b>${left}개</b>`;
   $('#mealMeta').textContent = S.room ? `${curRoom()?.name || ''} · 같이 돌려요` : '이 화면에서만';
   $('#mealNote').textContent = !S.room ? '방에 들어가 있으면 같은 방 친구 화면에서도 같이 돌아가요.'
@@ -3065,6 +3096,7 @@ function renderMeal() {
   const hist = S.room ? S.meal?.hist || [] : [];
   $('#mealHist').innerHTML = hist.map(h => `<li><time>${ago(h.t)}</time><b>${esc(h.menu)}</b><span class="note" style="margin:0">${esc(h.by || '')}</span></li>`).join('')
     || `<li class="note" style="margin:0">${S.room ? '아직 이 방에서 돌린 적이 없어요.' : '방에 들어가 있으면 이 방에서 나온 메뉴가 여기 쌓여요.'}</li>`;
+  renderMealAll();
 }
 async function mealSpinNow() {
   if (mealBusy) return;
@@ -3084,6 +3116,47 @@ async function mealSpinNow() {
   renderMeal();
 }
 $('#mealSpin').onclick = mealSpinNow;
+// ---------- 모든 메뉴 보기 · 메뉴 추가 ----------
+// 종류별로 묶어 보여 줘요(돼지국밥처럼 종류가 둘이면 두 곳에 다 나와요). 위 칸에 적으면 이름·종류·나라·'매운'으로 걸러요.
+// ✨는 친구들이 더한 메뉴예요. 지우기(✕)는 더한 사람과 방장에게만 보이고, 두 번 눌러야 지워져요.
+let mealDel = null;
+$('#mealAddKind').innerHTML = MEAL_REELS[0].map(k => `<option>${k}</option>`).join('');
+$('#mealAddLand').innerHTML = MEAL_REELS[1].map(c => `<option>${c}</option>`).join('');
+function renderMealAll() {
+  const ms = allMeals(), q = $('#mealSearch').value.trim().toLowerCase();
+  $('#mealAllMeta').textContent = `${ms.length}개${S.meals.length ? ` · 친구들이 더한 ${S.meals.length}개` : ''}`;
+  if (!$('#mealAll').open) return;
+  const hit = m => !q || [m[0], m[1], m[2], m[3] ? '매운' : '안 매운'].join(' ').toLowerCase().includes(q);
+  const chip = m => {
+    const own = m[4] && (m[4].by === ME.nick || canRoster());
+    return `<span class="mchip${m[4] ? ' new' : ''}"${m[4] ? ` title="${esc(m[4].by)}님이 더했어요"` : ''}>${m[4] ? '✨' : ''}${esc(m[0])}${m[3] ? ' 🌶️' : ''}<small>${esc(m[2].replace(' ', '·'))}</small>`
+      + (own ? `<button type="button" class="mdel" data-mdel="${esc(m[0])}" aria-label="${esc(m[0])} 지우기">${mealDel === m[0] ? '정말?' : '✕'}</button>` : '') + '</span>';
+  };
+  const groups = MEAL_REELS[0].map(k => [k, ms.filter(m => m[1].split(' ').includes(k) && hit(m)).sort((a, b) => a[0].localeCompare(b[0], 'ko'))]).filter(([, l]) => l.length);
+  $('#mealAllBox').innerHTML = groups.map(([k, l]) => `<h4>${MEAL_ICON[k]} ${k} <small>${l.length}</small></h4><div class="mchips">${l.map(chip).join('')}</div>`).join('')
+    || `<p class="empty">"${esc(q)}"에 맞는 메뉴가 없어요. 아래에서 더해 보세요.</p>`;
+}
+$('#mealAll').addEventListener('toggle', renderMealAll);
+$('#mealSearch').addEventListener('input', renderMealAll);
+$('#mealAllBox').addEventListener('click', async e => {
+  const b = e.target.closest('[data-mdel]'); if (!b) return;
+  const name = b.dataset.mdel;
+  if (mealDel !== name) { mealDel = name; renderMealAll(); clearTimeout(renderMealAll.t); renderMealAll.t = setTimeout(() => { mealDel = null; renderMealAll(); }, 3000); return; }
+  mealDel = null; clearTimeout(renderMealAll.t);
+  try { await api('deleteMeal', { name }); toast(`${name}을(를) 메뉴에서 뺐어요.`); } catch {}
+  renderAll();
+});
+$('#mealAddForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  if (!ME.nick) return toast(NEED_NICK);
+  const name = $('#mealAddName').value.trim().slice(0, 20); if (!name) return toast('메뉴 이름을 적어 주세요.');
+  if (allMeals().some(m => m[0].replace(/\s/g, '') === name.replace(/\s/g, ''))) return toast(`${name}은(는) 이미 있어요. 위에서 찾아보세요.`);
+  try {
+    await api('addMeal', { name, kinds: [$('#mealAddKind').value], lands: [$('#mealAddLand').value], spicy: $('#mealAddSpicy').value === '1' });
+    $('#mealAddName').value = ''; $('#mealSearch').value = ''; sfx('done'); toast(`${name}을(를) 메뉴에 넣었어요! 이제 돌리기에도 나와요.`);
+  } catch {}
+  renderAll();
+});
 $('#mealReels').addEventListener('change', e => {
   const sel = e.target.closest('select[data-mpick]'); if (!sel || mealBusy) return;
   MEAL_LOCK[+sel.dataset.mpick] = sel.value || null; saveMealLock(); mealShown = null;
@@ -3527,6 +3600,10 @@ document.addEventListener('click', e => {
 // ---------- 버전 · 패치노트 ----------
 // 커밋해서 올릴 때마다 맨 위에 새 항목을 더해요(규칙은 CLAUDE.md). 오른쪽 위 버전은 맨 위 항목이에요.
 const NOTES = [
+  { v: '1.32.0', d: '2026-10-24', items: [
+    '🍚 밥 뭐 먹지에 "📖 모든 메뉴"가 생겼어요. 누르면 펼쳐져서 어떤 메뉴가 있는지 종류(밥·면·국물·빵·분식·요리)별로 볼 수 있어요. 위 칸에 적으면 이름·나라·"매운"으로 찾아요.',
+    '목록 맨 아래 "＋ 메뉴 추가"로 없는 메뉴를 넣을 수 있어요(닉네임을 정한 사람 누구나). 이름·종류·나라·맵기를 고르면 바로 돌리기에도 나와요. 친구가 넣은 메뉴엔 ✨가 붙고, 넣은 사람과 방장이 ✕를 두 번 눌러 지울 수 있어요.',
+  ] },
   { v: '1.31.0', d: '2026-10-24', items: [
     '✨ 효과 버튼이 생겼어요(오른쪽 위 🔊 소리 옆). 색종이·팀 섞기·룰렛 같은 효과를 이 기기에서 켜고 꺼요. 기본은 켜짐이에요.',
     '예전엔 컴퓨터의 "애니메이션 효과"(Windows 시각 효과를 "최적 성능"으로 둔 게임용 PC 등)가 꺼져 있으면 효과가 아예 안 나왔어요. 이제는 그래도 나와요. 움직임이 불편하면 ✨ 버튼으로 꺼 주세요.',

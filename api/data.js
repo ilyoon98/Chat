@@ -6,7 +6,7 @@ const url = process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL;
 const token = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN;
 const redis = globalThis.__redis ?? (url && token ? new Redis({ url, token }) : null);
 
-const K = { players: 'lol:players', matches: 'lol:matches', ver: 'lol:ver', riot: 'lol:riot', riotLock: 'lol:riot:lock', riotRest: 'lol:riot:rest', riotGames: 'lol:riot:games', rooms: 'lol:rooms', hostSeen: 'lol:hostseen', nicks: 'lol:nicks', duels: 'lol:duels', mvp: 'lol:mvp', seasons: 'lol:seasons', pred: 'lol:pred', tourn: 'lol:tourn', gone: 'lol:gone', mvpLock: 'lol:mvp:lock', games: 'lol:games' };
+const K = { players: 'lol:players', matches: 'lol:matches', ver: 'lol:ver', riot: 'lol:riot', riotLock: 'lol:riot:lock', riotRest: 'lol:riot:rest', riotGames: 'lol:riot:games', rooms: 'lol:rooms', hostSeen: 'lol:hostseen', nicks: 'lol:nicks', duels: 'lol:duels', mvp: 'lol:mvp', seasons: 'lol:seasons', pred: 'lol:pred', tourn: 'lol:tourn', gone: 'lol:gone', mvpLock: 'lol:mvp:lock', games: 'lol:games', meals: 'lol:meals' };
 // 방마다 따로인 것: 오늘 할 사람(정렬 집합), 팀 배치, 지금 보고 있는 사람(정렬 집합, 점수 = 마지막 신호 시각)
 const RK = { sel: r => `lol:room:${r}:sel`, cur: r => `lol:room:${r}:cur`, seen: r => `lol:room:${r}:seen`, board: (r, s) => `lol:room:${r}:board:${s}`, bver: r => `lol:room:${r}:bver`, pick: r => `lol:room:${r}:pick` /* 예전 '뭐 하지' 방 결과. 이제 안 쓰지만 방을 닫을 때 남은 걸 지워요 */, meal: r => `lol:room:${r}:meal` };
 // 인게임 타이머 보드: 방마다 블루팀·레드팀·솔랭(우리끼리) 셋. 해시 필드 'start'(게임 0초 시각), 'r:라인'({ s: [스펠 둘], b: 신발, c: 우주적 통찰력 }),
@@ -289,6 +289,13 @@ async function nickOf(me) {
   return null;
 }
 const needNick = res => res.status(409).json({ error: 'need_nick' });
+// 밥 뭐 먹지에 친구들이 더한 메뉴: 해시 '메뉴 이름' → { k: 종류(띄어 쓰기), c: 나라, s: 매움(0·1), by: 닉네임, d: 기기id, t }.
+// 기본 메뉴(화면 코드의 MEALS)와 합쳐서 돌리기·모든 메뉴 보기에 같이 나와요. 화면에는 기기id는 안 보내요.
+const MEAL_KINDS = ['밥', '면', '국물', '빵', '분식', '요리'], MEAL_LANDS = ['한식', '중식', '일식', '양식', '기타'], MAX_MEALS = 300;
+async function readMeals() {
+  return Object.entries((await redis.hgetall(K.meals)) || {}).map(([n, v]) => { const x = parse(v); return x && { n, k: x.k, c: x.c, s: x.s ? 1 : 0, by: x.by || '', t: Number(x.t) || 0 }; })
+    .filter(Boolean).sort((a, b) => a.t - b.t);
+}
 // 일부러 지운 판·1:1·토너먼트 id를 남겨 둬요(id → 지운 시각). 백업을 불러와도 이건 다시 넣지 않아요.
 // 전체 초기화는 "백업 받고 초기화"라서 남기지 않아요. 그래야 그 백업으로 다 되살릴 수 있어요.
 const markGone = ids => (ids.length ? redis.hset(K.gone, Object.fromEntries(ids.map(x => [x, Date.now()]))) : null);
@@ -337,11 +344,11 @@ async function readPred() {
 async function readState(room) {
   // 방 정보(오늘 할 사람·팀 배치·타이머 보드)도 다른 기록과 한 번에 같이 읽어요(DB에 한 번만 다녀와요). 없는 방이면 버려요.
   const roomPart = room ? Promise.all([readSelected(room), redis.get(RK.cur(room)), redis.get(RK.bver(room)), redis.get(RK.meal(room)), ...BOARD_SIDES.map(s => redis.hgetall(RK.board(room, s)))]) : null;
-  const [players, matches, ver, riot, rooms, duels, votes, seasons, pred, tourns, games, rp] = await Promise.all([readPlayers(), readMatches(), redis.get(K.ver), readRiot(), readRooms(), readDuels(), redis.hgetall(K.mvp), readSeasons(), readPred(), readTourns(), redis.get(K.games), roomPart]);
+  const [players, matches, ver, riot, rooms, duels, votes, seasons, pred, tourns, games, meals, rp] = await Promise.all([readPlayers(), readMatches(), redis.get(K.ver), readRiot(), readRooms(), readDuels(), redis.hgetall(K.mvp), readSeasons(), readPred(), readTourns(), redis.get(K.games), readMeals(), roomPart]);
   const mvp = mergeMvp(matches, votes);
   const r = rooms.find(x => x.id === room);
   const roomState = r && rp ? { id: r.id, selected: rp[0], current: rp[1] || null, bver: Number(rp[2]) || 0, meal: rp[3] || null, boards: Object.fromEntries(BOARD_SIDES.map((s, i) => [s, rp[4 + i] || {}])) } : null;
-  return { players, matches, duels, mvp, pred, tourns, riot, rooms, seasons, games: Array.isArray(games) ? games : null, room: roomState, ver: Number(ver) || 0, ably: ABLY_NS, now: Date.now() };
+  return { players, matches, duels, mvp, pred, tourns, riot, rooms, seasons, games: Array.isArray(games) ? games : null, meals, room: roomState, ver: Number(ver) || 0, ably: ABLY_NS, now: Date.now() };
 }
 // 지금 보고 있다는 신호(15초마다). 멤버는 "기기id|닉네임"이고, 방장이면 방장 신호 시각도 남겨요.
 async function heartbeat(room, me, nick, claimsHost) {
@@ -638,6 +645,27 @@ export default async function handler(req, res) {
         if (!games) return bad(res);
         if (!(await nickOf(me))) return needNick(res);
         if (games.length) await redis.set(K.games, games); else await redis.del(K.games);
+        break;
+      }
+      case 'addMeal': {
+        // 메뉴 더하기(닉네임을 정한 사람 누구나): 이름·종류·나라·매움. 기본 메뉴와 같은 이름인지는 화면이 먼저 봐요.
+        const nk = await nickOf(me);
+        if (!nk) return needNick(res);
+        const name = typeof b.name === 'string' ? b.name.trim().slice(0, 20) : '';
+        const kinds = Array.isArray(b.kinds) ? [...new Set(b.kinds.filter(x => MEAL_KINDS.includes(x)))] : [], lands = Array.isArray(b.lands) ? [...new Set(b.lands.filter(x => MEAL_LANDS.includes(x)))] : [];
+        if (!name || !kinds.length || !lands.length) return bad(res);
+        const all = (await redis.hgetall(K.meals)) || {};
+        if (Object.hasOwn(all, name)) return res.status(409).json({ error: 'meal_dup' });
+        if (Object.keys(all).length >= MAX_MEALS) return res.status(409).json({ error: 'meal_full' });
+        await redis.hset(K.meals, { [name]: { k: kinds.join(' '), c: lands.join(' '), s: b.spicy ? 1 : 0, by: nk, d: me, t: Date.now() } });
+        break;
+      }
+      case 'deleteMeal': {
+        // 더한 메뉴 지우기: 더한 사람(같은 기기)이나 어느 방이든 방장. 기본 메뉴는 못 지워요.
+        const name = typeof b.name === 'string' ? b.name : '', x = name && parse(await redis.hget(K.meals, name));
+        if (!x) return res.status(404).json({ error: 'no_meal' });
+        if (x.d !== me && !rooms.some(isHost)) return notHost();
+        await redis.hdel(K.meals, name);
         break;
       }
       case 'spinMeal': {
